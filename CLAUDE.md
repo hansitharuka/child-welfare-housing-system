@@ -2,11 +2,39 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+@AGENTS.md
+
 ## Project status
 
-This repository has no application code yet, so there are no build, lint or test commands. Once code lands, add those commands here, including how to run a single test.
+Phase 1 (foundation) of `docs/PLAN.md` is built: a Sinhala Next.js shell for the three roles, PostgreSQL with the place and stage lists, tests and CI. There is no sign-in yet (Phase 2).
 
-The stack is set in `docs/SPEC.md` (draft, 28 Sep): Next.js (App Router, TypeScript), PostgreSQL + Prisma, Better Auth, next-intl (Sinhala), Zod, Tailwind + shadcn/ui, ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer, never in middleware alone.
+The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
+
+## Commands
+
+First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker Desktop running), `npx prisma migrate dev`, `npm run db:seed`.
+
+| Task | Command |
+| --- | --- |
+| Dev server (http://localhost:3000) | `npm run dev` |
+| Lint, formatting, types | `npm run lint`, `npm run format:check`, `npm run typecheck` |
+| No hard-coded screen text (UI-1) | `npm run check:strings` |
+| Unit tests | `npm test`; one file: `npx vitest run src/lib/dates.test.ts`; one test: add `-t "<name>"` |
+| Database tests (database must be up) | `npm run test:db`; one file: `npx vitest run --config vitest.db.config.mts prisma/seed.db.test.ts` |
+| End-to-end tests | `npm run test:e2e`; one test: `npx playwright test tests/e2e/smoke.spec.ts -g "/ds"` |
+| Production build and server | `npm run build`, then `npm run start:standalone` |
+| Change the database schema | edit `prisma/schema.prisma`, then `npx prisma migrate dev --name <change>` |
+
+## Things to know when coding
+
+- **Next.js 16 differs from older versions.** Read the matching guide in `node_modules/next/dist/docs/` before using an unfamiliar API (see `AGENTS.md`). For example, middleware is now `proxy.ts`.
+- **Prisma 7.** The client is generated into `src/generated/prisma/`. That folder is not committed and is regenerated on `npm install`. Import from `@/generated/prisma/client`. The client needs the `PrismaPg` adapter (see `src/server/db.ts`). Settings and the seed command live in `prisma.config.ts`.
+- **The seed only adds missing rows** (`prisma/seed-data.ts`), so running it again never undoes an admin's change.
+- **Never run `prisma migrate reset`.** It wipes a database, and Prisma blocks it when an AI agent runs it. The database tests make a new schema in the test database for each run and drop only that schema (`tests/db/global-setup.ts`).
+- **Screen text lives only in `messages/si.json`.** Message keys are typed (`src/types/next-intl.d.ts`), and `npm run check:strings` fails on text written in components.
+- **The Sinhala font is committed** in `src/app/fonts/`, copied from `@fontsource-variable/noto-sans-sinhala`. Nothing loads from Google at runtime.
+- **The `overrides` in `package.json`** force patched `deepmerge-ts` and `mysql2` inside the Prisma CLI. Remove them once Prisma ships fixed versions.
+- **Pinned versions.** `.npmrc` saves exact versions. Upgrade one dependency at a time, on purpose.
 
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 
