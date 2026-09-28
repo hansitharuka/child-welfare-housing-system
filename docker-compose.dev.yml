@@ -1,0 +1,21 @@
+# Local development database only. Production uses docker-compose.yml (Phase 9).
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: diviyata
+      POSTGRES_PASSWORD: diviyata_dev
+      POSTGRES_DB: diviyata
+    ports:
+      - "5433:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./docker/dev-db-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U diviyata -d diviyata"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dbdata:
