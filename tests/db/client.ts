@@ -8,3 +8,16 @@ export function createTestClient(): PrismaClient {
     adapter: new PrismaPg({ connectionString: inject("testDatabaseUrl") }, { schema: inject("testSchema") }),
   });
 }
+
+/**
+ * An active DS office that has no Child Rights Promotion Officer yet (ADM-3), for a test that adds
+ * one. Test files share the schema, so they don't count on any particular office being free.
+ */
+export async function freeOfficeId(db: PrismaClient): Promise<number> {
+  const office = await db.dsOffice.findFirstOrThrow({
+    where: { active: true, users: { none: { role: "DS_OFFICER", banned: false } } },
+    orderBy: { id: "asc" },
+    select: { id: true },
+  });
+  return office.id;
+}

@@ -69,7 +69,24 @@ export async function accountCounts(db: PrismaClient): Promise<{ total: number; 
 }
 
 export async function activeAdminCount(db: PrismaClient | Prisma.TransactionClient): Promise<number> {
-  return db.user.count({ where: { role: "ADMIN", banned: { not: true } } });
+  return db.user.count({ where: { role: "ADMIN", banned: false } });
+}
+
+export type OfficeHolder = { id: string; name: string };
+
+/**
+ * ADM-3: the office's active DS officer, its Child Rights Promotion Officer. There is at most one,
+ * which the database also enforces. `exceptId` leaves out the account being changed.
+ */
+export async function officeHolder(
+  db: PrismaClient,
+  dsOfficeId: number,
+  exceptId?: string,
+): Promise<OfficeHolder | null> {
+  return db.user.findFirst({
+    where: { dsOfficeId, role: "DS_OFFICER", banned: false, ...(exceptId ? { id: { not: exceptId } } : {}) },
+    select: { id: true, name: true },
+  });
 }
 
 export type AccountDetails = {
@@ -116,12 +133,12 @@ export async function getAccount(db: PrismaClient, id: string): Promise<AccountD
   };
 }
 
-export type OfficeChoice = { id: number; name: string; active: boolean; officers: string[] };
+export type OfficeChoice = { id: number; name: string; active: boolean; holder: OfficeHolder | null };
 export type DistrictChoice = { id: number; name: string; offices: OfficeChoice[] };
 
 /**
- * Districts and their DS offices for the account form, with the active DS officers of each office
- * (ADM-3). Inactive offices are included only if an account already belongs to one.
+ * Districts and their DS offices for the account form, each with its current Child Rights Promotion
+ * Officer, if any (ADM-3). Inactive offices are included only if the account already belongs to one.
  */
 export async function officeChoices(db: PrismaClient, keepOfficeId: number | null = null): Promise<DistrictChoice[]> {
   const districts = await db.district.findMany({
@@ -136,7 +153,7 @@ export async function officeChoices(db: PrismaClient, keepOfficeId: number | nul
           id: true,
           nameSi: true,
           active: true,
-          users: { where: { role: "DS_OFFICER", banned: { not: true } }, select: { id: true, name: true } },
+          users: { where: { role: "DS_OFFICER", banned: false }, select: { id: true, name: true }, take: 1 },
         },
       },
     },
@@ -144,12 +161,7 @@ export async function officeChoices(db: PrismaClient, keepOfficeId: number | nul
   return districts.map((d) => ({
     id: d.id,
     name: d.nameSi,
-    offices: d.dsOffices.map((o) => ({
-      id: o.id,
-      name: o.nameSi,
-      active: o.active,
-      officers: o.users.map((u) => u.name),
-    })),
+    offices: d.dsOffices.map((o) => ({ id: o.id, name: o.nameSi, active: o.active, holder: o.users[0] ?? null })),
   }));
 }
 

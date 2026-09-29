@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { seed } from "../../../prisma/seed-data";
-import { createTestClient } from "../../../tests/db/client";
+import { createTestClient, freeOfficeId } from "../../../tests/db/client";
 import { addOffice, addStage, moveStage, renameOffice, renameStage, setOfficeActive, setStageActive } from "./commands";
 import { officesOfDistrict, stagesByKind } from "./queries";
 
@@ -49,20 +49,23 @@ describe("DS offices (LST-2, LST-3)", () => {
     expect(after).toMatchObject({ nameSi: "කොලොන්නාව නව", code: "KOL", active: false });
   });
 
-  it("counts each office's active DS officers", async () => {
-    const homagama = await db.dsOffice.findUniqueOrThrow({ where: { code: "HMG" } });
+  it("names each office's Child Rights Promotion Officer (ADM-3)", async () => {
+    const office = await db.dsOffice.findUniqueOrThrow({ where: { id: await freeOfficeId(db) } });
+    const before = await officesOfDistrict(db, office.districtId);
+    expect(before?.offices.find((o) => o.id === office.id)?.officer).toBeNull();
+
     await db.user.create({
       data: {
         id: "lists-officer",
-        name: "නිලධාරී",
+        name: "කේ. නිලධාරී",
         email: "lists-officer@no-email.invalid",
         username: "ds9300",
         role: "DS_OFFICER",
-        dsOfficeId: homagama.id,
+        dsOfficeId: office.id,
       },
     });
-    const listed = await officesOfDistrict(db, colombo);
-    expect(listed?.offices.find((o) => o.code === "HMG")?.officers).toBeGreaterThanOrEqual(1);
+    const after = await officesOfDistrict(db, office.districtId);
+    expect(after?.offices.find((o) => o.id === office.id)?.officer).toBe("කේ. නිලධාරී");
   });
 });
 

@@ -124,7 +124,7 @@ async function Places({ districtParam }: { districtParam?: string | string[] }) 
                   {t("columns.code")}
                 </th>
                 <th scope="col" className="px-3 py-2.5 font-semibold">
-                  {t("columns.officers")}
+                  {t("columns.officer")}
                 </th>
                 <th scope="col" className="px-3 py-2.5 font-semibold">
                   {t("columns.status")}
@@ -145,9 +145,9 @@ async function Places({ districtParam }: { districtParam?: string | string[] }) 
                   </td>
                   <td className="px-3 py-2.5 font-mono">{o.code}</td>
                   <td
-                    className={`px-3 py-2.5 text-[15px] ${o.officers === 0 && o.active ? "font-semibold text-notice-foreground" : ""}`}
+                    className={`px-3 py-2.5 text-[15px] ${o.officer === null && o.active ? "font-semibold text-notice-foreground" : ""}`}
                   >
-                    {o.officers > 0 ? t("officers", { count: o.officers }) : t("noAccount")}
+                    {o.officer ?? t("noAccount")}
                   </td>
                   <td className="px-3 py-2.5">
                     <span

@@ -1,13 +1,15 @@
 /**
- * Removes the DS offices and building stages that earlier end-to-end runs added, so a developer's
- * lists don't fill up with test entries. Everything the tests add carries TEST_MARKER (see helpers.ts).
- * Accounts the tests create stay, because the audit log refers to them.
+ * Tidies up after earlier end-to-end runs:
+ * - removes the DS offices and building stages they added (everything carries TEST_MARKER), so a
+ *   developer's lists don't fill up with test entries;
+ * - disables the DS officer accounts they created, which frees those offices for the next run, since
+ *   an office has only one active officer (ADM-3). The accounts stay, because the audit log refers to them.
  * Runs only where sample accounts are allowed (development and test databases).
  */
 import "dotenv/config";
 import { sampleUsersAllowed } from "../../prisma/seed-users";
 import { createPrismaClient } from "../../src/server/db";
-import { TEST_MARKER } from "./helpers";
+import { TEST_MARKER, TEST_OFFICER_NAME } from "./helpers";
 
 async function main() {
   if (!sampleUsersAllowed()) throw new Error("End-to-end cleanup only runs on development and test databases.");
@@ -19,7 +21,13 @@ async function main() {
       where: { nameEn: { startsWith: `${TEST_MARKER} ` }, users: { none: {} } },
     });
     const stages = await prisma.stageDefinition.deleteMany({ where: { nameSi: { endsWith: ` ${TEST_MARKER}` } } });
-    console.log(`Removed test entries: ${offices.count} offices, ${stages.count} stages.`);
+    const officers = await prisma.user.updateMany({
+      where: { name: TEST_OFFICER_NAME, role: "DS_OFFICER", banned: false },
+      data: { banned: true },
+    });
+    console.log(
+      `Removed test entries: ${offices.count} offices, ${stages.count} stages; disabled ${officers.count} test officers.`,
+    );
   } finally {
     await prisma.$disconnect();
   }

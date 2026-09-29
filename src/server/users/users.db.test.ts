@@ -1,17 +1,15 @@
 import { verifyPassword } from "better-auth/crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { seed } from "../../../prisma/seed-data";
-import { createTestClient } from "../../../tests/db/client";
+import { createTestClient, freeOfficeId } from "../../../tests/db/client";
 import type { AccountInput } from "@/lib/validation/user";
 import { createAccount, resetPassword, setAccountDisabled, updateAccount } from "./commands";
 import { accountHistory, listAccounts } from "./queries";
 
 const db = createTestClient();
 const ADMIN = "users-test-admin";
-let homagama: number;
-let kaduwela: number;
 
-const officer = (dsOfficeId: number): AccountInput => ({
+const officer = (dsOfficeId: number | null): AccountInput => ({
   name: "ජී. පරීක්ෂණ",
   designation: "සංවර්ධන නිලධාරී",
   mobile: "0710000201",
@@ -20,13 +18,20 @@ const officer = (dsOfficeId: number): AccountInput => ({
   dsOfficeId,
 });
 
+/** Creates a DS officer at a free office and returns the account and its office. */
+async function newOfficer() {
+  const dsOfficeId = await freeOfficeId(db);
+  const created = await createAccount(db, ADMIN, officer(dsOfficeId));
+  if (!created.ok) throw new Error(created.error);
+  const user = await db.user.findUniqueOrThrow({ where: { username: created.value.username } });
+  return { user, dsOfficeId, credentials: created.value };
+}
+
 const passwordOf = async (userId: string) =>
   (await db.account.findFirstOrThrow({ where: { userId, providerId: "credential" } })).password ?? "";
 
 beforeAll(async () => {
   await seed(db);
-  homagama = (await db.dsOffice.findUniqueOrThrow({ where: { code: "HMG" } })).id;
-  kaduwela = (await db.dsOffice.findUniqueOrThrow({ where: { code: "KDW" } })).id;
   await db.user.create({
     data: { id: ADMIN, name: "පරිපාලක", email: "users-test-admin@no-email.invalid", username: "ad9000", role: "ADMIN" },
   });
@@ -36,67 +41,92 @@ afterAll(() => db.$disconnect());
 
 describe("creating an account (ADM-2)", () => {
   it("makes the account, its temporary password and an audit record together", async () => {
-    const result = await createAccount(db, ADMIN, officer(homagama));
-    if (!result.ok) throw new Error(result.error);
-    const { username, temporaryPassword } = result.value;
+    const { user, dsOfficeId, credentials } = await newOfficer();
 
-    expect(username).toMatch(/^ds\d{4}$/);
-    const user = await db.user.findUniqueOrThrow({ where: { username } });
-    expect(user).toMatchObject({ role: "DS_OFFICER", dsOfficeId: homagama, mustChangePassword: true, banned: false });
-    expect(user.email).toBe(`${username}@no-email.invalid`);
-    expect(await verifyPassword({ hash: await passwordOf(user.id), password: temporaryPassword })).toBe(true);
+    expect(credentials.username).toMatch(/^ds\d{4}$/);
+    expect(user).toMatchObject({ role: "DS_OFFICER", dsOfficeId, mustChangePassword: true, banned: false });
+    expect(user.email).toBe(`${credentials.username}@no-email.invalid`);
+    expect(await verifyPassword({ hash: await passwordOf(user.id), password: credentials.temporaryPassword })).toBe(
+      true,
+    );
 
     const audit = await db.auditLog.findFirstOrThrow({ where: { entityId: user.id, action: "account_created" } });
     expect(audit.actorId).toBe(ADMIN);
   });
 
   it("gives the next number to the next account", async () => {
-    const first = await createAccount(db, ADMIN, officer(homagama));
-    const second = await createAccount(db, ADMIN, officer(homagama));
-    if (!first.ok || !second.ok) throw new Error("create failed");
-    expect(Number(second.value.username.slice(2))).toBe(Number(first.value.username.slice(2)) + 1);
+    const first = await newOfficer();
+    const second = await newOfficer();
+    expect(Number(second.credentials.username.slice(2))).toBe(Number(first.credentials.username.slice(2)) + 1);
   });
 
   it("refuses an inactive office (LST-3)", async () => {
-    await db.dsOffice.update({ where: { id: kaduwela }, data: { active: false } });
-    expect(await createAccount(db, ADMIN, officer(kaduwela))).toEqual({ ok: false, error: "officeUnavailable" });
-    await db.dsOffice.update({ where: { id: kaduwela }, data: { active: true } });
+    const office = await freeOfficeId(db);
+    await db.dsOffice.update({ where: { id: office }, data: { active: false } });
+    expect(await createAccount(db, ADMIN, officer(office))).toEqual({ ok: false, error: "officeUnavailable" });
+    await db.dsOffice.update({ where: { id: office }, data: { active: true } });
+  });
+});
+
+describe("one Child Rights Promotion Officer per DS office (ADM-3)", () => {
+  it("refuses a second active officer at the same office", async () => {
+    const { dsOfficeId } = await newOfficer();
+    expect(await createAccount(db, ADMIN, officer(dsOfficeId))).toEqual({ ok: false, error: "officeTaken" });
+  });
+
+  it("lets a new officer take over once the old account is disabled, and then keeps the old one off", async () => {
+    const { user: former, dsOfficeId } = await newOfficer();
+    expect(await setAccountDisabled(db, ADMIN, former.id, true)).toEqual({ ok: true, value: null });
+
+    const successor = await createAccount(db, ADMIN, officer(dsOfficeId));
+    expect(successor.ok).toBe(true);
+    expect(await setAccountDisabled(db, ADMIN, former.id, false)).toEqual({ ok: false, error: "officeTaken" });
+  });
+
+  it("refuses a transfer to an office that has its officer", async () => {
+    const { user } = await newOfficer();
+    const { dsOfficeId: taken } = await newOfficer();
+    expect(await updateAccount(db, ADMIN, user.id, officer(taken))).toEqual({ ok: false, error: "officeTaken" });
+  });
+
+  it("refuses to turn a Head Office account into a second officer of an office", async () => {
+    const { dsOfficeId: taken } = await newOfficer();
+    const ho = await createAccount(db, ADMIN, { ...officer(null), role: "HO_OFFICER" });
+    if (!ho.ok) throw new Error(ho.error);
+    const user = await db.user.findUniqueOrThrow({ where: { username: ho.value.username } });
+    expect(await updateAccount(db, ADMIN, user.id, officer(taken))).toEqual({ ok: false, error: "officeTaken" });
   });
 });
 
 describe("changing an account (ADM-4)", () => {
   it("moves an officer to another office and keeps both offices in the history", async () => {
-    const created = await createAccount(db, ADMIN, officer(homagama));
-    if (!created.ok) throw new Error(created.error);
-    const user = await db.user.findUniqueOrThrow({ where: { username: created.value.username } });
+    const { user, dsOfficeId: from } = await newOfficer();
+    const to = await freeOfficeId(db);
 
-    const result = await updateAccount(db, ADMIN, user.id, officer(kaduwela));
+    const result = await updateAccount(db, ADMIN, user.id, officer(to));
     expect(result).toEqual({ ok: true, value: { changed: ["dsOfficeId"] } });
 
     const [latest] = await accountHistory(db, user.id);
     expect(latest).toMatchObject({
       action: "account_updated",
       actorName: "පරිපාලක",
-      before: { dsOfficeId: homagama },
-      after: { dsOfficeId: kaduwela },
+      before: { dsOfficeId: from },
+      after: { dsOfficeId: to },
     });
   });
 
   it("records nothing when nothing changed", async () => {
-    const created = await createAccount(db, ADMIN, officer(homagama));
-    if (!created.ok) throw new Error(created.error);
-    const user = await db.user.findUniqueOrThrow({ where: { username: created.value.username } });
-    expect(await updateAccount(db, ADMIN, user.id, officer(homagama))).toEqual({ ok: true, value: { changed: [] } });
+    const { user, dsOfficeId } = await newOfficer();
+    expect(await updateAccount(db, ADMIN, user.id, officer(dsOfficeId))).toEqual({ ok: true, value: { changed: [] } });
     expect(await accountHistory(db, user.id)).toHaveLength(1);
   });
 });
 
 describe("resetting a password (ADM-5)", () => {
   it("issues a new temporary password, clears a lock and ends the sessions", async () => {
-    const created = await createAccount(db, ADMIN, officer(homagama));
-    if (!created.ok) throw new Error(created.error);
+    const { user: created, credentials } = await newOfficer();
     const user = await db.user.update({
-      where: { username: created.value.username },
+      where: { id: created.id },
       data: { mustChangePassword: false, failedSignIns: 3, lockedUntil: new Date(Date.now() + 60_000) },
     });
     await db.session.create({
@@ -109,7 +139,7 @@ describe("resetting a password (ADM-5)", () => {
     expect(await verifyPassword({ hash: await passwordOf(user.id), password: result.value.temporaryPassword })).toBe(
       true,
     );
-    expect(await verifyPassword({ hash: await passwordOf(user.id), password: created.value.temporaryPassword })).toBe(
+    expect(await verifyPassword({ hash: await passwordOf(user.id), password: credentials.temporaryPassword })).toBe(
       false,
     );
     expect(await db.user.findUniqueOrThrow({ where: { id: user.id } })).toMatchObject({
@@ -124,9 +154,7 @@ describe("resetting a password (ADM-5)", () => {
 
 describe("disabling an account (ADM-6)", () => {
   it("disables and re-enables an officer, ending their sessions", async () => {
-    const created = await createAccount(db, ADMIN, officer(homagama));
-    if (!created.ok) throw new Error(created.error);
-    const user = await db.user.findUniqueOrThrow({ where: { username: created.value.username } });
+    const { user } = await newOfficer();
     await db.session.create({
       data: {
         id: "disable-session",
@@ -149,7 +177,7 @@ describe("disabling an account (ADM-6)", () => {
 
   it("won't let an admin disable themselves, or the last active admin", async () => {
     expect(await setAccountDisabled(db, ADMIN, ADMIN, true)).toEqual({ ok: false, error: "self" });
-    const otherAdmin = await createAccount(db, ADMIN, { ...officer(homagama), role: "ADMIN", dsOfficeId: null });
+    const otherAdmin = await createAccount(db, ADMIN, { ...officer(null), role: "ADMIN" });
     if (!otherAdmin.ok) throw new Error(otherAdmin.error);
     const other = await db.user.findUniqueOrThrow({ where: { username: otherAdmin.value.username } });
 
@@ -158,9 +186,7 @@ describe("disabling an account (ADM-6)", () => {
     // ...and once ADMIN is the only active admin left (other test files may have made admins too),
     // it can't be demoted by someone else either.
     await db.user.updateMany({ where: { role: "ADMIN", id: { not: ADMIN } }, data: { banned: true } });
-    expect(
-      await updateAccount(db, other.id, ADMIN, { ...officer(homagama), role: "HO_OFFICER", dsOfficeId: null }),
-    ).toEqual({
+    expect(await updateAccount(db, other.id, ADMIN, { ...officer(null), role: "HO_OFFICER" })).toEqual({
       ok: false,
       error: "lastAdmin",
     });
@@ -169,9 +195,12 @@ describe("disabling an account (ADM-6)", () => {
 
 describe("the account list (ADM-1)", () => {
   it("finds accounts by office name and filters by role", async () => {
-    const found = await listAccounts(db, { q: "හෝමාගම", role: "DS_OFFICER" });
-    expect(found.length).toBeGreaterThan(0);
-    expect(found.every((row) => row.officeName === "හෝමාගම" && row.role === "DS_OFFICER")).toBe(true);
-    expect(await listAccounts(db, { role: "HO_OFFICER", q: "හෝමාගම" })).toEqual([]);
+    const { user, dsOfficeId } = await newOfficer();
+    const office = await db.dsOffice.findUniqueOrThrow({ where: { id: dsOfficeId } });
+
+    const found = await listAccounts(db, { q: office.nameSi, role: "DS_OFFICER" });
+    expect(found.map((row) => row.id)).toContain(user.id);
+    expect(found.every((row) => row.role === "DS_OFFICER")).toBe(true);
+    expect(await listAccounts(db, { role: "HO_OFFICER", q: office.nameSi })).toEqual([]);
   });
 });
