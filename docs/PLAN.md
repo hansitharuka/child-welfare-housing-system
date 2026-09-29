@@ -39,7 +39,6 @@ src/
     ho/                 Head Office screens
     admin/              admin screens
     files/[id]/route.ts protected file downloads
-    api/auth/[...all]/  Better Auth handler
   components/           ui/ (shadcn), shell/ (header, menu), forms/
   server/               data-access layer: context, permissions, audit, one folder per area
   lib/                  nic.ts, phone.ts, dates.ts, money.ts, validation/ (Zod schemas)
@@ -109,9 +108,9 @@ docker-compose.yml, docker-compose.dev.yml
 | 3.3 | Edit account and transfer to another office, with history | ADM-4, PRM-3 | `src/server/users/*` |
 | 3.4 | Reset password, disable and enable, with the "last admin" and "not yourself" rules | ADM-5, ADM-6, ADM-7 | `src/server/users/*` |
 | 3.5 | Lists: districts and DS offices (add, rename, deactivate) | LST-2, LST-3 | `src/app/admin/lists/*`, `src/server/lists/*` |
-| 3.6 | Lists: stages per kind (add, rename, reorder, deactivate) | LST-4 | `src/app/admin/lists/stages/*` |
+| 3.6 | Lists: stages per kind (add, rename, reorder, deactivate), on a second tab of the lists page (`/admin/lists?tab=stages`) | LST-4 | `src/app/admin/lists/*`, `src/server/lists/*` |
 
-**Tests:** unit tests for username generation and the account rules; e2e for creating a DS officer who then signs in (AC-3), and for an admin trying a Head Office page (not found).
+**Tests:** unit tests for username generation and the account rules; database tests for every account and list command and its audit record; e2e for creating a DS officer who then signs in (AC-3), transfer, reset and disable, adding an office and a stage, and a Head Office officer trying an admin page (not found).
 
 **Done when:**
 - AC-3 passes.

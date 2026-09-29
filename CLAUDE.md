@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Phases 1 (foundation) and 2 (sign-in and permissions) of `docs/PLAN.md` are built. You get a Sinhala Next.js shell for the three roles, PostgreSQL with the place and stage lists, sign-in with lockout and forced password change, a permission layer, an append-only audit log, security headers, tests and CI. The screens behind sign-in are still placeholders (Phase 3 onwards).
+Phases 1 (foundation), 2 (sign-in and permissions) and 3 (admin: accounts and lists) of `docs/PLAN.md` are built. You get a Sinhala Next.js shell for the three roles, PostgreSQL with the place and stage lists, sign-in with lockout and forced password change, a permission layer, an append-only audit log, security headers, the admin's users and lists screens, tests and CI. The DS officer and Head Office screens are still placeholders (Phase 4 onwards).
 
 The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
@@ -54,6 +54,19 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 
   The password is `Sample-Pass-2026`, and the temporary one is `Temp-Pass-2026` (`prisma/seed-users.ts`).
 - **Raw SQL doesn't get the `?schema=` from the URL.** Name the schema in the query, or rely on the default `public`.
+
+### Admin screens (Phase 3)
+
+- **The pattern for a feature:**
+  - The Zod schema goes in `src/lib/validation/`. Its error messages are message keys, not text.
+  - Queries and commands go in `src/server/<area>/`. They take `db` as their first argument, so the database tests can pass a test client.
+  - Commands return `{ ok: true, … }` or `{ ok: false, error: "<message key>" }` and write the audit record in the same transaction.
+  - Server Actions (`actions.ts` beside the page) call `requireRole`, parse the form, call the command and `revalidatePath`.
+- **Forms keep what was typed.** React 19 resets uncontrolled fields after an action, so forms that can be refused use controlled fields (`account-form.tsx`, `list-forms.tsx`).
+- **A temporary password is shown once.** It comes back in the action's state and is never stored in plain text or put in a URL. Remounting the component (`key`) clears it.
+- **Usernames are generated** as `ds`/`ho`/`ad` plus four digits (`src/server/users/usernames.ts`), and accounts have a placeholder email. Accounts, offices and stages are never deleted, only disabled or deactivated (ADM-7, LST-3).
+- **Database test files share one schema per run** and run one after another. A test must not assume it sees only its own rows, and must put back anything shared that it changes.
+- **End-to-end tests add data.** Offices and stages they add carry `TEST_MARKER` and are removed by `tests/e2e/cleanup.ts` before each run. The accounts they create stay, named "ඊ. පරීක්ෂණ", because the audit log refers to them.
 
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 

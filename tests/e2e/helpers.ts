@@ -13,6 +13,14 @@ export const TEXT = {
   wrongSignIn: /පරිශීලක නාමය හෝ මුරපදය වැරදියි/,
 };
 
+/** Marks the offices and stages the tests add, so tests/e2e/cleanup.ts can remove them. */
+export const TEST_MARKER = "Playwright";
+
+/** Random capital letters, to keep names and codes the tests add apart. */
+export function randomLetters(count: number): string {
+  return Array.from({ length: count }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join("");
+}
+
 /**
  * Gives the page its own client address. In production Nginx passes the real one; here it keeps
  * each test's sign-ins apart, so the 10-per-minute limit (SEC-4) doesn't block a busy test run.

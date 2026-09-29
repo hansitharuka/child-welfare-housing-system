@@ -15,7 +15,9 @@ for (const shell of shells) {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(shell.heading);
     await expect(page.getByRole("banner")).toContainText(shell.office);
     await expect(page.getByRole("link", { name: shell.heading })).toHaveAttribute("aria-current", "page");
-    expect(await page.locator("body").innerText()).not.toMatch(/[A-Za-z]/);
+    // Usernames such as ds0101 are data, written in Latin letters on purpose (the admin's users list shows them).
+    const text = (await page.locator("body").innerText()).replace(/\b(?:ds|ho|ad)\d{4,}\b/g, "");
+    expect(text).not.toMatch(/[A-Za-z]/);
   });
 }
 
