@@ -48,8 +48,8 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 - **`src/proxy.ts` has only two jobs:** a quick redirect of signed-out visitors, and a fresh CSP nonce on every page. Because of the nonce, the root layout makes every page render per request.
 - **Sample accounts** exist in development and tests only, never in staging or production:
   - `ds0101` (Homagama) and `ds0103` (Kaduwela)
-  - `ds0102` (has a temporary password)
-  - `ds0199` (kept for the lockout test)
+  - `ds0102` (Maharagama; has a temporary password)
+  - `ds0199` (Kesbewa; kept for the lockout test)
   - `ho0001` and `ad0001`
 
   The password is `Sample-Pass-2026`, and the temporary one is `Temp-Pass-2026` (`prisma/seed-users.ts`).
@@ -65,8 +65,15 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 - **Forms keep what was typed.** React 19 resets uncontrolled fields after an action, so forms that can be refused use controlled fields (`account-form.tsx`, `list-forms.tsx`).
 - **A temporary password is shown once.** It comes back in the action's state and is never stored in plain text or put in a URL. Remounting the component (`key`) clears it.
 - **Usernames are generated** as `ds`/`ho`/`ad` plus four digits (`src/server/users/usernames.ts`), and accounts have a placeholder email. Accounts, offices and stages are never deleted, only disabled or deactivated (ADM-7, LST-3).
-- **Database test files share one schema per run** and run one after another. A test must not assume it sees only its own rows, and must put back anything shared that it changes.
-- **End-to-end tests add data.** Offices and stages they add carry `TEST_MARKER` and are removed by `tests/e2e/cleanup.ts` before each run. The accounts they create stay, named "ඊ. පරීක්ෂණ", because the audit log refers to them.
+- **One active DS officer per DS office (ADM-3).** Each DS has one Child Rights Promotion Officer (ළමා හිමිකම් ප්‍රවර්ධන නිලධාරී), the name the screens give the `DS_OFFICER` role.
+  - The account commands refuse a second one with `officeTaken`.
+  - A partial unique index (`app_user_one_active_ds_officer_per_office`, a hand-written migration) enforces it in the database too. Prisma ignores that index, so `migrate dev` won't drop it.
+  - `banned` is never null, so "active" is simply `banned: false`.
+- **Database test files share one schema per run** and run one after another. A test must not assume it sees only its own rows, and must put back anything shared that it changes. A test that adds a DS officer takes a free office from `freeOfficeId()` (`tests/db/client.ts`).
+- **End-to-end tests add data.** `tests/e2e/cleanup.ts` runs before each run:
+  - It removes the offices and stages the tests added, which carry `TEST_MARKER`.
+  - It disables the officer accounts they created, named "ඊ. පරීක්ෂණ", which frees their Gampaha offices. The accounts stay, because the audit log refers to them.
+  - A sample-account reset disables any other active officer at a sample office.
 
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 
@@ -87,7 +94,7 @@ These may not be in `docs/PRD.md` yet. Once the PRD is approved, it overrides th
 - **Platform:** a web app used on office PCs and on phones. Since 28 Sep, screens are designed for desktop first, for DS officers as well as Head Office.
 - **Language and ease of use (28 Sep):** the screens are in Sinhala, because officers are non-technical and all their other systems are in Sinhala. Keep screens simple: one main task per screen, plain words, and the sheet's own terms (for example නිවාසගත, අවදානම් දරුවන්, පළමු වාරිකය).
 - **Roles (v1 only):**
-  - AG (Divisional Secretariat) officer: sees their own office only.
+  - AG (Divisional Secretariat) officer: sees their own office only. This is the DS's Child Rights Promotion Officer (ළමා හිමිකම් ප්‍රවර්ධන නිලධාරී). Each DS has one, and they run the system for their DS (29 Sep), so a DS has one active officer account.
   - Head Office officer: sees everything and can add and edit beneficiaries.
   - Head Office admin: manages accounts and master lists.
 - **Money:** Rs. 2,000,000 per case, paid as 4 fixed installments of Rs. 500,000. This includes land-only cases.
