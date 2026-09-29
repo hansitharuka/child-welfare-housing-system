@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { headers } from "next/headers";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getTranslations } from "next-intl/server";
 import "./globals.css";
@@ -25,6 +26,8 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Reading the request makes every page render per request, so each one gets the proxy's CSP nonce (SEC-5).
+  await headers();
   const locale = await getLocale();
   return (
     <html lang={locale} className={`${sinhala.variable} ${latin.variable} h-full antialiased`}>

@@ -1,0 +1,21 @@
+import { getTranslations } from "next-intl/server";
+import { redirect } from "next/navigation";
+import { homeFor } from "@/server/auth/roles";
+import { getContext } from "@/server/context";
+import { SignInForm } from "./sign-in-form";
+
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string | string[] }> }) {
+  const context = await getContext();
+  if (context) redirect(context.mustChangePassword ? "/change-password" : homeFor(context.role));
+
+  const { next } = await searchParams;
+  const t = await getTranslations("login");
+
+  return (
+    <div className="flex flex-col gap-6">
+      <h1 className="text-[26px] leading-snug font-bold">{t("title")}</h1>
+      <SignInForm next={typeof next === "string" ? next : ""} />
+      <p className="text-[15px] text-muted-foreground">{t("help")}</p>
+    </div>
+  );
+}

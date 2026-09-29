@@ -1,23 +1,30 @@
 import "dotenv/config";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "../src/generated/prisma/client";
+import { createPrismaClient } from "../src/server/db";
 import { seed } from "./seed-data";
+import { putSampleUsers, sampleUsersAllowed } from "./seed-users";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) throw new Error("DATABASE_URL is not set");
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) throw new Error("DATABASE_URL is not set");
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+const prisma = createPrismaClient(databaseUrl);
 
-seed(prisma)
-  .then(async () => {
-    const [provinces, districts, offices, stages] = await Promise.all([
-      prisma.province.count(),
-      prisma.district.count(),
-      prisma.dsOffice.count(),
-      prisma.stageDefinition.count(),
-    ]);
-    console.log(`Seeded: ${provinces} provinces, ${districts} districts, ${offices} DS offices, ${stages} stages.`);
-  })
+async function main() {
+  await seed(prisma);
+  const [provinces, districts, offices, stages] = await Promise.all([
+    prisma.province.count(),
+    prisma.district.count(),
+    prisma.dsOffice.count(),
+    prisma.stageDefinition.count(),
+  ]);
+  console.log(`Seeded: ${provinces} provinces, ${districts} districts, ${offices} DS offices, ${stages} stages.`);
+
+  if (sampleUsersAllowed()) {
+    const added = await putSampleUsers(prisma, { reset: false });
+    console.log(`Sample accounts added: ${added} (development and tests only).`);
+  }
+}
+
+main()
   .catch((error: unknown) => {
     console.error(error);
     process.exitCode = 1;
