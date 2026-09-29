@@ -28,10 +28,14 @@ jobs:
           --health-retries 10
 
     env:
-      # Only the test database exists in CI; DATABASE_URL is never connected to here.
-      DATABASE_URL: postgresql://diviyata:diviyata_ci@localhost:5432/diviyata?schema=public
+      # One throwaway database. The end-to-end tests use its "e2e" schema; the database tests
+      # create and drop a schema of their own for each run.
+      DATABASE_URL: postgresql://diviyata:diviyata_ci@localhost:5432/diviyata_test?schema=e2e
       TEST_DATABASE_URL: postgresql://diviyata:diviyata_ci@localhost:5432/diviyata_test?schema=public
       APP_ENV: ci
+      # Used only by this CI run's throwaway database; never used anywhere else.
+      BETTER_AUTH_SECRET: ci-only-secret-for-the-throwaway-test-database-0000
+      BETTER_AUTH_URL: http://localhost:3100
 
     steps:
       - uses: actions/checkout@v4
@@ -64,6 +68,11 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Prepare the end-to-end database
+        run: |
+          npx prisma migrate deploy
+          npx prisma db seed
 
       - name: End-to-end tests
         run: |
