@@ -48,6 +48,7 @@ model DsOffice {
   active     Boolean  @default(true)
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
+  users      User[]
 
   @@unique([districtId, nameSi])
   @@index([districtId])
@@ -86,4 +87,101 @@ model AuditLog {
   @@index([caseId])
   @@index([at])
   @@map("audit_log")
+}
+
+// ---------------------------------------------------------------------------
+// Sign-in (Phase 2). User, Session, Account and Verification follow the fields Better Auth 1.7
+// expects, including its username and admin plugins. The other fields are ours (SPEC section 5).
+// ---------------------------------------------------------------------------
+
+/// An officer's account. Never deleted (ADM-7).
+model User {
+  id                     String    @id
+  /// The officer's full name.
+  name                   String
+  /// Better Auth needs a unique address; officers without one get a placeholder (see src/lib/auth.ts).
+  email                  String    @unique
+  emailVerified          Boolean   @default(false) @map("email_verified")
+  image                  String?
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  /// Generated sign-in name such as ds0101 (ADM-2).
+  username               String?   @unique
+  displayUsername        String?   @map("display_username")
+  /// DS_OFFICER, HO_OFFICER or ADMIN; a database check allows nothing else.
+  role                   String?
+  /// true means the account is disabled (ADM-6).
+  banned                 Boolean?  @default(false)
+  banReason              String?   @map("ban_reason")
+  banExpires             DateTime? @map("ban_expires")
+  designation            String?
+  mobile                 String?
+  /// The officer's real email address, if they have one.
+  contactEmail           String?   @map("contact_email")
+  /// Required for DS officers, empty for everyone else (checked by the database).
+  dsOfficeId             Int?      @map("ds_office_id")
+  dsOffice               DsOffice? @relation(fields: [dsOfficeId], references: [id])
+  mustChangePassword     Boolean   @default(true) @map("must_change_password")
+  /// When the current temporary password was issued; it stops working after 7 days (SEC-4).
+  temporaryPasswordSetAt DateTime? @map("temporary_password_set_at")
+  failedSignIns          Int       @default(0) @map("failed_sign_ins")
+  lockedUntil            DateTime? @map("locked_until")
+  lastSignInAt           DateTime? @map("last_sign_in_at")
+  sessions               Session[]
+  accounts               Account[]
+
+  @@index([dsOfficeId])
+  @@map("app_user")
+}
+
+model Session {
+  id             String   @id
+  /// At most 12 hours after sign-in (AUTH-4).
+  expiresAt      DateTime @map("expires_at")
+  token          String   @unique
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  ipAddress      String?  @map("ip_address")
+  userAgent      String?  @map("user_agent")
+  userId         String   @map("user_id")
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  impersonatedBy String?  @map("impersonated_by")
+  /// Ours: the session ends after 30 minutes without activity (AUTH-4).
+  lastActiveAt   DateTime @default(now()) @map("last_active_at")
+
+  @@index([userId])
+  @@map("session")
+}
+
+/// Holds the password hash (provider "credential").
+model Account {
+  id                    String    @id
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  userId                String    @map("user_id")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([identifier])
+  @@map("verification")
 }
