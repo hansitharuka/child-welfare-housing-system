@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: diviyata
+          POSTGRES_PASSWORD: diviyata_ci
+          POSTGRES_DB: diviyata_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U diviyata -d diviyata_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Only the test database exists in CI; DATABASE_URL is never connected to here.
+      DATABASE_URL: postgresql://diviyata:diviyata_ci@localhost:5432/diviyata?schema=public
+      TEST_DATABASE_URL: postgresql://diviyata:diviyata_ci@localhost:5432/diviyata_test?schema=public
+      APP_ENV: ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Formatting
+        run: npm run format:check
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: No hard-coded screen text (UI-1)
+        run: npm run check:strings
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Database tests
+        run: npm run test:db
+
+      - name: Build
+        run: npm run build
+
+      - name: End-to-end tests
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+
+      - name: Dependency audit (SEC-12)
+        run: npm audit --omit=dev --audit-level=high

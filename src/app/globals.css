@@ -1,0 +1,85 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Colours and type follow the clickable prototype (UI-4, UI-7). */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sinhala), var(--font-latin), "Nirmala UI", system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-header: var(--header);
+  --color-header-foreground: var(--header-foreground);
+  --color-header-muted: var(--header-muted);
+  --color-notice: var(--notice);
+  --color-notice-foreground: var(--notice-foreground);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+:root {
+  --background: #f5f3ee;
+  --foreground: #1c2420;
+  --card: #ffffff;
+  --card-foreground: #1c2420;
+  --popover: #ffffff;
+  --popover-foreground: #1c2420;
+  --primary: #0e5a4b;
+  --primary-foreground: #ffffff;
+  --secondary: #f0eee8;
+  --secondary-foreground: #1c2420;
+  --muted: #f0eee8;
+  --muted-foreground: #4f5752;
+  --accent: #eef5f2;
+  --accent-foreground: #0e5a4b;
+  --destructive: #b42318;
+  --border: #dedad0;
+  --input: #8c877c;
+  --ring: #6fb3a2;
+  --radius: 0.625rem;
+  --header: #0e5a4b;
+  --header-foreground: #ffffff;
+  --header-muted: #d3e6df;
+  --notice: #fbebd3;
+  --notice-foreground: #7a4105;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    font-size: 16px;
+  }
+  body {
+    @apply bg-background text-foreground;
+    line-height: 1.5;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
