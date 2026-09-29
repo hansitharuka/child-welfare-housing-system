@@ -1,0 +1,67 @@
+import { z } from "zod";
+import { ROLES } from "@/server/auth/roles";
+
+/**
+ * The account form (ADM-2, ADM-4), checked the same way in the browser and in the Server Action.
+ * Error messages are keys under "users.form.errors" in messages/si.json.
+ */
+export type AccountErrorKey = "required" | "tooShort" | "tooLong" | "mobile" | "email" | "role" | "office";
+
+const MOBILE = /^0\d{9}$/;
+
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max, { error: "tooLong" })
+    .transform((value) => value || null);
+
+export const accountSchema = z
+  .object({
+    name: z.string().trim().min(1, { error: "required" }).min(2, { error: "tooShort" }).max(100, { error: "tooLong" }),
+    designation: optionalText(100),
+    mobile: z
+      .string()
+      .transform((value) => value.replace(/\s/g, ""))
+      .pipe(z.string().min(1, { error: "required" }).regex(MOBILE, { error: "mobile" })),
+    contactEmail: z
+      .string()
+      .trim()
+      .max(254, { error: "tooLong" })
+      .refine((value) => value === "" || z.email().safeParse(value).success, { error: "email" })
+      .transform((value) => value || null),
+    role: z.enum(ROLES, { error: "role" }),
+    dsOfficeId: z
+      .string()
+      .transform((value) => (value === "" ? null : Number(value)))
+      .refine((value) => value === null || (Number.isInteger(value) && value > 0), { error: "office" }),
+  })
+  .superRefine((value, context) => {
+    if (value.role === "DS_OFFICER" && value.dsOfficeId === null) {
+      context.addIssue({ code: "custom", path: ["dsOfficeId"], message: "office" });
+    }
+  })
+  // Only DS officers belong to an office (SPEC section 4).
+  .transform((value) => ({ ...value, dsOfficeId: value.role === "DS_OFFICER" ? value.dsOfficeId : null }));
+
+export type AccountInput = z.output<typeof accountSchema>;
+export type AccountField = keyof z.input<typeof accountSchema>;
+export type AccountErrors = Partial<Record<AccountField, AccountErrorKey>>;
+
+const FIELDS: AccountField[] = ["name", "designation", "mobile", "contactEmail", "role", "dsOfficeId"];
+
+/** Reads the account form. Missing fields count as empty. */
+export function parseAccountForm(
+  read: (field: AccountField) => string,
+): { ok: true; value: AccountInput } | { ok: false; errors: AccountErrors } {
+  const raw = Object.fromEntries(FIELDS.map((field) => [field, read(field)]));
+  const result = accountSchema.safeParse(raw);
+  if (result.success) return { ok: true, value: result.data };
+
+  const errors: AccountErrors = {};
+  for (const issue of result.error.issues) {
+    const field = issue.path[0] as AccountField;
+    errors[field] ??= issue.message as AccountErrorKey;
+  }
+  return { ok: false, errors };
+}
