@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Phase 1 (foundation) of `docs/PLAN.md` is built: a Sinhala Next.js shell for the three roles, PostgreSQL with the place and stage lists, tests and CI. There is no sign-in yet (Phase 2).
+Phases 1 (foundation) and 2 (sign-in and permissions) of `docs/PLAN.md` are built. You get a Sinhala Next.js shell for the three roles, PostgreSQL with the place and stage lists, sign-in with lockout and forced password change, a permission layer, an append-only audit log, security headers, tests and CI. The screens behind sign-in are still placeholders (Phase 3 onwards).
 
 The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
@@ -24,6 +24,7 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 | End-to-end tests | `npm run test:e2e`; one test: `npx playwright test tests/e2e/smoke.spec.ts -g "/ds"` |
 | Production build and server | `npm run build`, then `npm run start:standalone` |
 | Change the database schema | edit `prisma/schema.prisma`, then `npx prisma migrate dev --name <change>` |
+| Put the sample accounts back to their start state | `npx tsx prisma/seed-users.ts --reset` (the end-to-end tests do this themselves) |
 
 ## Things to know when coding
 
@@ -35,6 +36,24 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 - **The Sinhala font is committed** in `src/app/fonts/`, copied from `@fontsource-variable/noto-sans-sinhala`. Nothing loads from Google at runtime.
 - **The `overrides` in `package.json`** force patched `deepmerge-ts` and `mysql2` inside the Prisma CLI. Remove them once Prisma ships fixed versions.
 - **Pinned versions.** `.npmrc` saves exact versions. Upgrade one dependency at a time, on purpose.
+
+### Sign-in and permissions (Phase 2)
+
+- **Every page and Server Action starts with `requireRole(...)`** or `requireSignedIn()` from `src/server/context.ts`. Put the check in each page as well as its layout, because layouts don't re-run on client-side navigation. Anything out of scope answers `notFound()`, never "forbidden" (PRM-1, ERR-2).
+- **Limit case queries with `officeFilter(viewer)`** from `src/server/permissions.ts`. A DS officer sees only their own office, Head Office sees every office, and an admin sees none.
+- **Every change calls `writeAudit(tx, …)`** (`src/server/audit.ts`) in the same `db.$transaction` as the change. A database trigger refuses any update or delete of `audit_log`.
+- **Better Auth's HTTP endpoints are deliberately not mounted.** Sign-in, sign-out and password changes are Server Actions in `src/app/(auth)/actions.ts`. They pass through our lockout (`src/server/auth/lockout.ts`) and the per-IP rate limit.
+- **The rate limit trusts `X-Forwarded-For`.** In production, Nginx must overwrite that header with the real client address (Phase 9). The end-to-end tests give each page its own address.
+- **The session ends after 30 minutes idle or 12 hours in total.** The idle time is our `session.last_active_at`, checked in `getContext()`.
+- **`src/proxy.ts` has only two jobs:** a quick redirect of signed-out visitors, and a fresh CSP nonce on every page. Because of the nonce, the root layout makes every page render per request.
+- **Sample accounts** exist in development and tests only, never in staging or production:
+  - `ds0101` (Homagama) and `ds0103` (Kaduwela)
+  - `ds0102` (has a temporary password)
+  - `ds0199` (kept for the lockout test)
+  - `ho0001` and `ad0001`
+
+  The password is `Sample-Pass-2026`, and the temporary one is `Temp-Pass-2026` (`prisma/seed-users.ts`).
+- **Raw SQL doesn't get the `?schema=` from the URL.** Name the schema in the query, or rely on the default `public`.
 
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 

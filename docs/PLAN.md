@@ -82,13 +82,13 @@ docker-compose.yml, docker-compose.dev.yml
 
 | # | Task | SPEC | Files |
 | --- | --- | --- | --- |
-| 2.1 | Better Auth with username and password, sessions in PostgreSQL, the admin plugin; User fields from section 5 | AUTH-1, AUTH-6 | `src/lib/auth.ts`, `src/app/api/auth/[...all]/route.ts`, `prisma/schema.prisma` |
+| 2.1 | Better Auth with username and password, sessions in PostgreSQL, the admin plugin; User fields from section 5. Its HTTP endpoints are not mounted: sign-in, sign-out and password changes go through Server Actions (ARC-1) | AUTH-1, AUTH-6 | `src/lib/auth.ts`, `src/app/(auth)/actions.ts`, `prisma/schema.prisma` |
 | 2.2 | Sign-in page in Sinhala; lock after 5 wrong passwords for 15 minutes; 10 attempts per minute per IP | AUTH-2, SEC-4 | `src/app/(auth)/login/*`, `src/server/auth/limits.ts` |
 | 2.3 | Forced "set a new password" page for temporary passwords | AUTH-3 | `src/app/(auth)/change-password/*` |
 | 2.4 | Session limits: 30 minutes idle, 12 hours maximum; disabled accounts stop working at once | AUTH-4, AUTH-5 | `src/lib/auth.ts` |
 | 2.5 | Data-access layer: `getContext()` (user, role, office), `requireRole()`, office scoping, and "not found" for anything out of scope | ARC-2, PRM-1–3 | `src/server/context.ts`, `src/server/permissions.ts` |
-| 2.6 | Audit writer used inside the same transaction as each change; database role that can only insert and read audit rows | ARC-4, HIS-1, HIS-3 | `src/server/audit.ts`, `prisma/migrations/*` |
-| 2.7 | Middleware that only redirects signed-out users; role home pages; the "not found" page | ARC-3, ERR-2 | `src/middleware.ts`, `src/app/not-found.tsx` |
+| 2.6 | Audit writer used inside the same transaction as each change; a database trigger that refuses any change or removal of audit rows | ARC-4, HIS-1, HIS-3 | `src/server/audit.ts`, `prisma/migrations/*` |
+| 2.7 | Proxy (Next.js 16's name for middleware) that only redirects signed-out users; role home pages; the "not found" page | ARC-3, ERR-2 | `src/proxy.ts`, `src/app/not-found.tsx` |
 | 2.8 | Security headers, Server Actions origin check, error page with a reference code, logging without personal data | SEC-5, SEC-6, SEC-8, ERR-6 | `next.config.ts`, `src/app/error.tsx`, `src/server/log.ts` |
 
 **Tests:** permission helpers for every role and office combination; an audit row is written with each change and rolled back with it; e2e for sign-in, lockout and the forced password change.

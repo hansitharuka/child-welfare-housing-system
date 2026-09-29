@@ -98,7 +98,7 @@ Amounts are whole rupees stored as integers. Nothing listed here is ever deleted
 | StageDefinition | kind, order, name, active | New-house stages are seeded (LST-4) |
 | StageUpdate | case, stage (empty means a note-only visit), on, note, by | A case's current stage is the highest stage it has reached |
 | File | stored name, original name, type, size, SHA-256, uploaded by | Linked to a case as a document, or to a stage update as a photo |
-| AuditLog | at, actor, action, entity, entity id, case, before, after | Insert and read only (HIS-3) |
+| AuditLog | at, actor, action, entity, entity id, case, before, after | Can only be added to, never changed (HIS-3) |
 | Notification | user, case, type, read at | See NTF-1 |
 
 Values used across the system:
@@ -292,7 +292,7 @@ Values used across the system:
 
 - **HIS-1** Every create, edit and status change shall write an audit record: who did it, when, the action, and the old and new values of each changed field.
 - **HIS-2** The case page shall show the case history, newest first, as plain Sinhala sentences, as in the prototype.
-- **HIS-3** Audit records cannot be edited or deleted. The database account the app uses shall have only insert and read rights on the audit table.
+- **HIS-3** Audit records cannot be edited or deleted. The database shall refuse any update, delete or truncation of the audit table, whichever database account asks.
 - **NTF-1** Notifications appear inside the system:
   - A DS's officers get one when a case is sent back, verified, rejected, released, completed, stopped or reopened.
   - Head Office officers see live counts of cases waiting for a check and waiting for release in the menu.
