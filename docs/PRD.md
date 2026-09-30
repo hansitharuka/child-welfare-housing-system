@@ -1,6 +1,6 @@
 # Diviyata Sawiyak — Product Requirements Document
 
-2026-09-28 · Janindu Pramod
+2026-09-28, updated 2026-09-29 · Janindu Pramod
 
 > **Status:** draft, awaiting approval. This file mirrors the [review copy](https://claude.ai/code/artifact/9b67ede5-1f80-41e8-96be-0af36e03eda2) of the PRD.
 
@@ -69,7 +69,7 @@ Version 1 has three kinds of login, as decided on 24 Sep. Beneficiaries do not l
 
 | Role | Who they are | What they do | Cases they see |
 | --- | --- | --- | --- |
-| DS officer | Staff at a Divisional Secretariat (the AG office), working on an office PC | Adds and submits cases, fixes cases sent back, updates installments and stages, adds photos and notes | Their own DS only |
+| DS officer | The Child Rights Promotion Officer (ළමා හිමිකම් ප්‍රවර්ධන නිලධාරී) of a Divisional Secretariat (the AG office), working on an office PC. Each DS has one, and they run the system for their DS | Adds and submits cases, fixes cases sent back, updates installments and stages, adds photos and notes | Their own DS only |
 | Head Office officer | Ministry programme staff | Verifies, sends back or rejects cases, records each Rs. 2M release, adds and edits cases, follows progress, runs reports | All cases |
 | Head Office admin | Ministry staff who run the system | Creates and disables accounts, resets passwords, keeps the lists of districts, DS divisions and stages | None: accounts and lists only |
 
@@ -77,7 +77,7 @@ What each role needs most:
 
 - **DS officer:** simple Sinhala screens on the office PC, and a clear list of what to do next.
 - **Head Office officer:** a queue of cases to check, a national picture by district and DS, and early warning of stuck cases.
-- **Head Office admin:** fast account setup for every DS office at launch.
+- **Head Office admin:** fast setup of each DS office's officer account at launch.
 
 ## How a case moves
 
@@ -156,7 +156,7 @@ Version 1 covers a case from first entry to completion, with dashboards, history
 
 ### Accounts and lists
 
-- Create an account for each named officer. Each DS officer is tied to one DS, and a DS can have more than one officer.
+- Create an account for each named officer. Each DS has one Child Rights Promotion Officer, so it has one active DS officer account. When the officer changes, disable the old account and create one for the new officer.
 - Give each new account a temporary password, which the officer must change at first login. Reset passwords the same way.
 - Disable the account of an officer who leaves; their past changes stay in the history. Move an officer to another DS when they transfer.
 - Keep the lists of provinces, districts, DS divisions, and the stages for new houses and renovations. Entries are never deleted.
@@ -180,11 +180,12 @@ Rules marked Decided come from the brief or the 24 Sep decisions. Rules marked P
 | Photos and documents | Optional, and never block anything. A case can be submitted with no documents | Decided |
 | Kinds of help | A new house or the renovation of an existing house only. Land cases have not started, so they stay out of the system | Decided |
 | Who sees what | A DS officer sees only their own DS; Head Office sees every case | Decided |
+| One officer per DS | Each DS has one Child Rights Promotion Officer, who runs the system for that DS, so a DS has one active DS officer account (decided 29 Sep) | Decided |
 | Send back | Head Office can return a case for correction instead of rejecting it | Proposed |
 | Editing a verified case | Only Head Office can change a verified case's details, and every change is logged | Proposed |
 | Nothing is deleted | Rejected and stopped cases stay in the system with their reasons | Proposed |
 | When a case is complete | Installment 4 is released and the last stage is reached | Proposed |
-| One account per person | Each account belongs to one named officer. A DS can have more than one officer, and offices don't share a login | Proposed |
+| One account per person | Each account belongs to one named officer, and offices don't share a login. When the officer changes, the old account is disabled and the new officer gets their own | Proposed |
 | NIC found in another DS | The DS officer sees only the other case's number and DS, not the person's details. Head Office sees everything | Proposed |
 
 ## What a case records

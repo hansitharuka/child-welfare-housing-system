@@ -13,6 +13,17 @@ export const TEXT = {
   wrongSignIn: /පරිශීලක නාමය හෝ මුරපදය වැරදියි/,
 };
 
+/** Marks the offices and stages the tests add, so tests/e2e/cleanup.ts can remove them. */
+export const TEST_MARKER = "Playwright";
+
+/** The name of every DS officer account the tests create; cleanup.ts disables them before each run. */
+export const TEST_OFFICER_NAME = "ඊ. පරීක්ෂණ";
+
+/** Random capital letters, to keep names and codes the tests add apart. */
+export function randomLetters(count: number): string {
+  return Array.from({ length: count }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join("");
+}
+
 /**
  * Gives the page its own client address. In production Nginx passes the real one; here it keeps
  * each test's sign-ins apart, so the 10-per-minute limit (SEC-4) doesn't block a busy test run.
@@ -20,6 +31,23 @@ export const TEXT = {
 async function giveOwnAddress(page: Page) {
   const part = () => Math.floor(Math.random() * 250) + 1;
   await page.setExtraHTTPHeaders({ "x-forwarded-for": `10.${part()}.${part()}.${part()}` });
+}
+
+/**
+ * The page's visible screen text (UI-1). Table rows hold data, such as names and usernames, which
+ * may be in any script, so they are left out.
+ */
+export function screenText(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const parts: string[] = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const parent = node.parentElement;
+      if (!parent || parent.closest("tbody, script, style, template") || !parent.checkVisibility()) continue;
+      parts.push(node.textContent ?? "");
+    }
+    return parts.join(" ");
+  });
 }
 
 /** A form's error box. Next.js has its own hidden role="alert" element, so find ours by id. */

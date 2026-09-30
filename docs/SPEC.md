@@ -1,6 +1,6 @@
 # Diviyata Sawiyak — Software Specification
 
-2026-09-28 · Janindu Pramod
+2026-09-28, updated 2026-09-29 · Janindu Pramod
 
 > **Status:** draft. This SPEC turns the [PRD](PRD.md) into requirements precise enough to build and test against. The [clickable prototype](https://claude.ai/artifact/DQarnsyMfCao1y6SmpMDbT) shows the screens. The PRD's open questions are deferred: [section 13](#13-deferred-questions-and-the-defaults-used) gives the default this SPEC uses for each until the Ministry answers.
 
@@ -60,7 +60,7 @@ Rules for the stack:
 
 ## 4. Roles and permissions
 
-Every account has exactly one role. A DS officer belongs to exactly one DS office. Head Office officers and admins belong to none.
+Every account has exactly one role. A DS officer is the DS's Child Rights Promotion Officer (ළමා හිමිකම් ප්‍රවර්ධන නිලධාරී, the name the screens use). Each DS has one, and they run the system for their DS. A DS officer belongs to exactly one DS office, and a DS office has at most one active DS officer (ADM-3). Head Office officers and admins belong to none.
 
 | Action | DS officer | Head Office officer | Admin |
 | --- | --- | --- | --- |
@@ -90,7 +90,7 @@ Amounts are whole rupees stored as integers. Nothing listed here is ever deleted
 | Province | name (Sinhala) | 9 rows, seeded |
 | District | name, province | 25 rows, seeded |
 | DsOffice | name, code, district, active | `code` is 3 capital letters, unique nationally, and used in case numbers. Name is unique within its district |
-| User | full name, designation, mobile, email, username, role, DS office, active, must change password, last sign-in, failed sign-ins, locked until | DS office is required for DS officers only. Username is generated (ADM-2) and unique |
+| User | full name, designation, mobile, email, username, role, DS office, active, must change password, last sign-in, failed sign-ins, locked until | DS office is required for DS officers only, and an office has at most one active DS officer (ADM-3). Username is generated (ADM-2) and unique |
 | Case | case number, DS office, category, kind, status, name, child's name, NIC, NIC key, address, mobile 1, mobile 2, remark, sheet reference, created by, submitted at, verified at, completed at, closed at, close reason, version | See CASE-2 for field rules. `version` goes up by one on every save (CASE-10) |
 | Decision | case, type, reason, by, at | Types: submit, verify, send back, reject, stop, reopen, confirm import |
 | Release | case (one per case), released on, amount, reference number, note, by, at | Amount is always 2,000,000 |
@@ -144,7 +144,7 @@ Values used across the system:
 
 - **AUTH-1** Users shall sign in with their username and password.
 - **AUTH-2** After 5 wrong passwords in a row, the account shall be locked for 15 minutes. The message shall be the same whether or not the username exists.
-- **AUTH-3** An account with a temporary password shall go straight to a "set a new password" page and reach no other page until it is done. The new password shall have at least 10 characters and differ from the temporary one.
+- **AUTH-3** An account with a temporary password shall go straight to a "set a new password" page and reach no other page until it is done. The new password shall have at least 8 characters and differ from the temporary one.
 - **AUTH-4** A session shall end after 30 minutes without activity, and always after 12 hours. Signing out shall end it at once.
 - **AUTH-5** A disabled account shall not be able to sign in. Its open sessions shall stop working on their next request.
 - **AUTH-6** Passwords shall be stored only as slow hashes, using Better Auth's default. A temporary password shall be shown once and never stored in plain text or written to any log.
@@ -155,7 +155,10 @@ Values used across the system:
 - **ADM-2** Creating an account shall take:
   - **Inputs:** full name (required, 2–100 characters), designation (optional, up to 100), mobile (required, `^0\d{9}$` once spaces are removed), email (optional, a valid address) and role (required). A DS officer also needs a district and a DS office, chosen in that order from the lists.
   - **Output:** a generated username (the role prefix `ds`, `ho` or `ad` plus 4 digits, unique) and a 12-character temporary password, shown once.
-- **ADM-3** When the chosen DS already has active officers, the form shall show their names and still allow saving.
+- **ADM-3** Each DS has one Child Rights Promotion Officer, so a DS office shall have at most one active DS officer account. The database shall enforce this as well as the server.
+  - The form shall show each office's current officer by name, and shall not offer an office that already has one.
+  - Creating, transferring or re-enabling an account into an office that has an active DS officer shall be refused, with a message to disable that account first.
+  - When the officer changes, the admin disables the old account and creates one for the new officer. The old account and its history stay (ADM-7).
 - **ADM-4** The admin shall be able to change any account detail. Changing a DS officer's office is how a transfer is recorded, and the history keeps both offices.
 - **ADM-5** Resetting a password shall show a new temporary password once, require a change at the next sign-in, and end the account's open sessions.
 - **ADM-6** The admin shall be able to disable and re-enable accounts. An admin cannot disable their own account, and at least one active admin must always remain.
@@ -414,6 +417,7 @@ Version 1 is accepted when every check below passes on staging with made-up data
 | AC-20 | No screen shows English interface text. A check in CI finds no hard-coded strings in components. | UI-1 |
 | AC-21 | With 5,000 seeded cases, the dashboard loads in under 2 seconds. | PRF-3 |
 | AC-22 | Restoring last night's backup on staging brings back the cases and their files. | SEC-10 |
+| AC-23 | The admin can't give a DS office a second active DS officer. Once the old account is disabled, an account for the new officer can be created. | ADM-3 |
 
 ## 13. Deferred questions and the defaults used
 

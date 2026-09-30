@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signInAs } from "./helpers";
+import { screenText, signInAs } from "./helpers";
 
 const shells = [
   { username: "ds0101", home: /\/ds$/, heading: "මගේ ප්‍රතිලාභීන්", office: "හෝමාගම ප්‍රාදේශීය ලේකම් කාර්යාලය" },
@@ -15,14 +15,14 @@ for (const shell of shells) {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(shell.heading);
     await expect(page.getByRole("banner")).toContainText(shell.office);
     await expect(page.getByRole("link", { name: shell.heading })).toHaveAttribute("aria-current", "page");
-    expect(await page.locator("body").innerText()).not.toMatch(/[A-Za-z]/);
+    expect(await screenText(page)).not.toMatch(/[A-Za-z]/);
   });
 }
 
 test("the sign-in page is in Sinhala only", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("පද්ධතියට ඇතුළු වන්න");
-  expect(await page.locator("body").innerText()).not.toMatch(/[A-Za-z]/);
+  expect(await screenText(page)).not.toMatch(/[A-Za-z]/);
 });
 
 test("/admin opens the users page", async ({ page }) => {
