@@ -1,6 +1,6 @@
 /** Form checks shared by the sign-in and password pages. The error codes match keys in messages/si.json. */
 
-export const PASSWORD_MIN_LENGTH = 10;
+export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_MAX_LENGTH = 128;
 
 export type SignInFormError = "required" | "invalid" | "tooMany";
@@ -13,7 +13,7 @@ export function checkSignInForm(input: { username: string; password: string }): 
 
 export type NewPasswordError = "required" | "tooShort" | "tooLong" | "mismatch" | "sameAsCurrent";
 
-/** AUTH-3: at least 10 characters, typed the same twice, and different from the current password. */
+/** AUTH-3: at least 8 characters, typed the same twice, and different from the current password. */
 export function checkNewPassword(input: { current: string; next: string; confirm: string }): NewPasswordError | null {
   if (input.current === "" || input.next === "" || input.confirm === "") return "required";
   if (input.next.length < PASSWORD_MIN_LENGTH) return "tooShort";

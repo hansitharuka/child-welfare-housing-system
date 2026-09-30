@@ -144,7 +144,7 @@ Values used across the system:
 
 - **AUTH-1** Users shall sign in with their username and password.
 - **AUTH-2** After 5 wrong passwords in a row, the account shall be locked for 15 minutes. The message shall be the same whether or not the username exists.
-- **AUTH-3** An account with a temporary password shall go straight to a "set a new password" page and reach no other page until it is done. The new password shall have at least 10 characters and differ from the temporary one.
+- **AUTH-3** An account with a temporary password shall go straight to a "set a new password" page and reach no other page until it is done. The new password shall have at least 8 characters and differ from the temporary one.
 - **AUTH-4** A session shall end after 30 minutes without activity, and always after 12 hours. Signing out shall end it at once.
 - **AUTH-5** A disabled account shall not be able to sign in. Its open sessions shall stop working on their next request.
 - **AUTH-6** Passwords shall be stored only as slow hashes, using Better Auth's default. A temporary password shall be shown once and never stored in plain text or written to any log.

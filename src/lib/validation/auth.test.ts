@@ -16,8 +16,10 @@ describe("sign-in form", () => {
 describe("new password (AUTH-3)", () => {
   const valid = { current: "Temp-Pass-2026", next: "my-new-pass-99", confirm: "my-new-pass-99" };
 
-  it("accepts a new password of at least 10 characters, typed twice", () => {
+  it("accepts a new password of at least 8 characters, typed twice", () => {
     expect(checkNewPassword(valid)).toBeNull();
+    expect(checkNewPassword({ ...valid, next: "abcd1234", confirm: "abcd1234" })).toBeNull();
+    expect(checkNewPassword({ ...valid, next: "abcd123", confirm: "abcd123" })).toBe("tooShort");
   });
 
   it("explains what is wrong", () => {
