@@ -46,6 +46,8 @@ const DETAIL_FIELDS: CaseField[] = ["childName", "name", "nic", "address", "mobi
  * CASE-1: the case form on one page, in four numbered parts, as in the prototype. Everything typed is
  * kept in state, so a refused save loses nothing (ERR-1, ERR-3). The browser runs the same checks as the
  * server before anything is sent, and submitting shows a summary to confirm first (CASE-5).
+ * In "change" mode Head Office corrects a verified case (CASE-9): one save button, and every required
+ * field must stay filled in.
  */
 export function CaseForm({
   caseId,
@@ -55,6 +57,7 @@ export function CaseForm({
   documents,
   returnReason,
   actions,
+  mode = "entry",
 }: {
   caseId: string;
   /** The version the form was opened with (CASE-10); null for a new case. */
@@ -64,6 +67,7 @@ export function CaseForm({
   documents: { id: string; name: string }[];
   returnReason: string | null;
   actions: CaseFormActions;
+  mode?: "entry" | "change";
 }) {
   const t = useTranslations("cases");
   const [state, dispatch, pending] = useActionState(actions.save, EMPTY);
@@ -133,7 +137,10 @@ export function CaseForm({
 
   async function attempt(chosen: Intent) {
     setIntent(chosen);
-    const checked = parseCaseForm((field) => values[field], chosen === "submit" ? "submit" : "draft");
+    const checked = parseCaseForm(
+      (field) => values[field],
+      chosen === "submit" || mode === "change" ? "submit" : "draft",
+    );
     const noOffice = office.kind === "choose" && chosenOffice === null;
     if (!checked.ok || noOffice) {
       setLocalErrors(checked.ok ? {} : checked.errors);
@@ -190,10 +197,13 @@ export function CaseForm({
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
-          void attempt("submit");
+          void attempt(mode === "change" ? "save" : "submit");
         }}
         className="flex min-w-0 flex-1 flex-col gap-5"
       >
+        {mode === "change" && (
+          <p className="rounded-lg bg-[#E4EDF8] px-4 py-3 text-[15px] text-[#1E4E8C]">{t("form.changeIntro")}</p>
+        )}
         {returnReason !== null && (
           <section
             aria-labelledby="returned-title"
@@ -353,7 +363,7 @@ export function CaseForm({
             className="flex flex-col gap-1.5 rounded-lg border-2 border-destructive bg-destructive/5 px-5 py-4 text-[#8F1B12]"
           >
             <p className="text-[17px] font-bold">
-              {intent === "submit" ? t("form.errors.summary") : t("form.errors.summaryDraft")}
+              {intent === "submit" && mode === "entry" ? t("form.errors.summary") : t("form.errors.summaryDraft")}
             </p>
             <ul className="flex flex-col gap-1 text-[15px]">
               {errorList.map((item) => (
@@ -371,20 +381,26 @@ export function CaseForm({
         )}
 
         <div className="flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={() => void attempt("save")}
-            disabled={busy}
-            className="h-13 rounded-lg border border-input bg-card px-6 text-[17px] font-semibold disabled:opacity-60"
-          >
-            {pending && intent === "save" ? t("form.saving") : t("form.saveDraft")}
-          </button>
+          {mode === "entry" && (
+            <button
+              type="button"
+              onClick={() => void attempt("save")}
+              disabled={busy}
+              className="h-13 rounded-lg border border-input bg-card px-6 text-[17px] font-semibold disabled:opacity-60"
+            >
+              {pending && intent === "save" ? t("form.saving") : t("form.saveDraft")}
+            </button>
+          )}
           <button
             type="submit"
             disabled={busy}
             className="h-13 rounded-lg bg-primary px-7 text-[17px] font-bold text-primary-foreground disabled:opacity-60"
           >
-            {pending && intent === "submit" ? t("form.saving") : t("form.submit")}
+            {pending && (mode === "change" || intent === "submit")
+              ? t("form.saving")
+              : mode === "change"
+                ? t("form.saveChanges")
+                : t("form.submit")}
           </button>
         </div>
       </form>

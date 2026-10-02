@@ -56,9 +56,11 @@ export function FormField({
 export function FormTextArea({
   id,
   label,
+  help,
   error,
   ...props
-}: { id: string; label: string; error?: string } & Omit<React.ComponentProps<"textarea">, "id">) {
+}: { id: string; label: string; help?: string; error?: string } & Omit<React.ComponentProps<"textarea">, "id">) {
+  const helpId = help ? `${id}-help` : undefined;
   const errorId = error ? `${id}-error` : undefined;
   return (
     <div className="flex flex-col gap-1.5">
@@ -69,10 +71,15 @@ export function FormTextArea({
         id={id}
         rows={2}
         aria-invalid={error ? true : undefined}
-        aria-describedby={errorId}
+        aria-describedby={[helpId, errorId].filter(Boolean).join(" ") || undefined}
         className="w-full resize-y rounded-lg border border-input bg-card px-3.5 py-2.5 text-[17px] leading-normal outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20"
         {...props}
       />
+      {help && (
+        <span id={helpId} className="text-sm text-muted-foreground">
+          {help}
+        </span>
+      )}
       {error && (
         <p id={errorId} className="text-[15px] font-medium text-destructive">
           {error}

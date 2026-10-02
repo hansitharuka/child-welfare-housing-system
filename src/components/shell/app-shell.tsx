@@ -1,3 +1,5 @@
+import { Bell } from "lucide-react";
+import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { signOut } from "@/app/(auth)/actions";
 import { NavLinks } from "./nav-links";
@@ -9,6 +11,7 @@ export async function AppShell({
   userName,
   officeName,
   nav,
+  bell,
   children,
 }: {
   area: Area;
@@ -16,6 +19,8 @@ export async function AppShell({
   /** The DS office of a DS officer; shown in the header instead of the general area name. */
   officeName?: string | null;
   nav: NavEntry[];
+  /** NTF-1: the notifications page and how many are unread. */
+  bell?: { href: string; unread: number };
   children: React.ReactNode;
 }) {
   const t = await getTranslations();
@@ -33,6 +38,25 @@ export async function AppShell({
               {t("app.testBanner")}
             </span>
           )}
+          {bell && (
+            <Link
+              href={bell.href}
+              aria-label={
+                bell.unread > 0 ? t("notifications.bellUnread", { count: bell.unread }) : t("notifications.bell")
+              }
+              className="relative flex size-10 items-center justify-center rounded-lg hover:bg-white/10"
+            >
+              <Bell aria-hidden="true" className="size-6" />
+              {bell.unread > 0 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute -top-1 -right-1 flex h-5.5 min-w-5.5 items-center justify-center rounded-full bg-notice px-1.5 text-[13px] font-bold text-notice-foreground"
+                >
+                  {bell.unread}
+                </span>
+              )}
+            </Link>
+          )}
           <span className="text-base" aria-label={`${t("shell.signedInAs")} ${userName}`}>
             {userName}
           </span>
@@ -48,7 +72,16 @@ export async function AppShell({
       </header>
       <NavLinks
         label={t("nav.label")}
-        items={nav.map((entry) => ({ href: entry.href, label: t(`nav.${entry.labelKey}`), exact: entry.exact }))}
+        items={nav.map((entry) => ({
+          href: entry.href,
+          label: t(`nav.${entry.labelKey}`),
+          exact: entry.exact,
+          alsoActive: entry.alsoActive,
+          badge:
+            entry.count === undefined
+              ? undefined
+              : { count: entry.count, label: t("nav.waiting", { count: entry.count }) },
+        }))}
       />
       <main className="flex-1 px-8 pt-7 pb-10">{children}</main>
     </div>

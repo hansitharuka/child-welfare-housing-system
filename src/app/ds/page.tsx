@@ -70,7 +70,7 @@ export default async function DsHomePage({
     return text ? `/ds?${text}` : "/ds";
   };
 
-  /** What comes next for the case, in the progress column. Phase 6 adds the stage reached. */
+  /** What comes next for the case, in the progress column. Phase 6 adds the installments and the stage reached. */
   const progress = (row: CaseRow) => {
     switch (row.status) {
       case "SUBMITTED": {
@@ -80,6 +80,7 @@ export default async function DsHomePage({
       case "DRAFT":
       case "RETURNED":
       case "VERIFIED":
+      case "IN_PROGRESS":
       case "COMPLETED":
       case "IMPORTED":
         return t(`home.progress.${row.status}`);
