@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { CaseStatus } from "@/generated/prisma/enums";
 import { colomboYear } from "@/lib/dates";
@@ -10,7 +9,9 @@ import { deleteStoredFile } from "../files/storage";
 import { logError } from "../log";
 import { canSeeOffice, caseScope, type Viewer } from "../permissions";
 import { nextCaseNumber } from "./numbers";
-import { canChangeOffice, canDeleteDraft, canEditDetails, EDITABLE_STATUSES } from "./rules";
+import { isUniqueViolation, Refusal } from "./refusal";
+import { canChangeOffice, canDeleteDraft, canEditDetails, editableStatuses, mustStayComplete } from "./rules";
+import { applyMove, moveRefusal } from "./transitions";
 
 /** The signed-in user making a change. */
 export type Actor = Viewer & { userId: string };
@@ -31,19 +32,13 @@ export type CaseCommandError =
   /** More than 10 documents (CASE-2). */
   | "tooManyFiles"
   /** An upload to attach isn't the actor's, or is already on a case. */
-  | "fileUnavailable";
+  | "fileUnavailable"
+  /** The case's status doesn't allow this step (STS-1). */
+  | "notAllowedNow"
+  /** The actor's role never takes this step (SPEC section 4). */
+  | "roleNotAllowed";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: CaseCommandError };
-
-/** Thrown inside a transaction to roll it back and answer with a refusal. */
-class Refusal extends Error {
-  constructor(readonly reason: CaseCommandError) {
-    super(reason);
-  }
-}
-
-const isUniqueViolation = (error: unknown) =>
-  typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
 
 export type SaveCaseInput = {
   /** A new case's id is made when its form opens, so sending the form twice can't create two cases (ERR-8). */
@@ -108,7 +103,7 @@ export async function saveCase(db: PrismaClient, actor: Actor, input: SaveCaseIn
       const value = await db.$transaction((tx) => writeCase(tx, actor, current, input, office as number));
       return { ok: true, value };
     } catch (error) {
-      if (error instanceof Refusal) return { ok: false, error: error.reason };
+      if (error instanceof Refusal) return { ok: false, error: error.reason as CaseCommandError };
       if (isUniqueViolation(error) && attempt < 3) continue;
       throw error;
     }
@@ -127,6 +122,12 @@ async function checkSave(
     if (!canEditDetails(actor.role, current.status)) return "notEditable";
     if (current.version !== input.version) return "conflict";
     if (office !== current.dsOfficeId && !canChangeOffice(actor.role, current.status)) return "notEditable";
+    // CASE-9: a verified case keeps every required field, whichever button sent the form.
+    if (mustStayComplete(current.status) && Object.keys(missingRequired(input.values)).length > 0) return "incomplete";
+  }
+  if (input.submit) {
+    const refusal = moveRefusal(actor.role, "submit", current?.status ?? "DRAFT");
+    if (refusal) return refusal;
   }
   // A new case, or a draft moving to another office, needs an active office (LST-3).
   if (!current || office !== current.dsOfficeId) {
@@ -146,25 +147,11 @@ async function writeCase(
 ): Promise<SavedCase> {
   const now = new Date();
   const fields = { ...input.values, nicKey: input.values.nic ? nicKey(input.values.nic) : null, dsOfficeId };
-  const submission = input.submit
-    ? {
-        status: "SUBMITTED" as const,
-        submittedAt: now,
-        caseNumber: current?.caseNumber ?? (await nextCaseNumber(tx, dsOfficeId, colomboYear(now))),
-      }
-    : null;
 
-  if (current) {
-    const updated = await tx.case.updateMany({
-      where: { id: current.id, version: current.version, status: { in: [...EDITABLE_STATUSES] } },
-      data: { ...fields, ...submission, version: { increment: 1 } },
-    });
-    if (updated.count === 0) throw new Refusal("conflict");
-  } else {
-    await tx.case.create({ data: { id: input.id, ...fields, createdById: actor.userId } });
-  }
+  if (!current) await tx.case.create({ data: { id: input.id, ...fields, createdById: actor.userId } });
   const documentIds = await attachDocuments(tx, actor, input.id, input.documentIds);
 
+  // CASE-9, HIS-1: the old and new value of every field that changed.
   const changed = (["dsOfficeId", ...CASE_FIELDS] as const).filter((field) => current?.[field] !== fields[field]);
   const pick = (source: Record<string, unknown>) => Object.fromEntries(changed.map((f) => [f, source[f] ?? null]));
   if (!current) {
@@ -188,25 +175,37 @@ async function writeCase(
     });
   }
 
-  if (!submission) {
-    if (!current) return { id: input.id, caseNumber: null, status: "DRAFT" };
-    return { id: input.id, caseNumber: current.caseNumber, status: current.status };
+  if (!input.submit) {
+    if (current) {
+      const updated = await tx.case.updateMany({
+        where: { id: current.id, version: current.version, status: { in: [...editableStatuses(actor.role)] } },
+        data: { ...fields, version: { increment: 1 } },
+      });
+      if (updated.count === 0) throw new Refusal("conflict");
+      return { id: input.id, caseNumber: current.caseNumber, status: current.status };
+    }
+    return { id: input.id, caseNumber: null, status: "DRAFT" };
   }
-  // A new case is created as a draft first, so its history reads "created", then "submitted".
-  if (!current) await tx.case.update({ where: { id: input.id }, data: submission });
-  await tx.decision.create({
-    data: { id: randomUUID(), caseId: input.id, type: "SUBMIT", byId: actor.userId, at: now },
-  });
-  await writeAudit(tx, {
-    actorId: actor.userId,
-    action: "case_submitted",
-    entityType: "case",
-    entityId: input.id,
-    caseId: input.id,
-    before: { status: current?.status ?? "DRAFT" },
-    after: { status: "SUBMITTED", caseNumber: submission.caseNumber },
-  });
-  return { id: input.id, caseNumber: submission.caseNumber, status: "SUBMITTED" };
+
+  // CASE-5: the number is given on the first submit only. A new case was created as a draft above, so
+  // its history reads "created", then "submitted"; a saved one changes its fields with the move.
+  const caseNumber = current?.caseNumber ?? (await nextCaseNumber(tx, dsOfficeId, colomboYear(now)));
+  await applyMove(
+    tx,
+    current
+      ? { id: current.id, status: current.status, dsOfficeId: current.dsOfficeId, version: current.version }
+      : { id: input.id, status: "DRAFT", dsOfficeId, version: 1 },
+    "submit",
+    {
+      by: actor.role,
+      actorId: actor.userId,
+      at: now,
+      checkVersion: true,
+      data: { ...(current ? fields : {}), submittedAt: now, caseNumber },
+      auditAfter: { caseNumber },
+    },
+  );
+  return { id: input.id, caseNumber, status: "SUBMITTED" };
 }
 
 const withoutEmpty = (values: Record<string, unknown>) =>
@@ -265,7 +264,7 @@ export async function deleteDraft(db: PrismaClient, actor: Actor, id: string): P
       return onCase;
     });
   } catch (error) {
-    if (error instanceof Refusal) return { ok: false, error: error.reason };
+    if (error instanceof Refusal) return { ok: false, error: error.reason as CaseCommandError };
     throw error;
   }
   for (const file of files) {
@@ -306,7 +305,7 @@ export async function removeDocument(
       });
     });
   } catch (error) {
-    if (error instanceof Refusal) return { ok: false, error: error.reason };
+    if (error instanceof Refusal) return { ok: false, error: error.reason as CaseCommandError };
     throw error;
   }
   return { ok: true, value: null };

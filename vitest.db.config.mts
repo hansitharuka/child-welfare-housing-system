@@ -6,7 +6,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["**/*.db.test.ts"],
-    exclude: ["node_modules/**"],
+    exclude: ["node_modules/**", ".next/**"],
     globalSetup: ["tests/db/global-setup.ts"],
     setupFiles: ["dotenv/config"],
     fileParallelism: false,

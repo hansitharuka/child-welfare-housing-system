@@ -39,3 +39,23 @@ export function daysBetween(from: Date, to: Date): number {
   const day = (date: Date) => Date.parse(`${colomboDay(date)}T00:00:00Z`);
   return Math.round((day(to) - day(from)) / DAY_MS);
 }
+
+/**
+ * A calendar day typed into a form, such as a release date: "YYYY-MM-DD" when it is a real day,
+ * otherwise null. Days compare correctly as strings.
+ */
+export function parseDay(text: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const date = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text ? text : null;
+}
+
+/** A calendar day as a date-only database column stores it: midnight UTC. */
+export function dayToDate(day: string): Date {
+  return new Date(`${day}T00:00:00Z`);
+}
+
+/** A date-only database column's value as "YYYY-MM-DD". */
+export function dateToDay(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}

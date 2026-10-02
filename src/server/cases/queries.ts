@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
-import type { CaseStatus, Category, Kind } from "@/generated/prisma/enums";
+import type { CaseStatus, Category, InstallmentStatus, Kind } from "@/generated/prisma/enums";
+import { dateToDay } from "@/lib/dates";
 import { nicKey, normaliseNic } from "@/lib/nic";
 import { canSeeOffice, officeFilter, type Viewer } from "../permissions";
 
@@ -23,10 +24,39 @@ export type CaseDetails = {
   districtName: string;
   version: number;
   submittedAt: Date | null;
+  verifiedAt: Date | null;
   updatedAt: Date;
   /** Head Office's reason, while the case is sent back (CASE-7). */
   returnReason: string | null;
+  /** Head Office's reason for rejecting it (CHK-3). */
+  rejectReason: string | null;
   documents: { id: string; name: string }[];
+  /** The Rs. 2,000,000 release, once recorded (REL-2). */
+  release: ReleaseDetails | null;
+  /** The four installments, made with the release (INS-1), in order. */
+  installments: InstallmentDetails[];
+};
+
+export type ReleaseDetails = {
+  /** "YYYY-MM-DD" */
+  releasedOn: string;
+  amount: number;
+  referenceNumber: string;
+  note: string | null;
+  byName: string;
+  at: Date;
+};
+
+export type InstallmentDetails = {
+  number: number;
+  amount: number;
+  status: InstallmentStatus;
+  purpose: string | null;
+  /** "YYYY-MM-DD" */
+  expectedOn: string | null;
+  /** "YYYY-MM-DD" */
+  releasedOn: string | null;
+  note: string | null;
 };
 
 /** One case, if the viewer may see it (PRM-1); otherwise null, which the page shows as "not found". */
@@ -49,6 +79,7 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
       dsOfficeId: true,
       version: true,
       submittedAt: true,
+      verifiedAt: true,
       updatedAt: true,
       dsOffice: { select: { nameSi: true, active: true, district: { select: { id: true, nameSi: true } } } },
       files: {
@@ -57,23 +88,60 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
         select: { id: true, originalName: true },
       },
       decisions: {
-        where: { type: "SEND_BACK" },
+        where: { type: { in: ["SEND_BACK", "REJECT"] } },
         orderBy: { at: "desc" },
         take: 1,
-        select: { reason: true },
+        select: { type: true, reason: true },
+      },
+      release: {
+        select: {
+          releasedOn: true,
+          amount: true,
+          referenceNumber: true,
+          note: true,
+          at: true,
+          by: { select: { name: true } },
+        },
+      },
+      installments: {
+        orderBy: { number: "asc" },
+        select: {
+          number: true,
+          amount: true,
+          status: true,
+          purpose: true,
+          expectedOn: true,
+          releasedOn: true,
+          note: true,
+        },
       },
     },
   });
   if (!found || !canSeeOffice(viewer, found.dsOfficeId)) return null;
-  const { dsOffice, files, decisions, ...fields } = found;
+  const { dsOffice, files, decisions, release, installments, ...fields } = found;
+  const latest = decisions[0];
   return {
     ...fields,
     officeName: dsOffice.nameSi,
     officeActive: dsOffice.active,
     districtId: dsOffice.district.id,
     districtName: dsOffice.district.nameSi,
-    returnReason: found.status === "RETURNED" ? (decisions[0]?.reason ?? null) : null,
+    returnReason: found.status === "RETURNED" && latest?.type === "SEND_BACK" ? latest.reason : null,
+    rejectReason: found.status === "REJECTED" && latest?.type === "REJECT" ? latest.reason : null,
     documents: files.map((f) => ({ id: f.id, name: f.originalName })),
+    release: release && {
+      releasedOn: dateToDay(release.releasedOn),
+      amount: release.amount,
+      referenceNumber: release.referenceNumber,
+      note: release.note,
+      byName: release.by.name,
+      at: release.at,
+    },
+    installments: installments.map((i) => ({
+      ...i,
+      expectedOn: i.expectedOn && dateToDay(i.expectedOn),
+      releasedOn: i.releasedOn && dateToDay(i.releasedOn),
+    })),
   };
 }
 
