@@ -1,17 +1,8 @@
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { asUser, CONFIRM, fillCase, newSubmittedCase, randomNic, SEND, submit, SUBMITTED, YEAR } from "./case-helpers";
 import { signInAs, TEST_CASE_NAME, TEXT } from "./helpers";
 
-/** Screen text the tests look for (messages/si.json). */
-const SEND = "ප්‍රධාන කාර්යාලයට යවන්න";
-const CONFIRM = "ඔව්, යවන්න";
 const SAVE_DRAFT = "පසුව සම්පූර්ණ කිරීමට සුරකින්න";
-const SUBMITTED = "පරීක්ෂාවට යවා ඇත";
-const YEAR = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Colombo", year: "numeric" }).format(new Date());
-
-/** A made-up 12-digit NIC (SEC-11), different in every test. */
-function randomNic(): string {
-  return `2${Array.from({ length: 11 }, () => Math.floor(Math.random() * 10)).join("")}`;
-}
 
 /** The old 9-digit form of a 12-digit NIC whose eighth digit is 0 (CASE-6): "19" + 5 digits + "0" + 4 digits. */
 function oldFormOf(nic: string): string {
@@ -22,48 +13,6 @@ function oldFormOf(nic: string): string {
 function nicWithOldForm(): string {
   const digits = (n: number) => Array.from({ length: n }, () => Math.floor(Math.random() * 10)).join("");
   return `19${digits(5)}0${digits(4)}`;
-}
-
-type CaseInput = { name: string; nic: string; atRisk?: boolean };
-
-async function fillCase(page: Page, input: CaseInput) {
-  await page.getByRole("radio", { name: input.atRisk ? /^අවදානම් දරුවන්/ : /^නිවාසගත/ }).check();
-  await page.getByRole("radio", { name: /^නව නිවසක් ඉදිකිරීම/ }).check();
-  if (input.atRisk) await page.getByLabel("දරුවාගේ නම *").fill("පරීක්ෂණ දරුවා");
-  await page.getByLabel(input.atRisk ? "භාරකරුගේ නම *" : "නම *", { exact: true }).fill(input.name);
-  await page
-    .getByLabel(input.atRisk ? "භාරකරුගේ ජාතික හැඳුනුම්පත් අංකය *" : "ජාතික හැඳුනුම්පත් අංකය *")
-    .fill(input.nic);
-  await page.getByLabel("ලිපිනය *").fill("නො. 1, පරීක්ෂණ පාර, නගරය");
-  await page.getByLabel("දුරකතන අංකය *", { exact: true }).fill("071 000 0401");
-}
-
-/** Sends the filled form to Head Office through the confirmation, and returns the new case's page. */
-async function submit(page: Page, area: "ds" | "ho"): Promise<{ url: string; number: string }> {
-  await page.getByRole("button", { name: SEND }).click();
-  await expect(page.getByRole("heading", { name: "ප්‍රධාන කාර්යාලයට යවන්නද?" })).toBeVisible();
-  await page.getByRole("button", { name: CONFIRM }).click();
-  await expect(page).toHaveURL(new RegExp(`/${area}/cases/[0-9a-f-]{36}\\?notice=submitted$`));
-  return { url: page.url().split("?")[0] ?? "", number: await page.getByTestId("case-number").innerText() };
-}
-
-/** Enters and submits a complete case as the signed-in DS officer. */
-async function newSubmittedCase(page: Page, input: CaseInput) {
-  await page.goto("/ds/cases/new");
-  await fillCase(page, input);
-  return submit(page, "ds");
-}
-
-/** A second officer's browser window, beside the first. */
-async function asOfficer(browser: Browser, username: string, run: (page: Page) => Promise<void>) {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "si-LK" });
-  try {
-    const page = await context.newPage();
-    await signInAs(page, username, /\/ds$/);
-    await run(page);
-  } finally {
-    await context.close();
-  }
 }
 
 const PDF = { name: "ලේඛනය.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n% made up\n") };
@@ -148,7 +97,7 @@ test("AC-7: a duplicate NIC shows the number and name in the same DS, only the n
   await expect(page.getByTestId("nic-matches")).toContainText(`${first.number} (${TEST_CASE_NAME} සී)`);
 
   // Another office: the number and the office, never the name. Submitting still works.
-  await asOfficer(browser, "ds0103", async (kaduwela) => {
+  await asUser(browser, "ds0103", async (kaduwela) => {
     await kaduwela.goto("/ds/cases/new");
     await fillCase(kaduwela, { name: `${TEST_CASE_NAME} ඩී`, nic });
     await kaduwela.getByLabel("ලිපිනය *").focus();
@@ -177,7 +126,7 @@ test("AC-1: a DS officer sees only their own office's cases, and another office'
   const kaduwelaCase = await submit(page, "ds");
   const fileHref = (await page.getByRole("link", { name: "ලේඛනය.pdf" }).getAttribute("href")) ?? "";
 
-  await asOfficer(browser, "ds0101", async (homagama) => {
+  await asUser(browser, "ds0101", async (homagama) => {
     for (const path of [kaduwelaCase.url, `${kaduwelaCase.url}/edit`]) {
       await homagama.goto(path);
       await expect(homagama.getByRole("heading", { level: 1 })).toHaveText(TEXT.notFound);
