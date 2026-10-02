@@ -6,16 +6,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists) and 4 (cases) of `docs/PLAN.md` are built. You get:
+Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists), 4 (cases) and 5 (check and release) of `docs/PLAN.md` are built. You get:
 
 - a Sinhala Next.js shell for the three roles, and PostgreSQL with the place and stage lists
 - sign-in with lockout and forced password change, a permission layer, an append-only audit log and security headers
 - the admin's users and lists screens
 - case entry with drafts, documents, the duplicate-NIC warning and case numbers
 - the DS home, and Head Office's case list and case entry for any DS
+- Head Office's check and release screen: verify, send back or reject, then record the Rs. 2,000,000 release, which makes the four installments
+- notifications for the DS (a bell) and waiting counts in the Head Office menu; Head Office's corrections to verified cases and releases
 - tests and CI
 
-Head Office's check and release, the installments and the building stages come next (Phase 5 onwards); the Head Office dashboard and check pages are still placeholders.
+The installment actions, building stages, stopping and the case history come next (Phase 6); the Head Office dashboard is still a placeholder.
 
 The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
@@ -87,7 +89,7 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 ### Cases (Phase 4)
 
 - **Every change to a case goes through `saveCase`** (`src/server/cases/commands.ts`). One transaction saves the fields, attaches new uploads and writes the audit record. On submit, the same transaction takes the case number and records the `SUBMIT` decision.
-- **Who may change what** is in `src/server/cases/rules.ts`: details only while `DRAFT` or `RETURNED`, and only Head Office moves a draft to another office. Phase 5's status-change module (task 5.1) should take over the status moves.
+- **Who may change what** is in `src/server/cases/rules.ts`: the office while `DRAFT` or `RETURNED`, Head Office also while `VERIFIED` or `IN_PROGRESS` (CASE-9), and only Head Office moves a draft to another office. Status changes are in `transitions.ts` (Phase 5).
 - **A new case's id is made when its form page renders**, so a form sent twice finds the saved case and changes nothing (ERR-8). Every later save sends the `version` it opened with; a stale one is refused with `conflict` (CASE-10, ERR-3).
 - **Case numbers come from `case_number_counter`.** The row for an office and year stays locked until the submit commits, so parallel submits take turns. Two first submits of a year can still meet on its insert; `saveCase` tries again.
 - **Uploads are one Server Action request per file**, sent as soon as it is chosen (at most 10 MB). The file row's `case_id` stays empty until the case form is saved, which attaches only the actor's own unattached uploads. An upload never saved with a case is removed after a day.
@@ -96,6 +98,24 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 - **One case form for both roles.** `src/components/forms/case-form.tsx` builds its own `FormData` instead of using `<form action>`, so typed values and chosen files survive a refused save. Each role's `actions.ts` checks its own role, then calls `src/server/cases/form-actions.ts`.
 - **Client components may import types from `src/server/`**, never values.
 - **Test data:** database tests point `FILES_DIR` at a temporary folder. End-to-end test cases have names starting with `TEST_CASE_NAME` ("ස්වයං පරීක්ෂණ"), and `tests/e2e/cleanup.ts` deletes them with their decisions and files before each run.
+
+### Check and release (Phase 5)
+
+- **Every status change goes through `applyMove`** (`src/server/cases/transitions.ts`). Its `MOVES` table is SPEC section 6, row by row: who may make each move, from and to which statuses, whether it needs a reason, its Decision type, its audit action and its notice.
+  - It updates the case only while it still has the status the caller read (and the version, with `checkVersion`), so two people deciding at once can't both succeed.
+  - It writes the Decision, the audit record and the notifications in the caller's transaction. It throws a `Refusal` (`refusal.ts`) that rolls everything back.
+  - Commands call `moveRefusal` first to answer early with `roleNotAllowed` or `notAllowedNow`. `saveCase`'s submit uses `applyMove` too.
+- **Head Office's check and release screen** is one screen with two tabs, `/ho/check` and `/ho/release` (`src/app/ho/check/review-screen.tsx`). The chosen case is `?case=<id>`.
+  - After an action the page goes back to the queue with `?notice=<key>&done=<id>`, or, from the case page (`from=case`), to `/ho/cases/<id>?notice=<key>`. URLs carry ids, never names (SEC-8).
+  - The decision and release forms (`src/components/review/`) are on both the queue screen and the case page, keyed by the case's version, so they reset after a change.
+- **The release** (`src/server/releases/commands.ts`) moves the case to `IN_PROGRESS`, saves the release and makes the four installments in one transaction.
+  - The command checks the form itself, because the date rules need the case's verification date.
+  - Database checks (hand-written in the `release` migration) hold the amounts at 2,000,000 and 500,000 and installment numbers at 1 to 4.
+- **Date-only columns** (`@db.Date`): store a day with `dayToDate`, read it with `dateToDay`, and compare days as `"YYYY-MM-DD"` strings. Today is `colomboDay(new Date())`.
+- **Notifications** are made by `notifyOffice` inside the move's transaction, for the office's active officers only. Lists and the bell show only cases the officer may still see (PRM-3).
+  - Head Office's menu counts come from `src/app/ho/layout.tsx`. A layout doesn't render again on client-side moves, so actions that change a queue call `revalidatePath("/ho", "layout")`.
+- **Edits after verification (CASE-9)** reuse `saveCase` and the case form in `mode="change"`: one save button, every required field checked (`mustStayComplete`), no submit. The changed fields are logged as `case_updated` with old and new values.
+- **Test helpers:** e2e case entry is in `tests/e2e/case-helpers.ts` (`openAs` keeps a second person's window open). `cleanup.ts` also deletes test cases' notifications, installments and releases. The database tests' config skips `.next/`, where a standalone build copies the test files.
 
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 
