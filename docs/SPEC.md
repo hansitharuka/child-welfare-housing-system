@@ -1,6 +1,6 @@
 # Diviyata Sawiyak — Software Specification
 
-2026-09-28, updated 2026-09-29 · Janindu Pramod
+2026-09-28, updated 2026-10-02 · Janindu Pramod
 
 > **Status:** draft. This SPEC turns the [PRD](PRD.md) into requirements precise enough to build and test against. The [clickable prototype](https://claude.ai/artifact/DQarnsyMfCao1y6SmpMDbT) shows the screens. The PRD's open questions are deferred: [section 13](#13-deferred-questions-and-the-defaults-used) gives the default this SPEC uses for each until the Ministry answers.
 
@@ -55,7 +55,7 @@ Rules for the stack:
 - **ARC-2** Every read and write shall go through a server-side data-access layer (`src/server/`). That layer receives the signed-in user and applies the role and office rules in section 4. Pages and Server Actions shall never call Prisma directly.
 - **ARC-3** Middleware may redirect signed-out users to the sign-in page, but it shall never be the only permission check.
 - **ARC-4** Every change of state shall write its audit record (HIS-1) in the same database transaction as the change.
-- **ARC-5** Uploaded files shall be stored under a private directory (`/data/files`) outside the web root, and served only through the `/files/[id]` route (SEC-7).
+- **ARC-5** Uploaded files shall be stored under a private directory (`/data/files`, set by `FILES_DIR`) outside the web root, and served only through the `/files/[id]` route (SEC-7). In development the folder is `data/files` in the project, which git ignores.
 - **ARC-6** All dates and times shall use the Asia/Colombo time zone.
 
 ## 4. Roles and permissions
@@ -91,13 +91,14 @@ Amounts are whole rupees stored as integers. Nothing listed here is ever deleted
 | District | name, province | 25 rows, seeded |
 | DsOffice | name, code, district, active | `code` is 3 capital letters, unique nationally, and used in case numbers. Name is unique within its district |
 | User | full name, designation, mobile, email, username, role, DS office, active, must change password, last sign-in, failed sign-ins, locked until | DS office is required for DS officers only, and an office has at most one active DS officer (ADM-3). Username is generated (ADM-2) and unique |
-| Case | case number, DS office, category, kind, status, name, child's name, NIC, NIC key, address, mobile 1, mobile 2, remark, sheet reference, created by, submitted at, verified at, completed at, closed at, close reason, version | See CASE-2 for field rules. `version` goes up by one on every save (CASE-10) |
+| Case | case number, DS office, category, kind, status, name, child's name, NIC, NIC key, address, mobile 1, mobile 2, remark, sheet reference, created by, submitted at, verified at, completed at, closed at, close reason, version | See CASE-2 for field rules. `version` goes up by one on every save (CASE-10). `submitted at` is the latest submit |
+| CaseNumberCounter | DS office, year, last number | One row per office and year. Taking the next number locks the row, so two submits at once never share a number (CASE-5) |
 | Decision | case, type, reason, by, at | Types: submit, verify, send back, reject, stop, reopen, confirm import |
 | Release | case (one per case), released on, amount, reference number, note, by, at | Amount is always 2,000,000 |
 | Installment | case, number 1–4, amount, status, purpose, expected on, released on, note | Amount is always 500,000. Case plus number is unique. All four are created when the release is recorded |
 | StageDefinition | kind, order, name, active | New-house stages are seeded (LST-4) |
 | StageUpdate | case, stage (empty means a note-only visit), on, note, by | A case's current stage is the highest stage it has reached |
-| File | stored name, original name, type, size, SHA-256, uploaded by | Linked to a case as a document, or to a stage update as a photo |
+| File | case, stored name, original name, type, size, SHA-256, uploaded by, removed at | Linked to a case as a document, or to a stage update as a photo. Until the case form is saved with it, only the person who uploaded it can open it, and an upload never saved with a case is removed after a day. A document taken off a case is kept but no longer shown |
 | AuditLog | at, actor, action, entity, entity id, case, before, after | Can only be added to, never changed (HIS-3) |
 | Notification | user, case, type, read at | See NTF-1 |
 
@@ -208,6 +209,8 @@ Values used across the system:
   | Remark | No | Up to 1,000 characters |
   | Other documents | No | PDF, JPEG or PNG; up to 10 MB each; up to 10 files |
 
+  Each document is uploaded as soon as it is chosen and joins the case when the form is saved. While a case can be edited, a document can be taken off it; the file itself is kept.
+
 - **CASE-3** For a DS officer, the district and DS office shall come from the account and cannot be changed. A Head Office officer chooses the district, then the DS office.
 - **CASE-4** Saving a draft shall skip the required-field checks. Format rules still apply to fields that are filled in.
 - **CASE-5** Submitting shall:
@@ -217,10 +220,11 @@ Values used across the system:
 - **CASE-6** Duplicate NIC check:
   - For matching, an old NIC is turned into its 12-digit form: `19` + its first 5 digits + `0` + its next 4 digits. So `880001234V` becomes `198800001234`.
   - When the NIC is entered, and again at submit, it shall be compared with every other case.
-  - A match in the same DS shows the case number and name. A match in another DS shows only the case number and DS office.
+  - A match in the same DS shows the case number and name. A match in another DS shows only the case number and DS office. Head Office sees all three.
+  - Drafts count only in the case's own DS, where a draft shows its name without a number.
   - The warning shall never block saving or submitting.
 - **CASE-7** A returned case shall show the Head Office reason at the top of the form. The DS corrects it and submits it again.
-- **CASE-8** The owning DS may delete a draft. The deletion is logged without personal details.
+- **CASE-8** The owning DS, or Head Office (which may also start drafts), may delete a draft with its documents. The deletion is logged without personal details.
 - **CASE-9** After a case is verified, only a Head Office officer can change its details, and every changed field is logged with its old and new value.
 - **CASE-10** Saving a case that someone else changed after it was opened shall fail with ERR-3. It shall never overwrite their change silently.
 

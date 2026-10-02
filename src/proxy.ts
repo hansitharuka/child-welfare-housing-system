@@ -21,7 +21,7 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(login);
   }
 
-  // An uploaded file is not a page: the page policy would stop the browser's own PDF viewer.
+  // An uploaded file is not a page, and the page policy (object-src 'none') could stop the browser's PDF viewer.
   if (pathname.startsWith("/files/")) return NextResponse.next();
 
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");

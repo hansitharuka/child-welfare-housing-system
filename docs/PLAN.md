@@ -122,12 +122,12 @@ docker-compose.yml, docker-compose.dev.yml
 
 | # | Task | SPEC | Files |
 | --- | --- | --- | --- |
-| 4.1 | Prisma: Case, File, CaseDocument, Decision; statuses and categories as enums; `version` column | Section 5 | `prisma/schema.prisma` |
+| 4.1 | Prisma: Case, Decision, File (which knows its case) and the case-number counter; statuses and categories as enums; `version` column | Section 5 | `prisma/schema.prisma` |
 | 4.2 | NIC and phone rules, and the old-to-new NIC conversion | CASE-2, CASE-6 | `src/lib/nic.ts`, `src/lib/phone.ts` |
 | 4.3 | Case form on one page with four parts, shared Zod schema, draft saving with partial checks | CASE-1–4 | `src/app/ds/cases/new/*`, `src/components/forms/case-form.tsx`, `src/lib/validation/case.ts` |
 | 4.4 | Submit with confirmation, case numbers per DS per year (safe when two people submit at once) | CASE-5 | `src/server/cases/submit.ts` |
 | 4.5 | Duplicate NIC warning that shows less for other offices | CASE-6 | `src/server/cases/duplicates.ts` |
-| 4.6 | Document upload: type checked from contents, random names, private folder, `/files/[id]` with the case's permission check | CASE-2, ARC-5, SEC-7, ERR-5 | `src/server/files/*`, `src/app/files/[id]/route.ts` |
+| 4.6 | Document upload: one file per request as it is chosen, type checked from contents, random names, private folder, `/files/[id]` with the case's permission check | CASE-2, ARC-5, SEC-7, ERR-5 | `src/server/files/*`, `src/app/files/[id]/route.ts` |
 | 4.7 | Returned-case editing with the Head Office reason at the top; draft deletion; save conflicts (`version`) | CASE-7, CASE-8, CASE-10, ERR-3, ERR-8 | `src/app/ds/cases/[id]/edit/*`, `src/server/cases/*` |
 | 4.8 | DS home: list, tabs, search, and the to-do panel (returned cases and drafts for now) | HOME-1–3, FND-1 | `src/app/ds/page.tsx`, `src/server/cases/list.ts` |
 | 4.9 | Head Office: new case (district → DS) and the case list with filters | CASE-3, FND-1 | `src/app/ho/cases/*` |
@@ -213,7 +213,7 @@ docker-compose.yml, docker-compose.dev.yml
 
 | # | Task | SPEC | Files |
 | --- | --- | --- | --- |
-| 9.1 | Production images and Compose: Next.js standalone, PostgreSQL, Nginx with TLS and HSTS | OPS-2, SEC-1 | `docker/Dockerfile`, `docker/nginx.conf`, `docker-compose.yml` |
+| 9.1 | Production images and Compose: Next.js standalone, PostgreSQL, Nginx with TLS and HSTS; Nginx's `client_max_body_size` at least 11 MB for uploads; `FILES_DIR` on a named volume | OPS-2, SEC-1 | `docker/Dockerfile`, `docker/nginx.conf`, `docker-compose.yml` |
 | 9.2 | Staging server with made-up data; deploy from a tagged build with migrations; rollback steps | OPS-1, OPS-3 | `.github/workflows/deploy.yml`, `docs/RUNBOOK.md` |
 | 9.3 | Nightly encrypted backup of the database and files to a second location in Sri Lanka; a restore test | SEC-10 | `scripts/backup.sh`, `docs/RUNBOOK.md` |
 | 9.4 | Uptime, disk and backup alerts | OPS-4 | server configuration |
