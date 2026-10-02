@@ -3,13 +3,15 @@
  * - removes the DS offices and building stages they added (everything carries TEST_MARKER), so a
  *   developer's lists don't fill up with test entries;
  * - disables the DS officer accounts they created, which frees those offices for the next run, since
- *   an office has only one active officer (ADM-3). The accounts stay, because the audit log refers to them.
+ *   an office has only one active officer (ADM-3). The accounts stay, because the audit log refers to them;
+ * - deletes the cases they created (named with TEST_CASE_NAME) and their files.
  * Runs only where sample accounts are allowed (development and test databases).
  */
 import "dotenv/config";
 import { sampleUsersAllowed } from "../../prisma/seed-users";
 import { createPrismaClient } from "../../src/server/db";
-import { TEST_MARKER, TEST_OFFICER_NAME } from "./helpers";
+import { deleteStoredFile } from "../../src/server/files/storage";
+import { TEST_CASE_NAME, TEST_MARKER, TEST_OFFICER_NAME } from "./helpers";
 
 async function main() {
   if (!sampleUsersAllowed()) throw new Error("End-to-end cleanup only runs on development and test databases.");
@@ -25,8 +27,19 @@ async function main() {
       where: { name: TEST_OFFICER_NAME, role: "DS_OFFICER", banned: false },
       data: { banned: true },
     });
+    // Cases the tests created, with their decisions and files. Their audit records stay (HIS-3).
+    const cases = await prisma.case.findMany({ where: { name: { startsWith: TEST_CASE_NAME } }, select: { id: true } });
+    const caseIds = cases.map((c) => c.id);
+    const files = await prisma.storedFile.findMany({
+      where: { caseId: { in: caseIds } },
+      select: { storedName: true },
+    });
+    await prisma.storedFile.deleteMany({ where: { caseId: { in: caseIds } } });
+    await prisma.decision.deleteMany({ where: { caseId: { in: caseIds } } });
+    await prisma.case.deleteMany({ where: { id: { in: caseIds } } });
+    for (const file of files) await deleteStoredFile(file.storedName);
     console.log(
-      `Removed test entries: ${offices.count} offices, ${stages.count} stages; disabled ${officers.count} test officers.`,
+      `Removed test entries: ${offices.count} offices, ${stages.count} stages, ${caseIds.length} cases; disabled ${officers.count} test officers.`,
     );
   } finally {
     await prisma.$disconnect();
