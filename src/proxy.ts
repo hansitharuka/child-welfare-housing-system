@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { contentSecurityPolicy } from "./server/security-headers";
 
 /** Areas that need a signed-in user. */
-const PROTECTED = ["/ds", "/ho", "/admin", "/change-password"];
+const PROTECTED = ["/ds", "/ho", "/admin", "/change-password", "/files"];
 
 /**
  * Two jobs only (ARC-3):
@@ -20,6 +20,9 @@ export function proxy(request: NextRequest) {
     if (pathname !== "/change-password") login.searchParams.set("next", `${pathname}${search}`);
     return NextResponse.redirect(login);
   }
+
+  // An uploaded file is not a page: the page policy would stop the browser's own PDF viewer.
+  if (pathname.startsWith("/files/")) return NextResponse.next();
 
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const csp = contentSecurityPolicy(nonce, { development: process.env.NODE_ENV === "development" });

@@ -220,8 +220,14 @@ export async function todoItems(db: PrismaClient, viewer: Viewer): Promise<TodoI
   }));
 }
 
-/** Whether a DS office takes new cases (LST-3). */
-export async function officeIsActive(db: PrismaClient, dsOfficeId: number): Promise<boolean> {
-  const office = await db.dsOffice.findUnique({ where: { id: dsOfficeId }, select: { active: true } });
-  return office?.active === true;
+/** The officer's own office with its district, for the DS home and form (HOME-1, CASE-3). */
+export async function officeSummary(
+  db: PrismaClient,
+  dsOfficeId: number,
+): Promise<{ name: string; districtName: string; active: boolean } | null> {
+  const office = await db.dsOffice.findUnique({
+    where: { id: dsOfficeId },
+    select: { nameSi: true, active: true, district: { select: { nameSi: true } } },
+  });
+  return office ? { name: office.nameSi, districtName: office.district.nameSi, active: office.active } : null;
 }
