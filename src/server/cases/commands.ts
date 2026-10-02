@@ -1,0 +1,313 @@
+import { randomUUID } from "node:crypto";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+import type { CaseStatus } from "@/generated/prisma/enums";
+import { colomboYear } from "@/lib/dates";
+import { MAX_DOCUMENTS } from "@/lib/file-types";
+import { nicKey } from "@/lib/nic";
+import { CASE_FIELDS, type CaseValues, missingRequired } from "@/lib/validation/case";
+import { writeAudit } from "../audit";
+import { deleteStoredFile } from "../files/storage";
+import { logError } from "../log";
+import { canSeeOffice, caseScope, type Viewer } from "../permissions";
+import { nextCaseNumber } from "./numbers";
+import { canChangeOffice, canDeleteDraft, canEditDetails, EDITABLE_STATUSES } from "./rules";
+
+/** The signed-in user making a change. */
+export type Actor = Viewer & { userId: string };
+
+export type CaseCommandError =
+  /** It doesn't exist, or it isn't the actor's to see (PRM-1). */
+  | "notFound"
+  /** Its status doesn't allow this change (STS-1, STS-3, ERR-7). */
+  | "notEditable"
+  /** Someone else saved it after this form was opened (CASE-10, ERR-3). */
+  | "conflict"
+  /** A required field is empty, so it can't be submitted (CASE-5). */
+  | "incomplete"
+  /** Head Office didn't choose a DS office (CASE-3). */
+  | "officeRequired"
+  /** The office is inactive and takes no new cases (LST-3). */
+  | "officeInactive"
+  /** More than 10 documents (CASE-2). */
+  | "tooManyFiles"
+  /** An upload to attach isn't the actor's, or is already on a case. */
+  | "fileUnavailable";
+
+type Result<T> = { ok: true; value: T } | { ok: false; error: CaseCommandError };
+
+/** Thrown inside a transaction to roll it back and answer with a refusal. */
+class Refusal extends Error {
+  constructor(readonly reason: CaseCommandError) {
+    super(reason);
+  }
+}
+
+const isUniqueViolation = (error: unknown) =>
+  typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
+
+export type SaveCaseInput = {
+  /** A new case's id is made when its form opens, so sending the form twice can't create two cases (ERR-8). */
+  id: string;
+  /** The version the form was opened with; null for a new case. */
+  version: number | null;
+  /** The office chosen on the form. Only Head Office chooses (CASE-3); a DS officer's comes from their account. */
+  dsOfficeId: number | null;
+  values: CaseValues;
+  /** Uploads to put on the case. */
+  documentIds: string[];
+  /** Also send the case to Head Office (CASE-5). */
+  submit: boolean;
+};
+
+export type SavedCase = { id: string; caseNumber: string | null; status: CaseStatus };
+
+const CASE_SELECT = {
+  id: true,
+  dsOfficeId: true,
+  status: true,
+  caseNumber: true,
+  version: true,
+  category: true,
+  kind: true,
+  childName: true,
+  name: true,
+  nic: true,
+  address: true,
+  mobile1: true,
+  mobile2: true,
+  remark: true,
+} as const satisfies Prisma.CaseSelect & Record<(typeof CASE_FIELDS)[number], true>;
+
+type StoredCase = Prisma.CaseGetPayload<{ select: typeof CASE_SELECT }>;
+
+/**
+ * Saves the case form: a new case, or a change to a draft or a returned case (CASE-1 to CASE-7).
+ * With `submit`, the case also goes to Head Office in the same transaction, and gets its number on its
+ * first submit (CASE-5). Nothing is saved when anything is refused.
+ */
+export async function saveCase(db: PrismaClient, actor: Actor, input: SaveCaseInput): Promise<Result<SavedCase>> {
+  const scope = caseScope(actor);
+  if (scope.kind === "none") return { ok: false, error: "notFound" };
+  if (input.submit && Object.keys(missingRequired(input.values)).length > 0) return { ok: false, error: "incomplete" };
+
+  // A first submit in a new year can meet another one at the counter; one try again is enough.
+  for (let attempt = 1; ; attempt += 1) {
+    const current = await db.case.findUnique({ where: { id: input.id }, select: CASE_SELECT });
+    if (current && !canSeeOffice(actor, current.dsOfficeId)) return { ok: false, error: "notFound" };
+    if (!current && input.version !== null) return { ok: false, error: "notFound" };
+    // ERR-8: the same new-case form arrived twice. The first one saved the case; this one changes nothing.
+    if (current && input.version === null) {
+      return { ok: true, value: { id: current.id, caseNumber: current.caseNumber, status: current.status } };
+    }
+
+    const office = scope.kind === "office" ? scope.dsOfficeId : (input.dsOfficeId ?? current?.dsOfficeId ?? null);
+    const problem = await checkSave(db, actor, current, input, office);
+    if (problem) return { ok: false, error: problem };
+
+    try {
+      const value = await db.$transaction((tx) => writeCase(tx, actor, current, input, office as number));
+      return { ok: true, value };
+    } catch (error) {
+      if (error instanceof Refusal) return { ok: false, error: error.reason };
+      if (isUniqueViolation(error) && attempt < 3) continue;
+      throw error;
+    }
+  }
+}
+
+async function checkSave(
+  db: PrismaClient,
+  actor: Actor,
+  current: StoredCase | null,
+  input: SaveCaseInput,
+  office: number | null,
+): Promise<CaseCommandError | null> {
+  if (office === null) return "officeRequired";
+  if (current) {
+    if (!canEditDetails(actor.role, current.status)) return "notEditable";
+    if (current.version !== input.version) return "conflict";
+    if (office !== current.dsOfficeId && !canChangeOffice(actor.role, current.status)) return "notEditable";
+  }
+  // A new case, or a draft moving to another office, needs an active office (LST-3).
+  if (!current || office !== current.dsOfficeId) {
+    const found = await db.dsOffice.findUnique({ where: { id: office }, select: { active: true } });
+    if (!found) return "notFound";
+    if (!found.active) return "officeInactive";
+  }
+  return null;
+}
+
+async function writeCase(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  current: StoredCase | null,
+  input: SaveCaseInput,
+  dsOfficeId: number,
+): Promise<SavedCase> {
+  const now = new Date();
+  const fields = { ...input.values, nicKey: input.values.nic ? nicKey(input.values.nic) : null, dsOfficeId };
+  const submission = input.submit
+    ? {
+        status: "SUBMITTED" as const,
+        submittedAt: now,
+        caseNumber: current?.caseNumber ?? (await nextCaseNumber(tx, dsOfficeId, colomboYear(now))),
+      }
+    : null;
+
+  if (current) {
+    const updated = await tx.case.updateMany({
+      where: { id: current.id, version: current.version, status: { in: [...EDITABLE_STATUSES] } },
+      data: { ...fields, ...submission, version: { increment: 1 } },
+    });
+    if (updated.count === 0) throw new Refusal("conflict");
+  } else {
+    await tx.case.create({ data: { id: input.id, ...fields, createdById: actor.userId } });
+  }
+  const documentIds = await attachDocuments(tx, actor, input.id, input.documentIds);
+
+  const changed = (["dsOfficeId", ...CASE_FIELDS] as const).filter((field) => current?.[field] !== fields[field]);
+  const pick = (source: Record<string, unknown>) => Object.fromEntries(changed.map((f) => [f, source[f] ?? null]));
+  if (!current) {
+    await writeAudit(tx, {
+      actorId: actor.userId,
+      action: "case_created",
+      entityType: "case",
+      entityId: input.id,
+      caseId: input.id,
+      after: { ...withoutEmpty(pick(fields)), documentsAdded: documentIds },
+    });
+  } else if (changed.length > 0 || documentIds.length > 0) {
+    await writeAudit(tx, {
+      actorId: actor.userId,
+      action: "case_updated",
+      entityType: "case",
+      entityId: input.id,
+      caseId: input.id,
+      before: pick(current),
+      after: { ...pick(fields), documentsAdded: documentIds },
+    });
+  }
+
+  if (!submission) {
+    if (!current) return { id: input.id, caseNumber: null, status: "DRAFT" };
+    return { id: input.id, caseNumber: current.caseNumber, status: current.status };
+  }
+  // A new case is created as a draft first, so its history reads "created", then "submitted".
+  if (!current) await tx.case.update({ where: { id: input.id }, data: submission });
+  await tx.decision.create({
+    data: { id: randomUUID(), caseId: input.id, type: "SUBMIT", byId: actor.userId, at: now },
+  });
+  await writeAudit(tx, {
+    actorId: actor.userId,
+    action: "case_submitted",
+    entityType: "case",
+    entityId: input.id,
+    caseId: input.id,
+    before: { status: current?.status ?? "DRAFT" },
+    after: { status: "SUBMITTED", caseNumber: submission.caseNumber },
+  });
+  return { id: input.id, caseNumber: submission.caseNumber, status: "SUBMITTED" };
+}
+
+const withoutEmpty = (values: Record<string, unknown>) =>
+  Object.fromEntries(Object.entries(values).filter(([, value]) => value !== null));
+
+/** Puts the actor's own new uploads on the case, up to 10 documents in all (CASE-2). */
+async function attachDocuments(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  caseId: string,
+  ids: string[],
+): Promise<string[]> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  const onCase = await tx.storedFile.count({ where: { caseId, removedAt: null } });
+  if (onCase + unique.length > MAX_DOCUMENTS) throw new Refusal("tooManyFiles");
+  const attached = await tx.storedFile.updateMany({
+    where: { id: { in: unique }, caseId: null, uploadedById: actor.userId },
+    data: { caseId },
+  });
+  if (attached.count !== unique.length) throw new Refusal("fileUnavailable");
+  return unique;
+}
+
+/** Finds a case the actor may see, or nothing (PRM-1). */
+async function findVisible(db: PrismaClient, actor: Actor, id: string) {
+  const found = await db.case.findUnique({ where: { id }, select: { id: true, dsOfficeId: true, status: true } });
+  return found && canSeeOffice(actor, found.dsOfficeId) ? found : null;
+}
+
+/**
+ * CASE-8: deletes a draft with its documents. The record of the deletion holds no personal details;
+ * the earlier records of the draft stay in the audit log, which can't be changed (HIS-3).
+ */
+export async function deleteDraft(db: PrismaClient, actor: Actor, id: string): Promise<Result<null>> {
+  const found = await findVisible(db, actor, id);
+  if (!found) return { ok: false, error: "notFound" };
+  if (!canDeleteDraft(actor.role, found.status)) return { ok: false, error: "notEditable" };
+
+  let files: { id: string; storedName: string }[];
+  try {
+    files = await db.$transaction(async (tx) => {
+      const onCase = await tx.storedFile.findMany({ where: { caseId: id }, select: { id: true, storedName: true } });
+      await tx.storedFile.deleteMany({ where: { caseId: id } });
+      // Submitted by someone else in the meantime: it is no longer a draft.
+      const deleted = await tx.case.deleteMany({ where: { id, status: "DRAFT" } });
+      if (deleted.count === 0) throw new Refusal("notEditable");
+      await writeAudit(tx, {
+        actorId: actor.userId,
+        action: "case_draft_deleted",
+        entityType: "case",
+        entityId: id,
+        caseId: id,
+        after: { dsOfficeId: found.dsOfficeId },
+      });
+      return onCase;
+    });
+  } catch (error) {
+    if (error instanceof Refusal) return { ok: false, error: error.reason };
+    throw error;
+  }
+  for (const file of files) {
+    await deleteStoredFile(file.storedName).catch((error: unknown) =>
+      logError("file_delete_failed", error, { fileId: file.id }),
+    );
+  }
+  return { ok: true, value: null };
+}
+
+/**
+ * Takes a document off a draft or a returned case. The file itself is kept, because nothing on a
+ * case is deleted (SPEC section 5); it no longer shows or opens.
+ */
+export async function removeDocument(
+  db: PrismaClient,
+  actor: Actor,
+  caseId: string,
+  fileId: string,
+): Promise<Result<null>> {
+  const found = await findVisible(db, actor, caseId);
+  if (!found) return { ok: false, error: "notFound" };
+  if (!canEditDetails(actor.role, found.status)) return { ok: false, error: "notEditable" };
+
+  try {
+    await db.$transaction(async (tx) => {
+      const removed = await tx.storedFile.updateMany({
+        where: { id: fileId, caseId, removedAt: null },
+        data: { removedAt: new Date(), removedById: actor.userId },
+      });
+      if (removed.count === 0) throw new Refusal("notFound");
+      await writeAudit(tx, {
+        actorId: actor.userId,
+        action: "document_removed",
+        entityType: "file",
+        entityId: fileId,
+        caseId,
+      });
+    });
+  } catch (error) {
+    if (error instanceof Refusal) return { ok: false, error: error.reason };
+    throw error;
+  }
+  return { ok: true, value: null };
+}

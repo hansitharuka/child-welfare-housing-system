@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidPhone, normalisePhone } from "@/lib/phone";
 import { ROLES } from "@/server/auth/roles";
 
 /**
@@ -6,8 +7,6 @@ import { ROLES } from "@/server/auth/roles";
  * Error messages are keys under "users.form.errors" in messages/si.json.
  */
 export type AccountErrorKey = "required" | "tooShort" | "tooLong" | "mobile" | "email" | "role" | "office";
-
-const MOBILE = /^0\d{9}$/;
 
 const optionalText = (max: number) =>
   z
@@ -22,8 +21,8 @@ export const accountSchema = z
     designation: optionalText(100),
     mobile: z
       .string()
-      .transform((value) => value.replace(/\s/g, ""))
-      .pipe(z.string().min(1, { error: "required" }).regex(MOBILE, { error: "mobile" })),
+      .transform(normalisePhone)
+      .pipe(z.string().min(1, { error: "required" }).refine(isValidPhone, { error: "mobile" })),
     contactEmail: z
       .string()
       .trim()

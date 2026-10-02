@@ -52,6 +52,36 @@ export function FormField({
   );
 }
 
+/** A labelled text area, styled like FormField, for longer text such as an address. */
+export function FormTextArea({
+  id,
+  label,
+  error,
+  ...props
+}: { id: string; label: string; error?: string } & Omit<React.ComponentProps<"textarea">, "id">) {
+  const errorId = error ? `${id}-error` : undefined;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={id} className="text-base font-semibold">
+        {label}
+      </Label>
+      <textarea
+        id={id}
+        rows={2}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={errorId}
+        className="w-full resize-y rounded-lg border border-input bg-card px-3.5 py-2.5 text-[17px] leading-normal outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20"
+        {...props}
+      />
+      {error && (
+        <p id={errorId} className="text-[15px] font-medium text-destructive">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** The error box shown above a form's submit button (ERR-1). */
 export function FormError({ id, message }: { id: string; message: string }) {
   return (

@@ -9,6 +9,7 @@ export default async function HoLayout({ children }: { children: React.ReactNode
       userName={context.name}
       nav={[
         { href: "/ho", labelKey: "hoDashboard", exact: true },
+        { href: "/ho/cases", labelKey: "hoCases" },
         { href: "/ho/check", labelKey: "hoCheck" },
       ]}
     >

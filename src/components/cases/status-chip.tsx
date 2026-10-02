@@ -1,0 +1,24 @@
+import { useTranslations } from "next-intl";
+import type { CaseStatus } from "@/generated/prisma/enums";
+
+/** Status colours from the prototype; each pair meets WCAG AA contrast (UI-6). */
+const STYLE: Record<CaseStatus, string> = {
+  DRAFT: "bg-[#ECEAE4] text-[#4F5752]",
+  SUBMITTED: "bg-[#E4EDF8] text-[#1E4E8C]",
+  RETURNED: "bg-[#FBEBD3] text-[#8A4A06]",
+  VERIFIED: "bg-[#E3EFEB] text-[#0E5A4B]",
+  IN_PROGRESS: "bg-[#EDE7F6] text-[#4B3A7A]",
+  COMPLETED: "bg-primary text-primary-foreground",
+  REJECTED: "bg-[#FDF0EE] text-[#8F1B12]",
+  STOPPED: "bg-muted text-[#3F4843]",
+  IMPORTED: "bg-[#F3EFE3] text-[#5C4A1A]",
+};
+
+export function StatusChip({ status }: { status: CaseStatus }) {
+  const t = useTranslations("cases.status");
+  return (
+    <span className={`inline-block rounded-full px-3 py-0.5 text-sm font-semibold whitespace-nowrap ${STYLE[status]}`}>
+      {t(status)}
+    </span>
+  );
+}

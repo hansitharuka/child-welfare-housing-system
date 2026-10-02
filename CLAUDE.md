@@ -6,7 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Phases 1 (foundation), 2 (sign-in and permissions) and 3 (admin: accounts and lists) of `docs/PLAN.md` are built. You get a Sinhala Next.js shell for the three roles, PostgreSQL with the place and stage lists, sign-in with lockout and forced password change, a permission layer, an append-only audit log, security headers, the admin's users and lists screens, tests and CI. The DS officer and Head Office screens are still placeholders (Phase 4 onwards).
+Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists) and 4 (cases) of `docs/PLAN.md` are built. You get:
+
+- a Sinhala Next.js shell for the three roles, and PostgreSQL with the place and stage lists
+- sign-in with lockout and forced password change, a permission layer, an append-only audit log and security headers
+- the admin's users and lists screens
+- case entry with drafts, documents, the duplicate-NIC warning and case numbers
+- the DS home, and Head Office's case list and case entry for any DS
+- tests and CI
+
+Head Office's check and release, the installments and the building stages come next (Phase 5 onwards); the Head Office dashboard and check pages are still placeholders.
 
 The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
@@ -23,7 +32,7 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 | Database tests (database must be up) | `npm run test:db`; one file: `npx vitest run --config vitest.db.config.mts prisma/seed.db.test.ts` |
 | End-to-end tests | `npm run test:e2e`; one test: `npx playwright test tests/e2e/smoke.spec.ts -g "/ds"` |
 | Production build and server | `npm run build`, then `npm run start:standalone` |
-| Change the database schema | edit `prisma/schema.prisma`, then `npx prisma migrate dev --name <change>` |
+| Change the database schema | edit `prisma/schema.prisma`, then `npx prisma migrate dev --name <change>` and `npx prisma generate` (Prisma 7's `migrate dev` no longer regenerates the client) |
 | Put the sample accounts back to their start state | `npx tsx prisma/seed-users.ts --reset` (the end-to-end tests do this themselves) |
 
 ## Things to know when coding
@@ -74,6 +83,19 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
   - It removes the offices and stages the tests added, which carry `TEST_MARKER`.
   - It disables the officer accounts they created, named "ඊ. පරීක්ෂණ", which frees their Gampaha offices. The accounts stay, because the audit log refers to them.
   - A sample-account reset disables any other active officer at a sample office.
+
+### Cases (Phase 4)
+
+- **Every change to a case goes through `saveCase`** (`src/server/cases/commands.ts`). One transaction saves the fields, attaches new uploads and writes the audit record. On submit, the same transaction takes the case number and records the `SUBMIT` decision.
+- **Who may change what** is in `src/server/cases/rules.ts`: details only while `DRAFT` or `RETURNED`, and only Head Office moves a draft to another office. Phase 5's status-change module (task 5.1) should take over the status moves.
+- **A new case's id is made when its form page renders**, so a form sent twice finds the saved case and changes nothing (ERR-8). Every later save sends the `version` it opened with; a stale one is refused with `conflict` (CASE-10, ERR-3).
+- **Case numbers come from `case_number_counter`.** The row for an office and year stays locked until the submit commits, so parallel submits take turns. Two first submits of a year can still meet on its insert; `saveCase` tries again.
+- **Uploads are one Server Action request per file**, sent as soon as it is chosen (at most 10 MB). The file row's `case_id` stays empty until the case form is saved, which attaches only the actor's own unattached uploads. An upload never saved with a case is removed after a day.
+- **Body limits are 11 MB** (`serverActions.bodySizeLimit` and `proxyClientMaxBodySize` in `next.config.ts`). Above its limit the proxy silently cuts a request body short. Nginx will need `client_max_body_size` of at least 11 MB (Phase 9).
+- **Files live under `FILES_DIR`** (default `data/files`, which git ignores), named by a random UUID in two-character sub-folders. `/files/[id]` applies the case's office rules. The proxy leaves its CSP off `/files/` responses, because the page policy (`object-src 'none'`) could stop the browser's PDF viewer.
+- **One case form for both roles.** `src/components/forms/case-form.tsx` builds its own `FormData` instead of using `<form action>`, so typed values and chosen files survive a refused save. Each role's `actions.ts` checks its own role, then calls `src/server/cases/form-actions.ts`.
+- **Client components may import types from `src/server/`**, never values.
+- **Test data:** database tests point `FILES_DIR` at a temporary folder. End-to-end test cases have names starting with `TEST_CASE_NAME` ("ස්වයං පරීක්ෂණ"), and `tests/e2e/cleanup.ts` deletes them with their decisions and files before each run.
 
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 

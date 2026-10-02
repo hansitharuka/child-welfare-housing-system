@@ -19,6 +19,9 @@ export const TEST_MARKER = "Playwright";
 /** The name of every DS officer account the tests create; cleanup.ts disables them before each run. */
 export const TEST_OFFICER_NAME = "ඊ. පරීක්ෂණ";
 
+/** Every case the tests create has a name starting with this; cleanup.ts deletes those cases before each run. */
+export const TEST_CASE_NAME = "ස්වයං පරීක්ෂණ";
+
 /** Random capital letters, to keep names and codes the tests add apart. */
 export function randomLetters(count: number): string {
   return Array.from({ length: count }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join("");
