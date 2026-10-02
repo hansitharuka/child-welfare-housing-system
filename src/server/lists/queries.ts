@@ -74,3 +74,23 @@ export async function stagesByKind(db: PrismaClient): Promise<Record<Kind, Stage
   for (const { kind, ...stage } of stages) byKind[kind].push(stage);
   return byKind;
 }
+
+export type OfficeOption = { id: number; name: string; active: boolean };
+export type DistrictOptions = { id: number; name: string; offices: OfficeOption[] };
+
+/** Every district with its DS offices, for choosing a case's office (CASE-3) or filtering a list (FND-1). */
+export async function districtsWithOffices(db: PrismaClient): Promise<DistrictOptions[]> {
+  const districts = await db.district.findMany({
+    orderBy: { id: "asc" },
+    select: {
+      id: true,
+      nameSi: true,
+      dsOffices: { orderBy: { id: "asc" }, select: { id: true, nameSi: true, active: true } },
+    },
+  });
+  return districts.map((d) => ({
+    id: d.id,
+    name: d.nameSi,
+    offices: d.dsOffices.map((o) => ({ id: o.id, name: o.nameSi, active: o.active })),
+  }));
+}

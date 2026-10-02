@@ -17,6 +17,25 @@ export function formatDate(value: Date | string): string {
   const date = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) throw new RangeError(`Not a valid date: ${String(value)}`);
 
+  return colomboDay(date).replaceAll("-", ".");
+}
+
+/** The calendar day in Colombo (ARC-6) as "YYYY-MM-DD". */
+export function colomboDay(date: Date): string {
+  if (Number.isNaN(date.getTime())) throw new RangeError("Not a valid date");
   const get = (type: Intl.DateTimeFormatPartTypes) => parts.formatToParts(date).find((p) => p.type === type)?.value;
-  return `${get("year")}.${get("month")}.${get("day")}`;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/** The year in Colombo, as used in case numbers (CASE-5). */
+export function colomboYear(date: Date): number {
+  return Number(colomboDay(date).slice(0, 4));
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Whole calendar days in Colombo from `from` to `to`: 0 on the same day, 1 on the next day. */
+export function daysBetween(from: Date, to: Date): number {
+  const day = (date: Date) => Date.parse(`${colomboDay(date)}T00:00:00Z`);
+  return Math.round((day(to) - day(from)) / DAY_MS);
 }
