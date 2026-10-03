@@ -1,7 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import type { InstallmentStatus } from "@/generated/prisma/enums";
 import { formatDate } from "@/lib/dates";
-import { formatRupees } from "@/lib/money";
+import { formatRupees, paidOut } from "@/lib/money";
 import type { InstallmentDetails, ReleaseDetails } from "@/server/cases/queries";
 
 /** Installment status colours from the prototype; each pair meets WCAG AA contrast (UI-6). */
@@ -19,20 +19,23 @@ const STATUS_TEXT: Record<InstallmentStatus, string> = {
 /**
  * "මූල්‍ය ප්‍රගතිය" as in the prototype: the Rs. 2,000,000 released to the DS office, what has been paid
  * to the beneficiary, what the office still holds, and the four installments (REL-3, INS-1).
- * `correction` is Head Office's button to correct the release (REL-4).
+ * `correction` is Head Office's button to correct the release (REL-4). `actions` gives each installment's
+ * button, if any: the DS office's next step (INS-3, INS-4) or Head Office's undo (INS-6).
  */
 export async function MoneySection({
   release,
   installments,
   correction,
+  actions,
 }: {
   release: ReleaseDetails;
   installments: InstallmentDetails[];
   correction?: React.ReactNode;
+  actions?: (item: InstallmentDetails) => React.ReactNode;
 }) {
-  const t = await getTranslations("cases");
+  const [t, tp] = await Promise.all([getTranslations("cases"), getTranslations("progress")]);
   const paid = installments.filter((i) => i.status === "RELEASED");
-  const paidAmount = paid.reduce((sum, i) => sum + i.amount, 0);
+  const paidAmount = paidOut(installments);
   const tiles = [
     {
       label: t("money.released"),
@@ -74,6 +77,11 @@ export async function MoneySection({
             <th scope="col" className="px-3 py-2 font-semibold">
               {t("money.status")}
             </th>
+            {actions && (
+              <th scope="col" className="py-2 pl-3 text-right font-semibold">
+                <span className="sr-only">{tp("installments.actions")}</span>
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -109,6 +117,7 @@ export async function MoneySection({
                   )}
                 </span>
               </td>
+              {actions && <td className="py-2.5 pl-3 text-right">{actions(item)}</td>}
             </tr>
           ))}
         </tbody>

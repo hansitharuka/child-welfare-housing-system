@@ -2,7 +2,6 @@ import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { formatDate } from "@/lib/dates";
 import type { CaseDetails } from "@/server/cases/queries";
-import { StatusChip } from "./status-chip";
 
 type CasesT = Awaited<ReturnType<typeof getTranslations<"cases">>>;
 
@@ -48,78 +47,86 @@ function ReasonBox({ id, title, reason, tone }: { id: string; title: string; rea
 }
 
 /**
- * The case's details and documents, read-only, for the DS and Head Office case pages. `children`
- * comes after the documents: Head Office's decision or release form (Phase 5). Phase 6 adds the
- * stages and history (UI-7).
+ * What the reader must see first, above the case's columns: Head Office's reason when the case was sent
+ * back or rejected, and the DS office's note while Head Office has the case.
  */
-export async function CaseView({
-  details,
-  audience,
-  editHref,
-  children,
-}: {
-  details: CaseDetails;
-  /** Who reads the page: the notes about waiting are for the DS office. */
-  audience: "ds" | "ho";
-  editHref: string | null;
-  children?: React.ReactNode;
-}) {
+export async function CaseNotes({ details, audience }: { details: CaseDetails; audience: "ds" | "ho" }) {
   const t = await getTranslations("cases");
-  const rows = caseFieldRows(t, details);
-
+  const waiting = audience === "ds" && (details.status === "SUBMITTED" || details.status === "VERIFIED");
+  if (details.returnReason === null && details.rejectReason === null && !waiting) return null;
   return (
-    <div className="flex max-w-4xl flex-col gap-5">
+    <div className="flex flex-col gap-3">
       {details.returnReason !== null && (
         <ReasonBox id="returned-title" title={t("form.returned.title")} reason={details.returnReason} tone="warn" />
       )}
       {details.rejectReason !== null && (
         <ReasonBox id="rejected-title" title={t("page.rejectedTitle")} reason={details.rejectReason} tone="stop" />
       )}
-      {audience === "ds" && (details.status === "SUBMITTED" || details.status === "VERIFIED") && (
+      {waiting && (
         <p className="rounded-lg bg-[#E4EDF8] px-4 py-3 text-[15px] text-[#1E4E8C]">
           {details.status === "SUBMITTED" ? t("page.waiting") : t("page.verifiedDs")}
         </p>
       )}
+    </div>
+  );
+}
 
-      <section aria-labelledby="details-title" className="overflow-hidden rounded-xl border bg-card">
-        <div className="flex items-center justify-between gap-4 border-b px-6 py-4">
-          <h2 id="details-title" className="text-xl font-bold">
-            {t("page.details")}
-          </h2>
-          <StatusChip status={details.status} />
-        </div>
-        <dl className="flex flex-col">
-          {rows.map((row) => (
-            <div
-              key={row.label}
-              className="grid grid-cols-[260px_minmax(0,1fr)] gap-4 border-b px-6 py-2.5 last:border-b-0"
-            >
-              <dt className="text-[15px] text-muted-foreground">{row.label}</dt>
-              <dd className="font-semibold break-words whitespace-pre-line">{row.value}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
+/**
+ * The case page's two columns, as in the prototype: money, decisions and history on the left; stages
+ * and the beneficiary's details on the right. On a narrower screen the right column goes below (UI-2).
+ */
+export function CaseColumns({ main, side }: { main: React.ReactNode; side: React.ReactNode }) {
+  return (
+    <div className="grid max-w-[1360px] items-start gap-6 xl:grid-cols-[minmax(0,1fr)_460px]">
+      <div className="flex min-w-0 flex-col gap-6">{main}</div>
+      <div className="flex min-w-0 flex-col gap-6">{side}</div>
+    </div>
+  );
+}
 
-      <section aria-labelledby="documents-title" className="flex flex-col gap-3 rounded-xl border bg-card px-6 py-4">
-        <h2 id="documents-title" className="text-xl font-bold">
-          {t("page.documents")}
-        </h2>
-        <DocumentLinks documents={details.documents} empty={t("page.noDocuments")} />
-      </section>
+/** "ප්‍රතිලාභියාගේ විස්තර": every field and the documents, read-only, with the edit button when allowed. */
+export async function CaseDetailsSection({ details, editHref }: { details: CaseDetails; editHref: string | null }) {
+  const t = await getTranslations("cases");
+  const rows = caseFieldRows(t, details);
 
-      {children}
-
+  return (
+    <section aria-labelledby="details-title" className="flex flex-col gap-3 rounded-xl border bg-card px-5.5 py-5">
+      <h2 id="details-title" className="text-xl font-bold">
+        {t("page.details")}
+      </h2>
+      <dl className="grid grid-cols-[minmax(0,11rem)_minmax(0,1fr)] gap-x-4 gap-y-2.5">
+        {rows.map((row) => (
+          <div key={row.label} className="contents">
+            <dt className="text-[15px] text-muted-foreground">{row.label}</dt>
+            <dd className="font-semibold break-words whitespace-pre-line">{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+      <h3 id="documents-title" className="mt-2 border-t pt-3 text-base font-bold">
+        {t("page.documents")}
+      </h3>
+      <DocumentLinks documents={details.documents} empty={t("page.noDocuments")} />
       {editHref && (
         <Link
           href={editHref}
-          className="flex h-12 items-center self-start rounded-lg bg-primary px-6 text-[17px] font-semibold text-primary-foreground"
+          className="mt-1 flex h-12 items-center self-start rounded-lg bg-primary px-6 text-[17px] font-semibold text-primary-foreground"
         >
           {details.status === "RETURNED" ? t("page.fix") : t("page.edit")}
         </Link>
       )}
-    </div>
+    </section>
   );
+}
+
+/** The line under a case page's title: number, office (for Head Office), category and kind. */
+export async function caseSubtitle(details: CaseDetails, audience: "ds" | "ho"): Promise<string> {
+  const t = await getTranslations("cases");
+  return [
+    details.caseNumber ?? t("noNumber"),
+    ...(audience === "ho" ? [details.officeName] : []),
+    ...(details.category ? [t(`category.${details.category}`)] : []),
+    ...(details.kind ? [t(`kind.${details.kind}`)] : []),
+  ].join(" · ");
 }
 
 /** A case's documents, each opening in a new tab (CHK-2). */
