@@ -12,6 +12,14 @@ export const MAX_DOCUMENTS = 10;
 /** For the file picker only. The real check is sniffType(). */
 export const DOCUMENT_ACCEPT = "application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png";
 
+/** Photos of building progress (STG-1): JPEG, PNG or WebP, up to 15 MB each, at most 10 per update. */
+export const PHOTO_TYPES: readonly SniffedType[] = ["image/jpeg", "image/png", "image/webp"];
+export const MAX_PHOTO_BYTES = 15 * 1024 * 1024;
+export const MAX_PHOTOS = 10;
+
+/** For the file picker only. The real check is sniffType(). */
+export const PHOTO_ACCEPT = "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp";
+
 /** How many bytes sniffType() needs. */
 export const SNIFF_BYTES = 16;
 
@@ -31,10 +39,19 @@ export function sniffType(head: Uint8Array): SniffedType | null {
 
 export type FileProblem = "fileEmpty" | "fileTooBig" | "fileType";
 
+function problem(size: number, head: Uint8Array, maxBytes: number, types: readonly SniffedType[]): FileProblem | null {
+  if (size === 0) return "fileEmpty";
+  if (size > maxBytes) return "fileTooBig";
+  const type = sniffType(head);
+  return type && types.includes(type) ? null : "fileType";
+}
+
 /** Why a document can't be accepted, or null when it can (CASE-2, ERR-5). */
 export function documentProblem(size: number, head: Uint8Array): FileProblem | null {
-  if (size === 0) return "fileEmpty";
-  if (size > MAX_DOCUMENT_BYTES) return "fileTooBig";
-  const type = sniffType(head);
-  return type && DOCUMENT_TYPES.includes(type) ? null : "fileType";
+  return problem(size, head, MAX_DOCUMENT_BYTES, DOCUMENT_TYPES);
+}
+
+/** Why a photo can't be accepted, or null when it can (STG-1, ERR-5). */
+export function photoProblem(size: number, head: Uint8Array): FileProblem | null {
+  return problem(size, head, MAX_PHOTO_BYTES, PHOTO_TYPES);
 }

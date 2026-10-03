@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { documentProblem, MAX_DOCUMENT_BYTES, sniffType } from "./file-types";
+import { documentProblem, MAX_DOCUMENT_BYTES, MAX_PHOTO_BYTES, photoProblem, sniffType } from "./file-types";
 
 const bytes = (...parts: (number[] | string)[]) =>
   new Uint8Array(parts.flatMap((p) => (typeof p === "string" ? [...p].map((c) => c.charCodeAt(0)) : p)));
@@ -37,5 +37,20 @@ describe("documentProblem (CASE-2, ERR-5)", () => {
     expect(documentProblem(MAX_DOCUMENT_BYTES + 1, PDF)).toBe("fileTooBig");
     expect(documentProblem(1000, WEBP)).toBe("fileType");
     expect(documentProblem(1000, bytes("hello"))).toBe("fileType");
+  });
+});
+
+describe("photoProblem (STG-1, ERR-5)", () => {
+  it("accepts a JPEG, PNG or WebP up to 15 MB", () => {
+    expect(photoProblem(1000, JPEG)).toBeNull();
+    expect(photoProblem(MAX_PHOTO_BYTES, PNG)).toBeNull();
+    expect(photoProblem(5000, WEBP)).toBeNull();
+  });
+
+  it("refuses an empty file, a larger file, a PDF and other types", () => {
+    expect(photoProblem(0, JPEG)).toBe("fileEmpty");
+    expect(photoProblem(MAX_PHOTO_BYTES + 1, JPEG)).toBe("fileTooBig");
+    expect(photoProblem(1000, PDF)).toBe("fileType");
+    expect(photoProblem(1000, bytes("GIF89a"))).toBe("fileType");
   });
 });

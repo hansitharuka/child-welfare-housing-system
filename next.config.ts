@@ -9,10 +9,11 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   experimental: {
-    // Each upload is its own request of at most 10 MB (CASE-2), plus room for the form's own bytes.
-    // The proxy buffers request bodies too, and above its limit it would silently cut them short.
-    serverActions: { bodySizeLimit: "11mb" },
-    proxyClientMaxBodySize: "11mb",
+    // Each upload is its own request: a document of at most 10 MB (CASE-2) or a photo of at most 15 MB
+    // (STG-1), plus room for the form's own bytes. The proxy buffers request bodies too, and above its
+    // limit it would silently cut them short.
+    serverActions: { bodySizeLimit: "16mb" },
+    proxyClientMaxBodySize: "16mb",
   },
   async headers() {
     return [
