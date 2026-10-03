@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { colomboYear, dateToDay, dayToDate, daysBetween, formatDate, parseDay } from "./dates";
+import {
+  addDays,
+  colomboDay,
+  colomboStartOf,
+  colomboYear,
+  dateToDay,
+  dayToDate,
+  daysBetween,
+  formatDate,
+  parseDay,
+} from "./dates";
 
 describe("formatDate", () => {
   it("writes a calendar date as YYYY.MM.DD", () => {
@@ -53,5 +63,19 @@ describe("calendar days", () => {
     expect(dayToDate("2026-09-28").toISOString()).toBe("2026-09-28T00:00:00.000Z");
     expect(dateToDay(dayToDate("2026-09-28"))).toBe("2026-09-28");
     expect(formatDate(dateToDay(dayToDate("2026-01-05")))).toBe("2026.01.05");
+  });
+});
+
+describe("addDays and colomboStartOf", () => {
+  it("moves across months and years", () => {
+    expect(addDays("2026-09-28", 7)).toBe("2026-10-05");
+    expect(addDays("2026-01-01", -1)).toBe("2025-12-31");
+    expect(addDays("2028-02-28", 1)).toBe("2028-02-29");
+  });
+
+  it("starts a Colombo day at 18:30 UTC the day before", () => {
+    expect(colomboStartOf("2026-10-03").toISOString()).toBe("2026-10-02T18:30:00.000Z");
+    expect(colomboDay(colomboStartOf("2026-10-03"))).toBe("2026-10-03");
+    expect(colomboDay(new Date(colomboStartOf("2026-10-03").getTime() - 1))).toBe("2026-10-02");
   });
 });

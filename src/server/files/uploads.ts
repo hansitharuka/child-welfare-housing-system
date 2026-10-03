@@ -1,14 +1,18 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { PrismaClient } from "@/generated/prisma/client";
-import { documentProblem, type FileProblem, SNIFF_BYTES, sniffType } from "@/lib/file-types";
+import type { FileKind } from "@/generated/prisma/enums";
+import { documentProblem, type FileProblem, photoProblem, SNIFF_BYTES, sniffType } from "@/lib/file-types";
 import { logError } from "../log";
 import { canSeeOffice, caseScope, type Viewer } from "../permissions";
+import { processPhoto } from "./images";
 import { deleteStoredFile, writeStoredFile } from "./storage";
 
 type Actor = Viewer & { userId: string };
 
 export type UploadedFile = { id: string; name: string };
 export type UploadError = FileProblem | "notAllowed";
+/** A photo can also be a file that only looks like an image, or one too large to open. */
+export type PhotoUploadError = UploadError | "photoUnreadable";
 
 /** An upload that was never saved with a case is removed after a day. */
 const UNUSED_UPLOAD_MS = 24 * 60 * 60 * 1000;
@@ -37,58 +41,111 @@ export async function uploadDocument(
   if (problem) return { ok: false, error: problem };
 
   await removeUnusedUploads(db, actor.userId);
+  const name = cleanFileName(file.name);
+  const mimeType = sniffType(file.bytes.subarray(0, SNIFF_BYTES)) as string;
+  return { ok: true, value: await store(db, actor, { kind: "DOCUMENT", name, mimeType, bytes: file.bytes }) };
+}
 
+/**
+ * Stores one photo of building progress (STG-1, STG-3). Only the DS office records progress
+ * (SPEC section 4). The photo is checked from its contents, then turned upright, resized and saved as
+ * a JPEG with no metadata, so its GPS position is never stored; a thumbnail is saved beside it (STG-6).
+ * Like a document, it belongs to the person who uploaded it until the stage update is saved with it.
+ */
+export async function uploadPhoto(
+  db: PrismaClient,
+  actor: Actor,
+  file: { name: string; bytes: Uint8Array },
+): Promise<{ ok: true; value: UploadedFile } | { ok: false; error: PhotoUploadError }> {
+  if (actor.role !== "DS_OFFICER" || caseScope(actor).kind === "none") return { ok: false, error: "notAllowed" };
+  const problem = photoProblem(file.bytes.length, file.bytes.subarray(0, SNIFF_BYTES));
+  if (problem) return { ok: false, error: problem };
+  const processed = await processPhoto(file.bytes);
+  if (!processed) return { ok: false, error: "photoUnreadable" };
+
+  await removeUnusedUploads(db, actor.userId);
+  // The stored photo is always a JPEG, so its name says so too.
+  const stem = cleanFileName(file.name)
+    .replace(/\.[^.]*$/, "")
+    .slice(0, 195);
+  const photo = { name: `${stem || "photo"}.jpg`, mimeType: "image/jpeg", bytes: processed.photo };
+  return { ok: true, value: await store(db, actor, { kind: "PHOTO", ...photo, thumb: processed.thumb }) };
+}
+
+/** Writes the file, and a photo's thumbnail, under new random names, then its row. Nothing is left half-saved. */
+async function store(
+  db: PrismaClient,
+  actor: Actor,
+  file: { kind: FileKind; name: string; mimeType: string; bytes: Uint8Array; thumb?: Uint8Array },
+): Promise<UploadedFile> {
   const id = randomUUID();
   const storedName = randomUUID();
-  const name = cleanFileName(file.name);
-  await writeStoredFile(storedName, file.bytes);
+  const thumbName = file.thumb ? randomUUID() : null;
+  const written: string[] = [];
   try {
+    await writeStoredFile(storedName, file.bytes);
+    written.push(storedName);
+    if (thumbName && file.thumb) {
+      await writeStoredFile(thumbName, file.thumb);
+      written.push(thumbName);
+    }
     await db.storedFile.create({
       data: {
         id,
+        kind: file.kind,
         storedName,
-        originalName: name,
-        mimeType: sniffType(file.bytes.subarray(0, SNIFF_BYTES)) as string,
+        thumbName,
+        originalName: file.name,
+        mimeType: file.mimeType,
         size: file.bytes.length,
         sha256: createHash("sha256").update(file.bytes).digest("hex"),
         uploadedById: actor.userId,
       },
     });
   } catch (error) {
-    await deleteStoredFile(storedName);
+    for (const name of written) await deleteStoredFile(name);
     throw error;
   }
-  return { ok: true, value: { id, name } };
+  return { id, name: file.name };
 }
 
 /** Removes the person's uploads that were never saved with a case, once they are a day old. */
 async function removeUnusedUploads(db: PrismaClient, userId: string): Promise<void> {
   const where = { uploadedById: userId, caseId: null, uploadedAt: { lt: new Date(Date.now() - UNUSED_UPLOAD_MS) } };
-  const unused = await db.storedFile.findMany({ where, select: { id: true, storedName: true } });
+  const unused = await db.storedFile.findMany({ where, select: { id: true, storedName: true, thumbName: true } });
   if (unused.length === 0) return;
   await db.storedFile.deleteMany({ where: { id: { in: unused.map((f) => f.id) }, caseId: null } });
   for (const file of unused) {
-    await deleteStoredFile(file.storedName).catch((error: unknown) =>
-      logError("file_delete_failed", error, { fileId: file.id }),
-    );
+    for (const name of [file.storedName, file.thumbName]) {
+      if (!name) continue;
+      await deleteStoredFile(name).catch((error: unknown) =>
+        logError("file_delete_failed", error, { fileId: file.id }),
+      );
+    }
   }
 }
 
-export type FileToSend = { storedName: string; originalName: string; mimeType: string; size: number };
+export type FileToSend = { storedName: string; originalName: string; mimeType: string };
 
 /**
  * A file the viewer may open (SEC-7): a case's file under the same office rules as the case itself
  * (PRM-1), or the viewer's own upload that is not on a case yet. Anything else is "not found".
+ * `thumb` asks for a photo's thumbnail (STG-6); a document has none.
  */
-export async function fileForViewer(db: PrismaClient, viewer: Actor, id: string): Promise<FileToSend | null> {
+export async function fileForViewer(
+  db: PrismaClient,
+  viewer: Actor,
+  id: string,
+  variant: "file" | "thumb" = "file",
+): Promise<FileToSend | null> {
   if (caseScope(viewer).kind === "none") return null;
   const file = await db.storedFile.findUnique({
     where: { id },
     select: {
       storedName: true,
+      thumbName: true,
       originalName: true,
       mimeType: true,
-      size: true,
       uploadedById: true,
       removedAt: true,
       case: { select: { dsOfficeId: true } },
@@ -97,5 +154,10 @@ export async function fileForViewer(db: PrismaClient, viewer: Actor, id: string)
   if (!file || file.removedAt) return null;
   const allowed = file.case ? canSeeOffice(viewer, file.case.dsOfficeId) : file.uploadedById === viewer.userId;
   if (!allowed) return null;
-  return { storedName: file.storedName, originalName: file.originalName, mimeType: file.mimeType, size: file.size };
+  if (variant === "thumb") {
+    return file.thumbName
+      ? { storedName: file.thumbName, originalName: file.originalName, mimeType: "image/jpeg" }
+      : null;
+  }
+  return { storedName: file.storedName, originalName: file.originalName, mimeType: file.mimeType };
 }

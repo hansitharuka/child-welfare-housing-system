@@ -7,14 +7,18 @@ import { StatusChip } from "@/components/cases/status-chip";
 import { FormNotice } from "@/components/forms/form-field";
 import type { CaseStatus } from "@/generated/prisma/enums";
 import { daysBetween, formatDate } from "@/lib/dates";
+import { formatRupees, INSTALLMENT_COUNT } from "@/lib/money";
 import { canEditDetails } from "@/server/cases/rules";
 import {
   type CaseFilter,
   type CaseRow,
   countCases,
   listCases,
+  officeMoney,
   officeSummary,
   PAGE_SIZE,
+  STALE_DAYS,
+  type TodoItem,
   todoItems,
 } from "@/server/cases/queries";
 import { requireRole } from "@/server/context";
@@ -30,7 +34,15 @@ type Tab = keyof typeof TABS;
 
 const isTab = (value: unknown): value is Tab => typeof value === "string" && value in TABS;
 
-/** HOME-1 to HOME-3: the DS officer's own cases, with what needs doing next to them. */
+/** The colour of each kind of to-do item, as in the prototype. */
+const TODO_COLOUR: Record<TodoItem["type"], string> = {
+  returned: "bg-[#FBEBD3]",
+  due: "bg-[#E4EDF8]",
+  stale: "bg-muted",
+  draft: "bg-muted",
+};
+
+/** HOME-1 to HOME-4: the DS officer's own cases, with what needs doing next and the office's money beside them. */
 export default async function DsHomePage({
   searchParams,
 }: {
@@ -51,13 +63,14 @@ export default async function DsHomePage({
   const page = Math.max(1, Number(params.page) || 1);
   const filter: CaseFilter = { q, statuses: TABS[tab] ? [...TABS[tab]] : undefined, page };
 
-  const [t, list, counts, todo] = await Promise.all([
+  const [t, list, counts, todo, money] = await Promise.all([
     getTranslations("cases"),
     listCases(db, viewer, filter),
     Promise.all(
       (Object.keys(TABS) as Tab[]).map((key) => countCases(db, viewer, { statuses: TABS[key] && [...TABS[key]] })),
     ),
     todoItems(db, viewer),
+    officeMoney(db, viewer),
   ]);
   const now = new Date();
   const href = (changes: { tab?: Tab; page?: number }) => {
@@ -70,18 +83,20 @@ export default async function DsHomePage({
     return text ? `/ds?${text}` : "/ds";
   };
 
-  /** What comes next for the case, in the progress column. Phase 6 adds the installments and the stage reached. */
+  /** What comes next for the case, in the progress column: for a running case, the stage reached (HOME-1). */
   const progress = (row: CaseRow) => {
     switch (row.status) {
       case "SUBMITTED": {
         const days = row.submittedAt ? daysBetween(row.submittedAt, now) : 0;
         return days === 0 ? t("home.progress.submittedToday") : t("home.progress.SUBMITTED", { days });
       }
+      case "IN_PROGRESS":
+        return row.stageName ?? t("home.progress.IN_PROGRESS");
       case "DRAFT":
       case "RETURNED":
       case "VERIFIED":
-      case "IN_PROGRESS":
       case "COMPLETED":
+      case "STOPPED":
       case "IMPORTED":
         return t(`home.progress.${row.status}`);
       default:
@@ -199,8 +214,19 @@ export default async function DsHomePage({
                     <td className="px-3 py-2.5">
                       <StatusChip status={row.status} />
                     </td>
-                    <td className="px-3 py-2.5">{t("none")}</td>
-                    <td className="px-5 py-2.5 text-[15px]">{progress(row)}</td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      {row.paid === null ? t("none") : t("home.paid", { paid: row.paid, total: INSTALLMENT_COUNT })}
+                    </td>
+                    <td className="px-5 py-2.5 text-[15px]">
+                      <span className="flex flex-col">
+                        <span>{progress(row)}</span>
+                        {row.status === "IN_PROGRESS" && daysBetween(row.updatedAt, now) >= STALE_DAYS && (
+                          <span className="text-sm font-semibold text-[#8A4A06]">
+                            {t("home.progress.stale", { days: daysBetween(row.updatedAt, now) })}
+                          </span>
+                        )}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -209,43 +235,92 @@ export default async function DsHomePage({
           <Pager page={page} pageSize={PAGE_SIZE} total={list.total} href={(p) => href({ page: p })} />
         </section>
 
-        <aside
-          aria-labelledby="todo-title"
-          className="flex w-80 shrink-0 flex-col gap-3 rounded-xl border bg-card p-4.5"
-        >
-          <h2 id="todo-title" className="text-[19px] font-bold">
-            {t("home.todo.title")}
-          </h2>
-          {todo.length === 0 ? (
-            <p className="text-[15px] text-muted-foreground">{t("home.todo.none")}</p>
-          ) : (
-            <ul className="flex flex-col gap-2.5">
-              {todo.map((item) => (
-                <li key={item.id}>
-                  <Link
-                    href={`/ds/cases/${item.id}/edit`}
-                    className={`flex flex-col gap-1 rounded-lg px-3.5 py-3 ${item.type === "returned" ? "bg-[#FBEBD3]" : "bg-muted"}`}
-                  >
-                    <span className="font-bold">
-                      {t(item.type === "returned" ? "home.todo.returned" : "home.todo.draft", {
-                        name: caseName(t, item.name, item.childName),
-                      })}
-                    </span>
-                    <span className="text-[15px] text-[#3F4843]">
-                      {item.type === "returned"
-                        ? (item.reason ?? t("home.todo.noReason"))
-                        : t("home.todo.draftText", { date: formatDate(item.updatedAt) })}
-                    </span>
-                    <span className="text-[15px] font-semibold text-primary">
-                      {t(item.type === "returned" ? "home.todo.returnedAction" : "home.todo.draftAction")} →
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+        <div className="flex w-80 shrink-0 flex-col gap-5">
+          <aside aria-labelledby="todo-title" className="flex flex-col gap-3 rounded-xl border bg-card p-4.5">
+            <h2 id="todo-title" className="text-[19px] font-bold">
+              {t("home.todo.title")}
+            </h2>
+            {todo.length === 0 ? (
+              <p className="text-[15px] text-muted-foreground">{t("home.todo.none")}</p>
+            ) : (
+              <ul className="flex flex-col gap-2.5">
+                {todo.map((item) => (
+                  <li key={`${item.type}-${item.id}`}>
+                    <TodoLink item={item} t={t} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </aside>
+          {money && (
+            <section aria-labelledby="money-title" className="flex flex-col rounded-xl border bg-card p-4.5">
+              <h2 id="money-title" className="mb-1.5 text-[19px] font-bold">
+                {t("home.money.title")}
+              </h2>
+              <dl className="flex flex-col">
+                {(
+                  [
+                    ["received", money.received],
+                    ["paidOut", money.paidOut],
+                    ["balance", money.balance],
+                  ] as const
+                ).map(([key, amount]) => (
+                  <div key={key} className="flex justify-between gap-3 border-b py-2 last:border-b-0">
+                    <dt className="text-[15px] text-[#3F4843]">{t(`home.money.${key}`)}</dt>
+                    <dd className="font-bold whitespace-nowrap">{formatRupees(amount)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
           )}
-        </aside>
+        </div>
       </div>
     </div>
+  );
+}
+
+type HomeT = Awaited<ReturnType<typeof getTranslations<"cases">>>;
+
+/** One to-do item (HOME-3): what needs doing, why, and a link to where it is done. */
+function TodoLink({ item, t }: { item: TodoItem; t: HomeT }) {
+  const name = caseName(t, item.name, item.childName);
+  const content = (() => {
+    switch (item.type) {
+      case "returned":
+        return {
+          href: `/ds/cases/${item.id}/edit`,
+          title: t("home.todo.returned", { name }),
+          text: item.reason ?? t("home.todo.noReason"),
+          action: t("home.todo.returnedAction"),
+        };
+      case "due":
+        return {
+          href: `/ds/cases/${item.id}`,
+          title: t("home.todo.due", { name, installment: t(`installment.name.${item.number as 1 | 2 | 3 | 4}`) }),
+          text: t(item.overdue ? "home.todo.overdueText" : "home.todo.dueText", { date: formatDate(item.expectedOn) }),
+          action: t("home.todo.open"),
+        };
+      case "stale":
+        return {
+          href: `/ds/cases/${item.id}`,
+          title: t("home.todo.stale", { name }),
+          text: t("home.todo.staleText", { days: item.days }),
+          action: t("home.todo.open"),
+        };
+      case "draft":
+        return {
+          href: `/ds/cases/${item.id}/edit`,
+          title: t("home.todo.draft", { name }),
+          text: t("home.todo.draftText", { date: formatDate(item.updatedAt) }),
+          action: t("home.todo.draftAction"),
+        };
+    }
+  })();
+  return (
+    <Link href={content.href} className={`flex flex-col gap-1 rounded-lg px-3.5 py-3 ${TODO_COLOUR[item.type]}`}>
+      <span className="font-bold">{content.title}</span>
+      <span className="text-[15px] text-[#3F4843]">{content.text}</span>
+      <span className="text-[15px] font-semibold text-primary">{content.action} →</span>
+    </Link>
   );
 }

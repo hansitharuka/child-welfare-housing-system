@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists), 4 (cases) and 5 (check and release) of `docs/PLAN.md` are built. You get:
+Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists), 4 (cases), 5 (check and release) and 6 (installments, progress and closing) of `docs/PLAN.md` are built. You get:
 
 - a Sinhala Next.js shell for the three roles, and PostgreSQL with the place and stage lists
 - sign-in with lockout and forced password change, a permission layer, an append-only audit log and security headers
@@ -15,9 +15,11 @@ Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists
 - the DS home, and Head Office's case list and case entry for any DS
 - Head Office's check and release screen: verify, send back or reject, then record the Rs. 2,000,000 release, which makes the four installments
 - notifications for the DS (a bell) and waiting counts in the Head Office menu; Head Office's corrections to verified cases and releases
+- the four installments paid in order by the DS, building stages with photos, completion, stopping and reopening, and each case's history, on two-column case pages as in the prototype
+- the DS home's money panel and its full to-do panel
 - tests and CI
 
-The installment actions, building stages, stopping and the case history come next (Phase 6); the Head Office dashboard is still a placeholder.
+The Head Office dashboard and the Excel exports come next (Phase 7); the dashboard is still a placeholder.
 
 The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
@@ -34,7 +36,7 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 | Database tests (database must be up) | `npm run test:db`; one file: `npx vitest run --config vitest.db.config.mts prisma/seed.db.test.ts` |
 | End-to-end tests | `npm run test:e2e`; one test: `npx playwright test tests/e2e/smoke.spec.ts -g "/ds"` |
 | Production build and server | `npm run build`, then `npm run start:standalone` |
-| Change the database schema | edit `prisma/schema.prisma`, then `npx prisma migrate dev --name <change>` and `npx prisma generate` (Prisma 7's `migrate dev` no longer regenerates the client) |
+| Change the database schema | edit `prisma/schema.prisma`, then `npx prisma migrate dev --name <change>` and `npx prisma generate` (Prisma 7's `migrate dev` no longer regenerates the client). When `migrate dev` stops to ask about a change (for example a new unique column), write the SQL with `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` into a new `prisma/migrations/<timestamp>_<change>/migration.sql` and apply it with `npx prisma migrate deploy` |
 | Put the sample accounts back to their start state | `npx tsx prisma/seed-users.ts --reset` (the end-to-end tests do this themselves) |
 
 ## Things to know when coding
@@ -93,7 +95,7 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 - **A new case's id is made when its form page renders**, so a form sent twice finds the saved case and changes nothing (ERR-8). Every later save sends the `version` it opened with; a stale one is refused with `conflict` (CASE-10, ERR-3).
 - **Case numbers come from `case_number_counter`.** The row for an office and year stays locked until the submit commits, so parallel submits take turns. Two first submits of a year can still meet on its insert; `saveCase` tries again.
 - **Uploads are one Server Action request per file**, sent as soon as it is chosen (at most 10 MB). The file row's `case_id` stays empty until the case form is saved, which attaches only the actor's own unattached uploads. An upload never saved with a case is removed after a day.
-- **Body limits are 11 MB** (`serverActions.bodySizeLimit` and `proxyClientMaxBodySize` in `next.config.ts`). Above its limit the proxy silently cuts a request body short. Nginx will need `client_max_body_size` of at least 11 MB (Phase 9).
+- **Body limits are 16 MB** (`serverActions.bodySizeLimit` and `proxyClientMaxBodySize` in `next.config.ts`), for photos of up to 15 MB (Phase 6). Above its limit the proxy silently cuts a request body short. Nginx will need `client_max_body_size` of at least 16 MB (Phase 9).
 - **Files live under `FILES_DIR`** (default `data/files`, which git ignores), named by a random UUID in two-character sub-folders. `/files/[id]` applies the case's office rules. The proxy leaves its CSP off `/files/` responses, because the page policy (`object-src 'none'`) could stop the browser's PDF viewer.
 - **One case form for both roles.** `src/components/forms/case-form.tsx` builds its own `FormData` instead of using `<form action>`, so typed values and chosen files survive a refused save. Each role's `actions.ts` checks its own role, then calls `src/server/cases/form-actions.ts`.
 - **Client components may import types from `src/server/`**, never values.
@@ -116,6 +118,20 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
   - Head Office's menu counts come from `src/app/ho/layout.tsx`. A layout doesn't render again on client-side moves, so actions that change a queue call `revalidatePath("/ho", "layout")`.
 - **Edits after verification (CASE-9)** reuse `saveCase` and the case form in `mode="change"`: one save button, every required field checked (`mustStayComplete`), no submit. The changed fields are logged as `case_updated` with old and new values.
 - **Test helpers:** e2e case entry is in `tests/e2e/case-helpers.ts` (`openAs` keeps a second person's window open). `cleanup.ts` also deletes test cases' notifications, installments and releases. The database tests' config skips `.next/`, where a standalone build copies the test files.
+
+### Installments, progress and closing (Phase 6)
+
+- **Every installment or stage change claims the case first** with `claimCase` (`src/server/cases/claim.ts`): the version goes up only while it is still the one the page showed and the case is `IN_PROGRESS`, inside the change's transaction. That gives CASE-10 and ERR-8 for free, and moves `case.updatedAt`, which is what "no update for 30 days" reads (`STALE_DAYS` in `src/server/cases/queries.ts`).
+- **The installment order is pure code** in `src/server/installments/rules.ts` (`nextInstallment`, `stepRefusal`, `lastPaid`). The commands (`src/server/installments/commands.ts`) and the DS case page both use it. Only the DS office starts and pays; Head Office only undoes the last payment (INS-6).
+- **Stage updates are one row per stage reached** (`stage_update`, unique per case and stage). Choosing a stage further ahead also writes a row for each stage it skips, on the same day; a note-only visit has no stage. The chosen row holds the note and photos. The progress view (`stageProgress` in `src/server/stages/queries.ts`) is pure: the current stage is the highest one reached, and the choices are the active stages after it. A used stage can't be deleted (a restricting foreign key), only deactivated.
+- **Completion runs inside the change's transaction** (`completeIfDone` in `src/server/cases/complete.ts`) after a payment or a stage reached. The system makes the move, so its audit record has no actor and the history says "the system".
+- **Stopping stores `status_before_stop`** on the case; reopening goes back to it (`src/server/cases/stop.ts`). A database check allows it only on a stopped case.
+- **Files have a kind**, `DOCUMENT` or `PHOTO`. Every document query (the case's list, the 10-document limit, removing one) filters on `DOCUMENT`, and a photo also carries its `stage_update_id`.
+  - `uploadPhoto` (`src/server/files/uploads.ts`) runs `processPhoto` (`src/server/files/images.ts`, sharp) before anything is stored: upright, at most 1,600 px, JPEG 80, no metadata, plus a 320 px thumbnail kept under `thumb_name` and served by `/files/[id]/thumb`.
+  - Thumbnails are plain `<img>` tags, because the files are protected and can't go through Next's image optimizer.
+- **The history** (`caseHistory` in `src/server/history/queries.ts`) reads the audit log; `src/components/progress/case-history.tsx` turns each action into a Sinhala sentence. A new audit action needs a sentence there and under `history.actions` in `messages/si.json`, or it shows as "a change was made".
+- **Case pages** use `CaseColumns` (`src/components/cases/case-view.tsx`): money, decisions and history on the left; stages and details on the right; one column below 1,280 px. The pop-ups for installments, stages, stopping, reopening and undoing are in `src/components/progress/`; `ReasonAction` is the shared "give a reason" pop-up. `Modal` takes a `size` and sets `text-left`, because some pop-ups live in right-aligned table cells.
+- **Test helpers:** `releasedCase` (`tests/e2e/case-helpers.ts`) gives a case released today. E2E tests read the stage names from the form, because the admin may rename or reorder stages. The development database's new-house stages have been reordered by hand. `cleanup.ts` also deletes test cases' stage updates and photo thumbnails.
 
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 

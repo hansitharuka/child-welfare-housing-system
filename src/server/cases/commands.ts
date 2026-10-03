@@ -36,7 +36,9 @@ export type CaseCommandError =
   /** The case's status doesn't allow this step (STS-1). */
   | "notAllowedNow"
   /** The actor's role never takes this step (SPEC section 4). */
-  | "roleNotAllowed";
+  | "roleNotAllowed"
+  /** The kind of help decides the stages, so it stays once a stage is recorded (CASE-9, STG-4). */
+  | "kindLocked";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: CaseCommandError };
 
@@ -124,6 +126,11 @@ async function checkSave(
     if (office !== current.dsOfficeId && !canChangeOffice(actor.role, current.status)) return "notEditable";
     // CASE-9: a verified case keeps every required field, whichever button sent the form.
     if (mustStayComplete(current.status) && Object.keys(missingRequired(input.values)).length > 0) return "incomplete";
+    // The stages come from the kind of help (LST-4), so a case that has reached one keeps its kind.
+    if (input.values.kind !== current.kind) {
+      const reached = await db.stageUpdate.count({ where: { caseId: current.id, stageId: { not: null } } });
+      if (reached > 0) return "kindLocked";
+    }
   }
   if (input.submit) {
     const refusal = moveRefusal(actor.role, "submit", current?.status ?? "DRAFT");
@@ -220,10 +227,10 @@ async function attachDocuments(
 ): Promise<string[]> {
   const unique = [...new Set(ids)];
   if (unique.length === 0) return [];
-  const onCase = await tx.storedFile.count({ where: { caseId, removedAt: null } });
+  const onCase = await tx.storedFile.count({ where: { caseId, kind: "DOCUMENT", removedAt: null } });
   if (onCase + unique.length > MAX_DOCUMENTS) throw new Refusal("tooManyFiles");
   const attached = await tx.storedFile.updateMany({
-    where: { id: { in: unique }, caseId: null, uploadedById: actor.userId },
+    where: { id: { in: unique }, kind: "DOCUMENT", caseId: null, uploadedById: actor.userId },
     data: { caseId },
   });
   if (attached.count !== unique.length) throw new Refusal("fileUnavailable");
@@ -292,7 +299,7 @@ export async function removeDocument(
   try {
     await db.$transaction(async (tx) => {
       const removed = await tx.storedFile.updateMany({
-        where: { id: fileId, caseId, removedAt: null },
+        where: { id: fileId, caseId, kind: "DOCUMENT", removedAt: null },
         data: { removedAt: new Date(), removedById: actor.userId },
       });
       if (removed.count === 0) throw new Refusal("notFound");

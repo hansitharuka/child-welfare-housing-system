@@ -1,0 +1,668 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import sharp from "sharp";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { seed } from "../../../prisma/seed-data";
+import { createTestClient, freeOfficeId } from "../../../tests/db/client";
+import { addDays, colomboDay, colomboStartOf, dayToDate } from "@/lib/dates";
+import type { CaseValues } from "@/lib/validation/case";
+import { NOTE_ONLY } from "@/lib/validation/progress";
+import { type Actor, saveCase, type SaveCaseInput } from "../cases/commands";
+import { decideCase } from "../cases/decide";
+import { getCase, listCases, officeMoney, todoItems } from "../cases/queries";
+import { reopenCase, stopCase } from "../cases/stop";
+import { readStoredFile } from "../files/storage";
+import { fileForViewer, uploadPhoto } from "../files/uploads";
+import { caseHistory } from "../history/queries";
+import { recordRelease } from "../releases/commands";
+import { recordStageUpdate } from "../stages/commands";
+import { getStageProgress } from "../stages/queries";
+import { markInstallmentPaid, startInstallment, undoInstallmentPayment } from "./commands";
+
+const filesDir = mkdtempSync(join(tmpdir(), "diviyata-progress-"));
+process.env.FILES_DIR = filesDir;
+
+const db = createTestClient();
+
+let dsA: Actor;
+let dsB: Actor;
+let ho: Actor;
+const admin: Actor = { userId: "progress-test-admin", role: "ADMIN", dsOfficeId: null };
+
+const today = () => colomboDay(new Date());
+const daysAgo = (days: number) => addDays(today(), -days);
+/** Every case's release is 50 days ago, so each test has room for earlier and later days. */
+const RELEASED_DAYS_AGO = 50;
+
+let nicCounter = 0;
+/** A made-up NIC (SEC-11), different for every case so the tests don't match each other. */
+const nextNic = () => `2003${String(++nicCounter).padStart(8, "0")}`;
+
+const values = (overrides: Partial<CaseValues> = {}): CaseValues => ({
+  category: "CARE_LEAVER",
+  kind: "NEW_HOUSE",
+  childName: null,
+  name: "ප්‍රගති පරීක්ෂණ",
+  nic: nextNic(),
+  address: "නො. 3, පරීක්ෂණ පාර",
+  mobile1: "0710000003",
+  mobile2: null,
+  remark: null,
+  ...overrides,
+});
+
+const load = (id: string) => db.case.findUniqueOrThrow({ where: { id } });
+
+/**
+ * A case of dsA's office with its Rs. 2,000,000 released 50 days ago: submitted, verified (its
+ * verification moved back 60 days so the release can be earlier than today) and released.
+ */
+async function running(overrides: Partial<CaseValues> = {}) {
+  const input: SaveCaseInput = {
+    id: randomUUID(),
+    version: null,
+    dsOfficeId: null,
+    values: values(overrides),
+    documentIds: [],
+    submit: true,
+  };
+  const saved = await saveCase(db, dsA, input);
+  if (!saved.ok) throw new Error(saved.error);
+  const sent = await load(saved.value.id);
+  const verified = await decideCase(db, ho, {
+    caseId: sent.id,
+    version: sent.version,
+    decision: "verify",
+    reason: null,
+  });
+  if (!verified.ok) throw new Error(verified.error);
+  await db.case.update({ where: { id: sent.id }, data: { verifiedAt: colomboStartOf(daysAgo(60)) } });
+  const ready = await load(sent.id);
+  const release = await recordRelease(db, ho, {
+    caseId: ready.id,
+    version: ready.version,
+    form: { releasedOn: daysAgo(RELEASED_DAYS_AGO), referenceNumber: "HO/2026/P6", note: "" },
+  });
+  if (!release.ok) throw new Error(String(release.error ?? JSON.stringify(release.errors)));
+  return load(ready.id);
+}
+
+const version = async (id: string) => (await load(id)).version;
+
+function start(actor: Actor, caseId: string, caseVersion: number, number: number, expectedOn = daysAgo(40)) {
+  return startInstallment(db, actor, {
+    caseId,
+    version: caseVersion,
+    number,
+    form: { expectedOn, purpose: "", note: "" },
+  });
+}
+
+function pay(actor: Actor, caseId: string, caseVersion: number, number: number, releasedOn = daysAgo(30)) {
+  return markInstallmentPaid(db, actor, { caseId, version: caseVersion, number, form: { releasedOn, note: "" } });
+}
+
+/** Starts and pays one installment as the office, on the given day. */
+async function payNext(caseId: string, number: number, day = daysAgo(30)) {
+  const started = await start(dsA, caseId, await version(caseId), number, day);
+  if (!started.ok) throw new Error(JSON.stringify(started));
+  const paid = await pay(dsA, caseId, await version(caseId), number, day);
+  if (!paid.ok) throw new Error(JSON.stringify(paid));
+  return paid;
+}
+
+function stage(
+  caseId: string,
+  caseVersion: number,
+  stageId: number | null,
+  visitedOn = daysAgo(20),
+  photoIds: string[] = [],
+) {
+  return recordStageUpdate(db, dsA, {
+    caseId,
+    version: caseVersion,
+    form: { stageId: stageId === null ? NOTE_ONLY : String(stageId), visitedOn, note: "" },
+    photoIds,
+  });
+}
+
+/** The active new-house stages, in order, as the admin has left them. */
+async function newHouseStages() {
+  return db.stageDefinition.findMany({
+    where: { kind: "NEW_HOUSE", active: true },
+    orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+    select: { id: true, nameSi: true },
+  });
+}
+
+async function officer(id: string): Promise<Actor> {
+  const dsOfficeId = await freeOfficeId(db);
+  await db.user.create({
+    data: { id, name: "ප්‍රා. පරීක්ෂණ", email: `${id}@no-email.invalid`, role: "DS_OFFICER", dsOfficeId },
+  });
+  return { userId: id, role: "DS_OFFICER", dsOfficeId };
+}
+
+/** A made-up phone photo with a GPS position in its metadata (AC-16). */
+function photoWithGps(): Promise<Buffer> {
+  return sharp({ create: { width: 2400, height: 1800, channels: 3, background: "#8a6b4f" } })
+    .jpeg()
+    .withExifMerge({
+      IFD0: { Make: "ProgressTestPhone" },
+      IFD3: { GPSLatitudeRef: "N", GPSLatitude: "6/1 54/1 0/1", GPSLongitudeRef: "E", GPSLongitude: "79/1 51/1 0/1" },
+    })
+    .toBuffer();
+}
+
+beforeAll(async () => {
+  await seed(db);
+  dsA = await officer("progress-test-ds-a");
+  dsB = await officer("progress-test-ds-b");
+  await db.user.create({
+    data: {
+      id: "progress-test-ho",
+      name: "ප්‍ර. පරීක්ෂණ",
+      email: "progress-test-ho@no-email.invalid",
+      role: "HO_OFFICER",
+    },
+  });
+  ho = { userId: "progress-test-ho", role: "HO_OFFICER", dsOfficeId: null };
+  await db.user.create({
+    data: { id: admin.userId, name: "පරිපාලක", email: "progress-test-admin@no-email.invalid", role: "ADMIN" },
+  });
+});
+
+afterAll(async () => {
+  await db.$disconnect();
+  rmSync(filesDir, { recursive: true, force: true });
+});
+
+describe("installments (INS-1 to INS-6)", () => {
+  it("lets only the next installment change, even through a direct call to the server (AC-11, ERR-7)", async () => {
+    const c = await running();
+    expect(await start(dsA, c.id, c.version, 2)).toMatchObject({ ok: false, error: "notNext" });
+    expect(await pay(dsA, c.id, c.version, 1)).toMatchObject({ ok: false, error: "notStartedYet" });
+    expect(await start(dsA, c.id, c.version, 5)).toMatchObject({ ok: false, error: "notFound" });
+
+    await payNext(c.id, 1, daysAgo(35));
+    const v = await version(c.id);
+    expect(await start(dsA, c.id, v, 1)).toMatchObject({ ok: false, error: "alreadyPaid" });
+    expect(await start(dsA, c.id, v, 3)).toMatchObject({ ok: false, error: "notNext" });
+    expect(await start(dsA, c.id, v, 2)).toMatchObject({ ok: true });
+    // Installment 3 can't change while installment 2 is under way but not released.
+    const v2 = await version(c.id);
+    expect(await start(dsA, c.id, v2, 3)).toMatchObject({ ok: false, error: "notNext" });
+    expect(await pay(dsA, c.id, v2, 3)).toMatchObject({ ok: false, error: "notNext" });
+
+    const list = await db.installment.findMany({ where: { caseId: c.id }, orderBy: { number: "asc" } });
+    expect(list.map((i) => i.status)).toEqual(["RELEASED", "PROCESSING", "NOT_STARTED", "NOT_STARTED"]);
+  });
+
+  it("keeps the dates in order: expected and paid on or after the release, paid no later than today and after the previous one (INS-3, INS-4)", async () => {
+    const c = await running();
+    expect(await start(dsA, c.id, c.version, 1, daysAgo(RELEASED_DAYS_AGO + 1))).toMatchObject({
+      ok: false,
+      errors: { expectedOn: "dateBeforeRelease" },
+    });
+    // The expected day may be in the future.
+    expect(await start(dsA, c.id, c.version, 1, addDays(today(), 10))).toMatchObject({ ok: true });
+    const v = await version(c.id);
+    expect(await pay(dsA, c.id, v, 1, addDays(today(), 1))).toMatchObject({ errors: { releasedOn: "dateInFuture" } });
+    expect(await pay(dsA, c.id, v, 1, daysAgo(RELEASED_DAYS_AGO + 1))).toMatchObject({
+      errors: { releasedOn: "dateBeforeRelease" },
+    });
+    expect(await pay(dsA, c.id, v, 1, daysAgo(20))).toMatchObject({ ok: true, completed: false });
+
+    expect(await start(dsA, c.id, await version(c.id), 2, daysAgo(25))).toMatchObject({ ok: true });
+    expect(await pay(dsA, c.id, await version(c.id), 2, daysAgo(21))).toMatchObject({
+      errors: { releasedOn: "dateBeforePrevious" },
+    });
+    expect(await pay(dsA, c.id, await version(c.id), 2, daysAgo(20))).toMatchObject({ ok: true });
+  });
+
+  it("is the case's own office's to change: another office finds nothing, Head Office and the admin may not", async () => {
+    const c = await running();
+    expect(await start(dsB, c.id, c.version, 1)).toMatchObject({ ok: false, error: "notFound" });
+    expect(await start(ho, c.id, c.version, 1)).toMatchObject({ ok: false, error: "roleNotAllowed" });
+    expect(await start(admin, c.id, c.version, 1)).toMatchObject({ ok: false, error: "notFound" });
+  });
+
+  it("refuses a form opened before someone else's change (CASE-10)", async () => {
+    const c = await running();
+    expect(await start(dsA, c.id, c.version, 1)).toMatchObject({ ok: true });
+    // The same form sent again, for example after a network drop, changes nothing (ERR-8).
+    expect(await start(dsA, c.id, c.version, 1)).toMatchObject({ ok: false, error: "alreadyStarted" });
+    expect(await pay(dsA, c.id, c.version, 1)).toMatchObject({ ok: false, error: "conflict" });
+  });
+
+  it("lets Head Office move the most recently paid installment back, with a reason (INS-6)", async () => {
+    const c = await running();
+    await payNext(c.id, 1, daysAgo(35));
+    await payNext(c.id, 2, daysAgo(30));
+    const undo = async (actor: Actor, number: number, reason: string) =>
+      undoInstallmentPayment(db, actor, { caseId: c.id, version: await version(c.id), number, reason });
+
+    expect(await undo(dsA, 2, "වැරදි දිනයක් යෙදුවා")).toMatchObject({ ok: false, error: "roleNotAllowed" });
+    expect(await undo(ho, 2, "")).toMatchObject({ ok: false, error: "reasonRequired" });
+    expect(await undo(ho, 1, "වැරදි දිනයක් යෙදුවා")).toMatchObject({ ok: false, error: "conflict" });
+    expect(await undo(ho, 2, "වැරදි දිනයක් යෙදුවා")).toMatchObject({ ok: true });
+
+    const second = await db.installment.findFirstOrThrow({ where: { caseId: c.id, number: 2 } });
+    expect(second).toMatchObject({ status: "PROCESSING", releasedOn: null });
+    expect(second.expectedOn).not.toBeNull();
+    const audit = await db.auditLog.findFirstOrThrow({ where: { caseId: c.id, action: "installment_payment_undone" } });
+    expect(audit).toMatchObject({ actorId: ho.userId, after: { number: 2, reason: "වැරදි දිනයක් යෙදුවා" } });
+    // The office pays it again, on the right day.
+    expect(await pay(dsA, c.id, await version(c.id), 2, daysAgo(29))).toMatchObject({ ok: true });
+  });
+});
+
+describe("building progress (STG-1 to STG-5)", () => {
+  it("marks the stages a later choice skips as reached on the same day (STG-2, AC-12)", async () => {
+    const c = await running();
+    const stages = await newHouseStages();
+    const third = stages[2]!;
+    expect(await stage(c.id, c.version, third.id, daysAgo(20))).toEqual({ ok: true, completed: false });
+
+    const rows = await db.stageUpdate.findMany({ where: { caseId: c.id }, orderBy: { at: "asc" } });
+    expect(rows.map((r) => r.stageId)).toEqual(stages.slice(0, 3).map((s) => s.id));
+    expect(new Set(rows.map((r) => r.visitedOn.toISOString()))).toEqual(
+      new Set([dayToDate(daysAgo(20)).toISOString()]),
+    );
+
+    const progress = await getStageProgress(db, c.id, "NEW_HOUSE");
+    expect(progress.current).toEqual({ id: third.id, reachedOn: daysAgo(20) });
+    expect(progress.choices.map((s) => s.id)).toEqual(stages.slice(3).map((s) => s.id));
+    const audit = await db.auditLog.findFirstOrThrow({ where: { caseId: c.id, action: "stage_updated" } });
+    expect(audit.after).toMatchObject({ stages: stages.slice(0, 3).map((s) => s.nameSi), visitedOn: daysAgo(20) });
+
+    // An installment can be released at any stage (INS-5).
+    expect(await payNext(c.id, 1, daysAgo(10))).toMatchObject({ ok: true });
+  });
+
+  it("needs a later stage, a day within its limits, or a note-only visit (STG-1)", async () => {
+    const c = await running();
+    const stages = await newHouseStages();
+    expect(await stage(c.id, c.version, stages[1]!.id, daysAgo(20))).toMatchObject({ ok: true });
+    const v = await version(c.id);
+    expect(await stage(c.id, v, stages[0]!.id)).toMatchObject({ ok: false, errors: { stageId: "stageNotLater" } });
+    expect(await stage(c.id, v, stages[1]!.id)).toMatchObject({ ok: false, errors: { stageId: "stageNotLater" } });
+    expect(await stage(c.id, v, stages[2]!.id, daysAgo(21))).toMatchObject({
+      errors: { visitedOn: "dateBeforeStage" },
+    });
+    expect(await stage(c.id, v, stages[2]!.id, addDays(today(), 1))).toMatchObject({
+      errors: { visitedOn: "dateInFuture" },
+    });
+    // A note-only visit may be earlier than the current stage, but not before the release.
+    expect(await stage(c.id, v, null, daysAgo(RELEASED_DAYS_AGO + 1))).toMatchObject({
+      errors: { visitedOn: "dateBeforeRelease" },
+    });
+    expect(await stage(c.id, v, null, daysAgo(30))).toEqual({ ok: true, completed: false });
+    const progress = await getStageProgress(db, c.id, "NEW_HOUSE");
+    expect(progress.visits).toHaveLength(1);
+    expect(progress.current?.id).toBe(stages[1]!.id);
+  });
+
+  it("takes only note-only updates for a kind with no active stages (STG-4)", async () => {
+    // Other test files may leave renovation stages behind; set them aside for this test, then put them back.
+    const active = await db.stageDefinition.findMany({
+      where: { kind: "RENOVATION", active: true },
+      select: { id: true },
+    });
+    await db.stageDefinition.updateMany({ where: { id: { in: active.map((s) => s.id) } }, data: { active: false } });
+    try {
+      const c = await running({ kind: "RENOVATION" });
+      const progress = await getStageProgress(db, c.id, "RENOVATION");
+      expect(progress.choices).toEqual([]);
+      const [anyStage] = await newHouseStages();
+      expect(await stage(c.id, c.version, anyStage!.id)).toMatchObject({ errors: { stageId: "stageNotLater" } });
+      expect(await stage(c.id, c.version, null)).toMatchObject({ ok: true });
+    } finally {
+      await db.stageDefinition.updateMany({ where: { id: { in: active.map((s) => s.id) } }, data: { active: true } });
+    }
+  });
+
+  it("is the office's to record, and only while the case is in progress (STG-5)", async () => {
+    const c = await running();
+    const [first] = await newHouseStages();
+    expect(
+      await recordStageUpdate(db, ho, {
+        caseId: c.id,
+        version: c.version,
+        form: { stageId: String(first!.id), visitedOn: today(), note: "" },
+        photoIds: [],
+      }),
+    ).toMatchObject({ ok: false, error: "roleNotAllowed" });
+    expect(
+      await recordStageUpdate(db, dsB, {
+        caseId: c.id,
+        version: c.version,
+        form: { stageId: String(first!.id), visitedOn: today(), note: "" },
+        photoIds: [],
+      }),
+    ).toMatchObject({ ok: false, error: "notFound" });
+
+    const saved = await saveCase(db, dsA, {
+      id: randomUUID(),
+      version: null,
+      dsOfficeId: null,
+      values: values(),
+      documentIds: [],
+      submit: true,
+    });
+    if (!saved.ok) throw new Error(saved.error);
+    expect(await stage(saved.value.id, await version(saved.value.id), first!.id)).toMatchObject({
+      ok: false,
+      error: "caseNotRunning",
+    });
+  });
+
+  it("stores a photo without its GPS position, and opens it only for those who may see the case (STG-3, AC-16)", async () => {
+    const c = await running();
+    const uploaded = await uploadPhoto(db, dsA, { name: "IMG_0001.png", bytes: await photoWithGps() });
+    if (!uploaded.ok) throw new Error(uploaded.error);
+    expect(uploaded.value.name).toBe("IMG_0001.jpg");
+
+    // Until the update is saved, only the officer who uploaded it can open it.
+    expect(await fileForViewer(db, dsA, uploaded.value.id)).not.toBeNull();
+    expect(await fileForViewer(db, { ...ho }, uploaded.value.id)).toBeNull();
+
+    const [first] = await newHouseStages();
+    expect(await stage(c.id, c.version, first!.id, daysAgo(5), [uploaded.value.id])).toMatchObject({ ok: true });
+
+    const row = await db.storedFile.findUniqueOrThrow({ where: { id: uploaded.value.id } });
+    expect(row).toMatchObject({ kind: "PHOTO", caseId: c.id, mimeType: "image/jpeg" });
+    expect(row.stageUpdateId).not.toBeNull();
+    for (const name of [row.storedName, row.thumbName!]) {
+      const stored = await readStoredFile(name);
+      const meta = await sharp(stored).metadata();
+      expect(meta.exif).toBeUndefined();
+      expect(stored.includes(Buffer.from("ProgressTestPhone"))).toBe(false);
+      expect(Math.max(meta.width ?? 0, meta.height ?? 0)).toBeLessThanOrEqual(1600);
+    }
+
+    expect(await fileForViewer(db, dsA, row.id)).not.toBeNull();
+    expect(await fileForViewer(db, ho, row.id, "thumb")).toMatchObject({ storedName: row.thumbName });
+    expect(await fileForViewer(db, dsB, row.id)).toBeNull();
+    expect(await fileForViewer(db, dsB, row.id, "thumb")).toBeNull();
+    expect(await fileForViewer(db, admin, row.id)).toBeNull();
+    const progress = await getStageProgress(db, c.id, "NEW_HOUSE");
+    expect(progress.stages[0]?.photos).toEqual([{ id: row.id, name: "IMG_0001.jpg" }]);
+    // A photo is not one of the case's documents.
+    expect((await getCase(db, dsA, c.id))?.documents).toEqual([]);
+  });
+
+  it("attaches only the officer's own new photos, never a document, and at most 10", async () => {
+    const c = await running();
+    const theirs = await uploadPhoto(
+      db,
+      { ...dsA, userId: dsB.userId, dsOfficeId: dsB.dsOfficeId },
+      {
+        name: "b.jpg",
+        bytes: await photoWithGps(),
+      },
+    );
+    if (!theirs.ok) throw new Error(theirs.error);
+    expect(await stage(c.id, c.version, null, today(), [theirs.value.id])).toMatchObject({
+      ok: false,
+      error: "photoUnavailable",
+    });
+    expect(
+      await stage(
+        c.id,
+        c.version,
+        null,
+        today(),
+        Array.from({ length: 11 }, () => randomUUID()),
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: "tooManyPhotos",
+    });
+    expect(await uploadPhoto(db, ho, { name: "x.jpg", bytes: await photoWithGps() })).toEqual({
+      ok: false,
+      error: "notAllowed",
+    });
+    expect(
+      await uploadPhoto(db, dsA, { name: "x.pdf", bytes: new TextEncoder().encode("%PDF-1.7 not a photo") }),
+    ).toEqual({
+      ok: false,
+      error: "fileType",
+    });
+  });
+});
+
+describe("completing a case (CLS-1, AC-13)", () => {
+  it("finishes when installment 4 is paid after the last stage is reached, and tells the office", async () => {
+    const c = await running();
+    const stages = await newHouseStages();
+    expect(await stage(c.id, c.version, stages.at(-1)!.id, daysAgo(40))).toEqual({ ok: true, completed: false });
+    for (const number of [1, 2, 3]) await payNext(c.id, number, daysAgo(30 - number));
+    expect((await load(c.id)).status).toBe("IN_PROGRESS");
+
+    expect(await start(dsA, c.id, await version(c.id), 4, daysAgo(5))).toMatchObject({ ok: true });
+    expect(await pay(dsA, c.id, await version(c.id), 4, daysAgo(5))).toEqual({ ok: true, completed: true });
+    const done = await load(c.id);
+    expect(done.status).toBe("COMPLETED");
+    expect(done.completedAt).not.toBeNull();
+    const audit = await db.auditLog.findFirstOrThrow({ where: { caseId: c.id, action: "case_completed" } });
+    expect(audit).toMatchObject({ actorId: null, before: { status: "IN_PROGRESS" }, after: { status: "COMPLETED" } });
+    expect(await db.notification.count({ where: { caseId: c.id, userId: dsA.userId, type: "COMPLETED" } })).toBe(1);
+
+    // A finished case takes no more changes (STS-2).
+    expect(await stage(c.id, await version(c.id), null)).toMatchObject({ ok: false, error: "caseNotRunning" });
+    const undo = await undoInstallmentPayment(db, ho, {
+      caseId: c.id,
+      version: await version(c.id),
+      number: 4,
+      reason: "පරීක්ෂා කිරීමට",
+    });
+    expect(undo).toMatchObject({ ok: false, error: "caseNotRunning" });
+  });
+
+  it("finishes when the last stage is reached after installment 4 is paid", async () => {
+    const c = await running();
+    for (const number of [1, 2, 3, 4]) await payNext(c.id, number, daysAgo(40 - number));
+    expect((await load(c.id)).status).toBe("IN_PROGRESS");
+    const stages = await newHouseStages();
+    expect(await stage(c.id, await version(c.id), stages.at(-2)!.id, daysAgo(10))).toEqual({
+      ok: true,
+      completed: false,
+    });
+    expect(await stage(c.id, await version(c.id), null, daysAgo(5))).toEqual({ ok: true, completed: false });
+    expect(await stage(c.id, await version(c.id), stages.at(-1)!.id, daysAgo(2))).toEqual({
+      ok: true,
+      completed: true,
+    });
+    expect((await load(c.id)).status).toBe("COMPLETED");
+  });
+
+  it("needs only installment 4 for a kind with no active stages", async () => {
+    const active = await db.stageDefinition.findMany({
+      where: { kind: "RENOVATION", active: true },
+      select: { id: true },
+    });
+    await db.stageDefinition.updateMany({ where: { id: { in: active.map((s) => s.id) } }, data: { active: false } });
+    try {
+      const c = await running({ kind: "RENOVATION" });
+      for (const number of [1, 2, 3]) await payNext(c.id, number, daysAgo(40 - number));
+      expect(await payNext(c.id, 4, daysAgo(30))).toEqual({ ok: true, completed: true });
+    } finally {
+      await db.stageDefinition.updateMany({ where: { id: { in: active.map((s) => s.id) } }, data: { active: true } });
+    }
+  });
+});
+
+describe("stopping and reopening (CLS-2, CLS-3, AC-14)", () => {
+  it("needs a reason, blocks every change while stopped, and reopens to the status before", async () => {
+    const c = await running();
+    await payNext(c.id, 1, daysAgo(30));
+    const stopAs = async (actor: Actor, reason: string) =>
+      stopCase(db, actor, { caseId: c.id, version: await version(c.id), reason });
+
+    expect(await stopAs(dsA, "ඉඩම පිළිබඳ ගැටලුවක්")).toEqual({ ok: false, error: "roleNotAllowed" });
+    expect(await stopAs(ho, "")).toEqual({ ok: false, error: "reasonRequired" });
+    expect(await stopAs(ho, "නැත")).toEqual({ ok: false, error: "reasonTooShort" });
+    expect(await stopAs(ho, "ඉඩම පිළිබඳ ගැටලුවක්")).toEqual({ ok: true, value: "STOPPED" });
+
+    const stopped = await load(c.id);
+    expect(stopped).toMatchObject({ status: "STOPPED", statusBeforeStop: "IN_PROGRESS" });
+    const details = await getCase(db, dsA, c.id);
+    expect(details?.stop).toMatchObject({ reason: "ඉඩම පිළිබඳ ගැටලුවක්", statusBefore: "IN_PROGRESS" });
+    const audit = await db.auditLog.findFirstOrThrow({ where: { caseId: c.id, action: "case_stopped" } });
+    expect(audit.after).toMatchObject({ reason: "ඉඩම පිළිබඳ ගැටලුවක්", balance: 1_500_000 });
+    expect(await db.notification.count({ where: { caseId: c.id, type: "STOPPED" } })).toBe(1);
+
+    // No installment, stage or detail change while stopped (INS-5, STG-5, CASE-9).
+    expect(await start(dsA, c.id, stopped.version, 2)).toMatchObject({ ok: false, error: "caseNotRunning" });
+    expect(await stage(c.id, stopped.version, null)).toMatchObject({ ok: false, error: "caseNotRunning" });
+    const edit = await saveCase(db, ho, {
+      id: c.id,
+      version: stopped.version,
+      dsOfficeId: null,
+      values: values({ address: "නව ලිපිනය" }),
+      documentIds: [],
+      submit: false,
+    });
+    expect(edit).toEqual({ ok: false, error: "notEditable" });
+    expect(await stopAs(ho, "නැවත නවත්වන්න")).toEqual({ ok: false, error: "notAllowedNow" });
+
+    const reopen = async (actor: Actor, reason: string) =>
+      reopenCase(db, actor, { caseId: c.id, version: await version(c.id), reason });
+    expect(await reopen(dsA, "ගැටලුව විසඳුණා")).toEqual({ ok: false, error: "roleNotAllowed" });
+    expect(await reopen(ho, " ")).toEqual({ ok: false, error: "reasonRequired" });
+    expect(await reopen(ho, "ගැටලුව විසඳුණා")).toEqual({ ok: true, value: "IN_PROGRESS" });
+    expect(await load(c.id)).toMatchObject({ status: "IN_PROGRESS", statusBeforeStop: null });
+    expect(await db.notification.count({ where: { caseId: c.id, type: "REOPENED" } })).toBe(1);
+    expect(await start(dsA, c.id, await version(c.id), 2, daysAgo(1))).toMatchObject({ ok: true });
+  });
+
+  it("reopens a case stopped before its release as verified, and refuses cases that can't stop", async () => {
+    const saved = await saveCase(db, dsA, {
+      id: randomUUID(),
+      version: null,
+      dsOfficeId: null,
+      values: values(),
+      documentIds: [],
+      submit: true,
+    });
+    if (!saved.ok) throw new Error(saved.error);
+    const id = saved.value.id;
+    expect(await stopCase(db, ho, { caseId: id, version: await version(id), reason: "යවා ඇති තත්ත්වයේ" })).toEqual({
+      ok: false,
+      error: "notAllowedNow",
+    });
+    const sent = await load(id);
+    await decideCase(db, ho, { caseId: id, version: sent.version, decision: "verify", reason: null });
+    expect(
+      await stopCase(db, ho, { caseId: id, version: await version(id), reason: "ප්‍රතිලාභියා පදිංචිය වෙනස් කළා" }),
+    ).toMatchObject({ ok: true });
+    expect(await reopenCase(db, ho, { caseId: id, version: await version(id), reason: "නැවත සොයා ගත්තා" })).toEqual({
+      ok: true,
+      value: "VERIFIED",
+    });
+  });
+});
+
+describe("Head Office's edits to a running case (CASE-9)", () => {
+  it("can change the kind of help only until a stage is recorded", async () => {
+    const c = await running();
+    const details = { ...values(), nic: (await load(c.id)).nic };
+    const edit = async (kind: "NEW_HOUSE" | "RENOVATION") =>
+      saveCase(db, ho, {
+        id: c.id,
+        version: await version(c.id),
+        dsOfficeId: null,
+        values: { ...details, kind },
+        documentIds: [],
+        submit: false,
+      });
+    expect(await edit("RENOVATION")).toMatchObject({ ok: true });
+    expect(await edit("NEW_HOUSE")).toMatchObject({ ok: true });
+    // A note-only visit doesn't fix the kind; a stage does.
+    expect(await stage(c.id, await version(c.id), null)).toMatchObject({ ok: true });
+    expect(await edit("RENOVATION")).toMatchObject({ ok: true });
+    expect(await edit("NEW_HOUSE")).toMatchObject({ ok: true });
+    const [first] = await newHouseStages();
+    expect(await stage(c.id, await version(c.id), first!.id)).toMatchObject({ ok: true });
+    expect(await edit("RENOVATION")).toEqual({ ok: false, error: "kindLocked" });
+    expect(await edit("NEW_HOUSE")).toMatchObject({ ok: true });
+  });
+});
+
+describe("the case history (HIS-1 to HIS-3, AC-15)", () => {
+  it("shows every change, newest first, with who made it and when; the system's own step has no person", async () => {
+    const c = await running();
+    const stages = await newHouseStages();
+    await stage(c.id, c.version, stages.at(-1)!.id, daysAgo(45));
+    for (const number of [1, 2, 3, 4]) await payNext(c.id, number, daysAgo(40 - number));
+
+    const history = await caseHistory(db, ho, c.id);
+    expect(history?.map((e) => e.action)).toEqual([
+      "case_completed",
+      "installment_paid",
+      "installment_started",
+      "installment_paid",
+      "installment_started",
+      "installment_paid",
+      "installment_started",
+      "installment_paid",
+      "installment_started",
+      "stage_updated",
+      "case_released",
+      "case_verified",
+      "case_submitted",
+      "case_created",
+    ]);
+    expect(history?.[0]).toMatchObject({ actor: null });
+    expect(history?.[1]).toMatchObject({ actor: { name: "ප්‍රා. පරීක්ෂණ", role: "DS_OFFICER" }, after: { number: 4 } });
+    expect(history?.find((e) => e.action === "case_released")).toMatchObject({ actor: { role: "HO_OFFICER" } });
+    expect(history?.every((e) => e.at instanceof Date)).toBe(true);
+
+    expect(await caseHistory(db, dsB, c.id)).toBeNull();
+    expect(await caseHistory(db, admin, c.id)).toBeNull();
+    // The database refuses any change to the record (HIS-3).
+    const row = await db.auditLog.findFirstOrThrow({ where: { caseId: c.id, action: "case_completed" } });
+    await expect(db.auditLog.update({ where: { id: row.id }, data: { action: "x" } })).rejects.toThrow(/append-only/);
+    await expect(db.auditLog.delete({ where: { id: row.id } })).rejects.toThrow(/append-only/);
+  });
+});
+
+describe("the DS home (HOME-1, HOME-3, HOME-4)", () => {
+  it("lists installments due within 7 days or overdue, and cases with no update for 30 days", async () => {
+    const soon = await running({ name: "ප්‍රගති පරීක්ෂණ ළඟදී" });
+    await start(dsA, soon.id, soon.version, 1, addDays(today(), 6));
+    const late = await running({ name: "ප්‍රගති පරීක්ෂණ ප්‍රමාද" });
+    await start(dsA, late.id, late.version, 1, daysAgo(3));
+    const later = await running({ name: "ප්‍රගති පරීක්ෂණ පසුව" });
+    await start(dsA, later.id, later.version, 1, addDays(today(), 8));
+    const quiet = await running({ name: "ප්‍රගති පරීක්ෂණ නිශ්ශබ්ද" });
+    await db.case.update({ where: { id: quiet.id }, data: { updatedAt: colomboStartOf(daysAgo(31)) } });
+
+    const todo = await todoItems(db, dsA);
+    expect(todo.find((i) => i.id === soon.id)).toMatchObject({ type: "due", number: 1, overdue: false });
+    expect(todo.find((i) => i.id === late.id)).toMatchObject({ type: "due", number: 1, overdue: true });
+    expect(todo.find((i) => i.id === later.id)).toBeUndefined();
+    expect(todo.find((i) => i.id === quiet.id)).toMatchObject({ type: "stale", days: 31 });
+    expect(await todoItems(db, dsB)).not.toContainEqual(expect.objectContaining({ id: quiet.id }));
+  });
+
+  it("shows the office's money and each case's installments paid and stage reached", async () => {
+    const before = await officeMoney(db, dsA);
+    const c = await running();
+    await payNext(c.id, 1, daysAgo(30));
+    const [first] = await newHouseStages();
+    await stage(c.id, await version(c.id), first!.id);
+
+    expect(await officeMoney(db, dsA)).toEqual({
+      received: before!.received + 2_000_000,
+      paidOut: before!.paidOut + 500_000,
+      balance: before!.balance + 1_500_000,
+    });
+    expect(await officeMoney(db, admin)).toBeNull();
+    const { rows } = await listCases(db, dsA, { q: (await load(c.id)).caseNumber ?? "" });
+    expect(rows).toEqual([expect.objectContaining({ id: c.id, paid: 1, stageName: first!.nameSi })]);
+  });
+});

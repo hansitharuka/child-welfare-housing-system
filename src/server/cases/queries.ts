@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { CaseStatus, Category, InstallmentStatus, Kind } from "@/generated/prisma/enums";
-import { dateToDay } from "@/lib/dates";
+import { addDays, colomboDay, colomboStartOf, dateToDay, dayToDate, daysBetween } from "@/lib/dates";
 import { nicKey, normaliseNic } from "@/lib/nic";
 import { canSeeOffice, officeFilter, type Viewer } from "../permissions";
 
@@ -25,11 +25,15 @@ export type CaseDetails = {
   version: number;
   submittedAt: Date | null;
   verifiedAt: Date | null;
+  /** When the system found it finished (CLS-1). */
+  completedAt: Date | null;
   updatedAt: Date;
   /** Head Office's reason, while the case is sent back (CASE-7). */
   returnReason: string | null;
   /** Head Office's reason for rejecting it (CHK-3). */
   rejectReason: string | null;
+  /** While the case is stopped: when, why, and the status it goes back to when reopened (CLS-2, CLS-3). */
+  stop: { at: Date; reason: string | null; statusBefore: CaseStatus | null } | null;
   documents: { id: string; name: string }[];
   /** The Rs. 2,000,000 release, once recorded (REL-2). */
   release: ReleaseDetails | null;
@@ -80,18 +84,20 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
       version: true,
       submittedAt: true,
       verifiedAt: true,
+      completedAt: true,
+      statusBeforeStop: true,
       updatedAt: true,
       dsOffice: { select: { nameSi: true, active: true, district: { select: { id: true, nameSi: true } } } },
       files: {
-        where: { removedAt: null },
+        where: { kind: "DOCUMENT", removedAt: null },
         orderBy: { uploadedAt: "asc" },
         select: { id: true, originalName: true },
       },
       decisions: {
-        where: { type: { in: ["SEND_BACK", "REJECT"] } },
+        where: { type: { in: ["SEND_BACK", "REJECT", "STOP"] } },
         orderBy: { at: "desc" },
         take: 1,
-        select: { type: true, reason: true },
+        select: { type: true, reason: true, at: true },
       },
       release: {
         select: {
@@ -118,8 +124,9 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
     },
   });
   if (!found || !canSeeOffice(viewer, found.dsOfficeId)) return null;
-  const { dsOffice, files, decisions, release, installments, ...fields } = found;
+  const { dsOffice, files, decisions, release, installments, statusBeforeStop, ...fields } = found;
   const latest = decisions[0];
+  const stopped = found.status === "STOPPED" && latest?.type === "STOP";
   return {
     ...fields,
     officeName: dsOffice.nameSi,
@@ -128,6 +135,14 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
     districtName: dsOffice.district.nameSi,
     returnReason: found.status === "RETURNED" && latest?.type === "SEND_BACK" ? latest.reason : null,
     rejectReason: found.status === "REJECTED" && latest?.type === "REJECT" ? latest.reason : null,
+    stop:
+      found.status === "STOPPED"
+        ? {
+            at: stopped ? latest.at : fields.updatedAt,
+            reason: stopped ? latest.reason : null,
+            statusBefore: statusBeforeStop,
+          }
+        : null,
     documents: files.map((f) => ({ id: f.id, name: f.originalName })),
     release: release && {
       releasedOn: dateToDay(release.releasedOn),
@@ -171,7 +186,14 @@ export type CaseRow = {
   districtName: string;
   submittedAt: Date | null;
   updatedAt: Date;
+  /** Installments paid (HOME-1); null before the release makes them. */
+  paid: number | null;
+  /** The highest stage reached (HOME-1), if any. */
+  stageName: string | null;
 };
+
+/** A case in progress with no update for this many days is shown as waiting for one (HOME-1, HOME-3, DSH-1). */
+export const STALE_DAYS = 30;
 
 /** The Prisma filter for what the viewer may see and asked for; null when they may see nothing. */
 function caseWhere(viewer: Viewer, filter: CaseFilter): Prisma.CaseWhereInput | null {
@@ -229,15 +251,25 @@ export async function listCases(
         submittedAt: true,
         updatedAt: true,
         dsOffice: { select: { nameSi: true, district: { select: { nameSi: true } } } },
+        release: { select: { id: true } },
+        _count: { select: { installments: { where: { status: "RELEASED" } } } },
+        stageUpdates: {
+          where: { stageId: { not: null } },
+          orderBy: { stage: { sortOrder: "desc" } },
+          take: 1,
+          select: { stage: { select: { nameSi: true } } },
+        },
       },
     }),
     db.case.count({ where }),
   ]);
   return {
-    rows: found.map(({ dsOffice, ...row }) => ({
+    rows: found.map(({ dsOffice, release, _count, stageUpdates, ...row }) => ({
       ...row,
       officeName: dsOffice.nameSi,
       districtName: dsOffice.district.nameSi,
+      paid: release ? _count.installments : null,
+      stageName: stageUpdates[0]?.stage?.nameSi ?? null,
     })),
     total,
   };
@@ -248,44 +280,96 @@ export async function countCases(db: PrismaClient, viewer: Viewer, filter: CaseF
   return where ? db.case.count({ where }) : 0;
 }
 
-export type TodoItem = {
-  id: string;
-  type: "returned" | "draft";
-  name: string | null;
-  childName: string | null;
-  /** Head Office's reason for sending the case back. */
-  reason: string | null;
-  updatedAt: Date;
-};
+type TodoCase = { id: string; name: string | null; childName: string | null };
+
+export type TodoItem = TodoCase &
+  (
+    | { type: "returned"; /** Head Office's reason for sending the case back. */ reason: string | null }
+    | { type: "draft"; updatedAt: Date }
+    | { type: "due"; number: number; /** "YYYY-MM-DD" */ expectedOn: string; overdue: boolean }
+    | { type: "stale"; days: number }
+  );
+
+/** HOME-3: an installment being paid shows in the to-do panel from 7 days before its expected day. */
+export const DUE_SOON_DAYS = 7;
+
+const TODO_TAKE = 20;
 
 /**
- * HOME-3, the part Phase 4 can fill: cases sent back, with Head Office's reason, then drafts.
- * Due installments and cases without an update come with Phase 6.
+ * HOME-3, in this order: cases sent back, with Head Office's reason; installments being paid whose
+ * expected day has passed or is within 7 days; cases in progress with no update for 30 days; drafts.
  */
-export async function todoItems(db: PrismaClient, viewer: Viewer): Promise<TodoItem[]> {
+export async function todoItems(db: PrismaClient, viewer: Viewer, now = new Date()): Promise<TodoItem[]> {
   const scope = officeFilter(viewer);
   if (!scope) return [];
-  const found = await db.case.findMany({
-    where: { ...scope, status: { in: ["RETURNED", "DRAFT"] } },
-    orderBy: [{ status: "desc" }, { updatedAt: "desc" }],
-    take: 20,
-    select: {
-      id: true,
-      status: true,
-      name: true,
-      childName: true,
-      updatedAt: true,
-      decisions: { where: { type: "SEND_BACK" }, orderBy: { at: "desc" }, take: 1, select: { reason: true } },
-    },
-  });
-  return found.map((c) => ({
-    id: c.id,
-    type: c.status === "RETURNED" ? "returned" : "draft",
-    name: c.name,
-    childName: c.childName,
-    reason: c.status === "RETURNED" ? (c.decisions[0]?.reason ?? null) : null,
-    updatedAt: c.updatedAt,
-  }));
+  const today = colomboDay(now);
+  const caseFields = { id: true, name: true, childName: true } as const;
+
+  const [returned, due, stale, drafts] = await Promise.all([
+    db.case.findMany({
+      where: { ...scope, status: "RETURNED" },
+      orderBy: { updatedAt: "desc" },
+      take: TODO_TAKE,
+      select: {
+        ...caseFields,
+        decisions: { where: { type: "SEND_BACK" }, orderBy: { at: "desc" }, take: 1, select: { reason: true } },
+      },
+    }),
+    db.installment.findMany({
+      where: {
+        status: "PROCESSING",
+        expectedOn: { lte: dayToDate(addDays(today, DUE_SOON_DAYS)) },
+        case: { ...scope, status: "IN_PROGRESS" },
+      },
+      orderBy: [{ expectedOn: "asc" }, { caseId: "asc" }],
+      take: TODO_TAKE,
+      select: { number: true, expectedOn: true, case: { select: caseFields } },
+    }),
+    db.case.findMany({
+      where: { ...scope, status: "IN_PROGRESS", updatedAt: { lt: colomboStartOf(addDays(today, 1 - STALE_DAYS)) } },
+      orderBy: { updatedAt: "asc" },
+      take: TODO_TAKE,
+      select: { ...caseFields, updatedAt: true },
+    }),
+    db.case.findMany({
+      where: { ...scope, status: "DRAFT" },
+      orderBy: { updatedAt: "desc" },
+      take: TODO_TAKE,
+      select: { ...caseFields, updatedAt: true },
+    }),
+  ]);
+
+  return [
+    ...returned.map(({ decisions, ...c }) => ({
+      ...c,
+      type: "returned" as const,
+      reason: decisions[0]?.reason ?? null,
+    })),
+    ...due.map((i) => {
+      const expectedOn = i.expectedOn ? dateToDay(i.expectedOn) : today;
+      return { ...i.case, type: "due" as const, number: i.number, expectedOn, overdue: expectedOn < today };
+    }),
+    ...stale.map(({ updatedAt, ...c }) => ({ ...c, type: "stale" as const, days: daysBetween(updatedAt, now) })),
+    ...drafts.map((c) => ({ ...c, type: "draft" as const })),
+  ];
+}
+
+export type OfficeMoney = { received: number; paidOut: number; balance: number };
+
+/**
+ * HOME-4: what the officer's office has received from Head Office (the releases), what it has paid
+ * to beneficiaries (the installments marked paid), and the balance it holds.
+ */
+export async function officeMoney(db: PrismaClient, viewer: Viewer): Promise<OfficeMoney | null> {
+  const scope = officeFilter(viewer);
+  if (!scope) return null;
+  const [received, paid] = await Promise.all([
+    db.release.aggregate({ where: { case: scope }, _sum: { amount: true } }),
+    db.installment.aggregate({ where: { status: "RELEASED", case: scope }, _sum: { amount: true } }),
+  ]);
+  const total = received._sum.amount ?? 0;
+  const paidOut = paid._sum.amount ?? 0;
+  return { received: total, paidOut, balance: total - paidOut };
 }
 
 /** The officer's own office with its district, for the DS home and form (HOME-1, CASE-3). */

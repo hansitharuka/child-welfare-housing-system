@@ -162,16 +162,16 @@ docker-compose.yml, docker-compose.dev.yml
 
 | # | Task | SPEC | Files |
 | --- | --- | --- | --- |
-| 6.1 | Installment actions: start (expected date) and mark paid (date), only the next one, date rules; Head Office undo with a reason | INS-1–6 | `src/server/installments/*`, `src/app/ds/cases/[id]/*` |
-| 6.2 | Prisma: StageUpdate and photo links; stage update form with note-only option and skipped stages. Head Office can still change a running case's kind of help (CASE-9), so refuse that once a stage is recorded | STG-1, STG-2, STG-4, STG-5 | `prisma/schema.prisma`, `src/server/stages/*` |
-| 6.3 | Photo pipeline with sharp: resize to 1,600 px, JPEG 80, remove all metadata | STG-3 | `src/server/files/images.ts` |
+| 6.1 | Installment actions: start (expected date) and mark paid (date), only the next one, date rules; Head Office undo with a reason. Every change claims the case at the version the page showed | INS-1–6 | `src/server/installments/*`, `src/server/cases/claim.ts`, `src/lib/validation/progress.ts`, `src/app/ds/cases/[id]/actions.ts`, `src/app/ho/cases/[id]/actions.ts` |
+| 6.2 | Prisma: StageUpdate (one row per stage reached; skipped stages get their own rows) and photo links; stage update form with note-only option and skipped stages. Head Office can still change a running case's kind of help (CASE-9), so refuse that once a stage is recorded | STG-1, STG-2, STG-4, STG-5 | `prisma/schema.prisma`, `src/server/stages/*`, `src/components/progress/stage-update.tsx` |
+| 6.3 | Photo pipeline with sharp: turn upright, resize to 1,600 px, JPEG 80, remove all metadata, store a 320 px thumbnail too | STG-3 | `src/server/files/images.ts`, `src/server/files/uploads.ts`, `src/app/files/[id]/thumb/route.ts` |
 | 6.4 | Completion rule, run after every installment or stage change | CLS-1 | `src/server/cases/complete.ts` |
-| 6.5 | Stop and reopen with reasons, balance shown, changes blocked while stopped. The moves are already in `transitions.ts`; reopening needs the status before the stop, so store it on the case | CLS-2, CLS-3 | `src/server/cases/stop.ts` |
-| 6.6 | Case history in plain Sinhala sentences, from the audit log | HIS-2 | `src/server/history/*`, `messages/si.json` |
-| 6.7 | Full DS and Head Office case pages as in the prototype, photo thumbnails and viewer | STG-6, UI-7 | `src/app/ds/cases/[id]/*`, `src/app/ho/cases/[id]/*` |
-| 6.8 | DS home: money panel and the rest of the to-do panel (due installments, 30 days without an update) | HOME-3, HOME-4 | `src/app/ds/page.tsx` |
+| 6.5 | Stop and reopen with reasons, balance shown, changes blocked while stopped. The moves are already in `transitions.ts`; the status before the stop is stored on the case for reopening | CLS-2, CLS-3 | `src/server/cases/stop.ts` |
+| 6.6 | Case history in plain Sinhala sentences, from the audit log | HIS-2 | `src/server/history/*`, `src/components/progress/case-history.tsx`, `messages/si.json` |
+| 6.7 | Full DS and Head Office case pages as in the prototype (two columns), photo thumbnails and viewer | STG-6, UI-7 | `src/app/ds/cases/[id]/*`, `src/app/ho/cases/[id]/*`, `src/components/progress/*`, `src/components/cases/case-view.tsx` |
+| 6.8 | DS home: money panel, installments paid and stage reached in each row, and the rest of the to-do panel (due installments, 30 days without an update) | HOME-1, HOME-3, HOME-4 | `src/app/ds/page.tsx`, `src/server/cases/queries.ts` |
 
-**Tests:** installment order through direct server calls (AC-11); skipped stages (AC-12); completion (AC-13); stop and reopen (AC-14); audit rows for every change and no updates allowed on them (AC-15); a photo with GPS data comes back without it (AC-16).
+**Tests:** installment order through direct server calls (AC-11); skipped stages (AC-12); completion (AC-13); stop and reopen (AC-14); audit rows for every change and no updates allowed on them (AC-15); a photo with GPS data comes back without it (AC-16); e2e for a case from release to completion with a photo, and for undo, stop and reopen.
 
 **Done when:** AC-11 to AC-16 pass.
 
@@ -185,7 +185,7 @@ docker-compose.yml, docker-compose.dev.yml
 | 7.2 | Dashboard: filters, totals, district table with DS drill-down, waiting counts, stale cases | DSH-1, DSH-2 | `src/app/ho/page.tsx`, `src/server/dashboard/*` |
 | 7.3 | Excel export of any list, limited to what the user may see, and logged | EXP-1, EXP-3 | `src/server/exports/*` |
 | 7.4 | Sheet-layout export (two tabs, original columns) | EXP-2 | `src/server/exports/sheet-layout.ts` |
-| 7.5 | Notification bell with unread count, live queue counts in the Head Office menu, completed/stopped/reopened notices | NTF-1 | `src/components/shell/notifications.tsx` |
+| 7.5 | Notifications: the bell, the menu's queue counts and every notice, completed, stopped and reopened included, were built in Phases 5 and 6; check they stay right beside the dashboard | NTF-1 | `src/components/shell/*` |
 
 **Tests:** dashboard totals against direct database sums (AC-17); the exported sheet reopened with ExcelJS and checked (AC-18); dashboard time with 5,000 cases (AC-21); full export under 60 seconds (PRF-4).
 
@@ -213,7 +213,7 @@ docker-compose.yml, docker-compose.dev.yml
 
 | # | Task | SPEC | Files |
 | --- | --- | --- | --- |
-| 9.1 | Production images and Compose: Next.js standalone, PostgreSQL, Nginx with TLS and HSTS; Nginx's `client_max_body_size` at least 11 MB for uploads; `FILES_DIR` on a named volume | OPS-2, SEC-1 | `docker/Dockerfile`, `docker/nginx.conf`, `docker-compose.yml` |
+| 9.1 | Production images and Compose: Next.js standalone, PostgreSQL, Nginx with TLS and HSTS; Nginx's `client_max_body_size` at least 16 MB for uploads (photos of up to 15 MB); `FILES_DIR` on a named volume | OPS-2, SEC-1 | `docker/Dockerfile`, `docker/nginx.conf`, `docker-compose.yml` |
 | 9.2 | Staging server with made-up data; deploy from a tagged build with migrations; rollback steps | OPS-1, OPS-3 | `.github/workflows/deploy.yml`, `docs/RUNBOOK.md` |
 | 9.3 | Nightly encrypted backup of the database and files to a second location in Sri Lanka; a restore test | SEC-10 | `scripts/backup.sh`, `docs/RUNBOOK.md` |
 | 9.4 | Uptime, disk and backup alerts | OPS-4 | server configuration |

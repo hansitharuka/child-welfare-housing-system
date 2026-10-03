@@ -59,3 +59,13 @@ export function dayToDate(day: string): Date {
 export function dateToDay(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
+
+/** The calendar day `count` days after `day` ("YYYY-MM-DD"), or before it when `count` is negative. */
+export function addDays(day: string, count: number): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) + count * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** The first moment of a calendar day in Colombo. Sri Lanka keeps no daylight saving, so it is always UTC+05:30. */
+export function colomboStartOf(day: string): Date {
+  return new Date(`${day}T00:00:00+05:30`);
+}
