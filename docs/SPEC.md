@@ -1,6 +1,6 @@
 # Diviyata Sawiyak — Software Specification
 
-2026-09-28, updated 2026-10-02 · Janindu Pramod
+2026-09-28, updated 2026-10-03 · Janindu Pramod
 
 > **Status:** draft. This SPEC turns the [PRD](PRD.md) into requirements precise enough to build and test against. The [clickable prototype](https://claude.ai/artifact/DQarnsyMfCao1y6SmpMDbT) shows the screens. The PRD's open questions are deferred: [section 13](#13-deferred-questions-and-the-defaults-used) gives the default this SPEC uses for each until the Ministry answers.
 
@@ -91,14 +91,14 @@ Amounts are whole rupees stored as integers. Nothing listed here is ever deleted
 | District | name, province | 25 rows, seeded |
 | DsOffice | name, code, district, active | `code` is 3 capital letters, unique nationally, and used in case numbers. Name is unique within its district |
 | User | full name, designation, mobile, email, username, role, DS office, active, must change password, last sign-in, failed sign-ins, locked until | DS office is required for DS officers only, and an office has at most one active DS officer (ADM-3). Username is generated (ADM-2) and unique |
-| Case | case number, DS office, category, kind, status, name, child's name, NIC, NIC key, address, mobile 1, mobile 2, remark, sheet reference, created by, submitted at, verified at, completed at, closed at, close reason, version | See CASE-2 for field rules. `version` goes up by one on every save (CASE-10). `submitted at` is the latest submit |
+| Case | case number, DS office, category, kind, status, name, child's name, NIC, NIC key, address, mobile 1, mobile 2, remark, sheet reference, created by, submitted at, verified at, completed at, status before stop, version | See CASE-2 for field rules. `version` goes up by one on every save and every installment, stage or status change (CASE-10). `submitted at` is the latest submit. While the case is stopped, `status before stop` holds the status it goes back to (CLS-3); the stop's day and reason are its Decision |
 | CaseNumberCounter | DS office, year, last number | One row per office and year. Taking the next number locks the row, so two submits at once never share a number (CASE-5) |
 | Decision | case, type, reason, by, at | Types: submit, verify, send back, reject, stop, reopen, confirm import |
 | Release | case (one per case), released on, amount, reference number, note, by, at | Amount is always 2,000,000 (a database check) |
 | Installment | case, number 1–4, amount, status, purpose, expected on, released on, note | Amount is always 500,000 and the number 1 to 4 (database checks). Case plus number is unique. All four are created when the release is recorded |
 | StageDefinition | kind, order, name, active | New-house stages are seeded (LST-4) |
-| StageUpdate | case, stage (empty means a note-only visit), on, note, by | A case's current stage is the highest stage it has reached |
-| File | case, stored name, original name, type, size, SHA-256, uploaded by, removed at | Linked to a case as a document, or to a stage update as a photo. Until the case form is saved with it, only the person who uploaded it can open it, and an upload never saved with a case is removed after a day. A document taken off a case is kept but no longer shown |
+| StageUpdate | case, stage (empty means a note-only visit), visited on, note, by, at | A case's current stage is the highest stage it has reached. Each stage is reached once per case; a stage skipped by a later choice gets its own row on the same day (STG-2). A stage that has been used can't be removed (a database rule, LST-4) |
+| File | kind (document or photo), case, stage update, stored name, thumbnail name, original name, type, size, SHA-256, uploaded by, removed at | Linked to a case as a document, or also to a stage update as a photo (a database check). A photo has a small copy for thumbnails (STG-6). Until the case form or the stage update is saved with it, only the person who uploaded it can open it, and an upload never saved is removed after a day. A document taken off a case is kept but no longer shown |
 | AuditLog | at, actor, action, entity, entity id, case, before, after | Can only be added to, never changed (HIS-3) |
 | Notification | user, case, type, created at, read at | See NTF-1 |
 
@@ -182,7 +182,7 @@ Values used across the system:
   - case number, category, kind and status
   - installments released (for example `2 / 4`)
   - current stage or next step
-  - days since the last update, when that is more than 30
+  - for a case in progress, days since the last update, when that is 30 or more (the same rule as HOME-3 and DSH-1)
 - **HOME-2** Tabs shall filter the list to all cases, cases in progress or completed cases. Search shall match name, child's name, case number or NIC.
 - **HOME-3** A "to do" panel shall list:
   - returned cases, with the Head Office reason
@@ -225,7 +225,7 @@ Values used across the system:
   - The warning shall never block saving or submitting.
 - **CASE-7** A returned case shall show the Head Office reason at the top of the form. The DS corrects it and submits it again.
 - **CASE-8** The owning DS, or Head Office (which may also start drafts), may delete a draft with its documents. The deletion is logged without personal details.
-- **CASE-9** After a case is verified, only a Head Office officer can change its details, and every changed field is logged with its old and new value. This is possible while the case is `VERIFIED` or `IN_PROGRESS`; a completed, rejected or stopped case can't be changed. Every required field must stay filled in, and the form has one save button and no submit.
+- **CASE-9** After a case is verified, only a Head Office officer can change its details, and every changed field is logged with its old and new value. This is possible while the case is `VERIFIED` or `IN_PROGRESS`; a completed, rejected or stopped case can't be changed. Every required field must stay filled in, and the form has one save button and no submit. The kind of help can't change once the case has reached a stage, because the kind decides the stage list (LST-4).
 - **CASE-10** Saving a case that someone else changed after it was opened shall fail with ERR-3. It shall never overwrite their change silently.
 
 ### 7.6 Finding cases (FND)
@@ -259,25 +259,27 @@ Values used across the system:
 
 - **INS-1** Every case in progress has four installments of Rs. 500,000, numbered 1 to 4.
 - **INS-2** Only the lowest-numbered installment that is not yet `RELEASED` can change.
-- **INS-3** Moving `NOT_STARTED` to `PROCESSING` shall need an expected date, on or after the release date. A purpose (up to 200 characters) and a note are optional.
-- **INS-4** Moving `PROCESSING` to `RELEASED` shall need the date paid. It must be no later than today, on or after the Rs. 2,000,000 release date, and on or after the previous installment's paid date.
+- **INS-3** Moving `NOT_STARTED` to `PROCESSING` shall need an expected date, on or after the release date; it may be in the future. A purpose (up to 200 characters) and a note (up to 500) are optional.
+- **INS-4** Moving `PROCESSING` to `RELEASED` shall need the date paid. It must be no later than today, on or after the Rs. 2,000,000 release date, and on or after the previous installment's paid date. A note (up to 500 characters) is optional.
 - **INS-5** Installments can change only while the case is `IN_PROGRESS`. A stage never blocks an installment.
-- **INS-6** To correct a mistake, a Head Office officer may move the most recently released installment back to `PROCESSING`, with a reason.
+- **INS-6** To correct a mistake, a Head Office officer may move the most recently released installment back to `PROCESSING`, with a reason (5–1,000 characters). Its expected date stays, and the reason is shown in the history. Only while the case is `IN_PROGRESS`: a completed case stays completed (STS-2).
+
+Only the DS office starts and pays installments (section 4). Each change is refused if the case changed after the page showed it (CASE-10), which also stops a form sent twice from changing anything twice (ERR-8).
 
 ### 7.10 Building progress (STG)
 
-- **STG-1** A stage update shall need a stage later than the current one, or "no change, note only". It also needs a date, no later than today and on or after the release date. A note (up to 1,000 characters) and 0–10 photos are optional. Photos may be JPEG, PNG or WebP, up to 15 MB each.
+- **STG-1** A stage update shall need a stage later than the current one, or "no change, note only". It also needs a date, no later than today and on or after the release date. A stage reached can't be dated before the day the current stage was reached, so the stages keep their order; a note-only visit has no such limit. A note (up to 1,000 characters) and 0–10 photos are optional. Photos may be JPEG, PNG or WebP, up to 15 MB each, and upload one by one as soon as they are chosen, like documents (CASE-2). Only the DS office records progress (section 4).
 - **STG-2** Choosing a stage further ahead shall also mark the skipped stages as reached on the same date.
-- **STG-3** On upload, each photo shall be resized to at most 1,600 px on its long edge and saved as a JPEG at quality 80. All metadata, including GPS location, shall be removed.
+- **STG-3** On upload, each photo shall be turned upright (from its orientation tag), resized to at most 1,600 px on its long edge and saved as a JPEG at quality 80. All metadata, including GPS location, shall be removed. A 320 px copy is saved beside it for thumbnails. A file that can't be read as an image is refused (ERR-5).
 - **STG-4** Renovation cases use the renovation stage list. While that list is empty, only note-only updates are possible.
 - **STG-5** Stage updates are allowed only while the case is `IN_PROGRESS`.
-- **STG-6** The Head Office case page shall show every stage reached, with its date and photo thumbnails. A thumbnail opens the full image.
+- **STG-6** The Head Office case page shall show every stage reached, with its date, note and photo thumbnails, and the note-only visits with theirs. A thumbnail opens the full image in a viewer, with the previous and next photo. The DS case page shows the same.
 
 ### 7.11 Completing, stopping and reopening (CLS)
 
 - **CLS-1** The system shall set a case to `COMPLETED` when installment 4 is `RELEASED` and the case has reached the last active stage of its kind. A kind with no active stages needs only installment 4.
 - **CLS-2** Stopping a case shall need a reason. The confirmation and the case page shall show the balance left with the DS (2,000,000 minus the amount paid out).
-- **CLS-3** Reopening a stopped case shall need a reason. It returns the case to the status it had before it was stopped.
+- **CLS-3** Reopening a stopped case shall need a reason. It returns the case to the status it had before it was stopped. Stopping and reopening take a reason of 5 to 1,000 characters, and a stopped case's page shows the day, the reason and the balance to both roles.
 
 ### 7.12 Dashboards and exports (DSH, EXP)
 
@@ -298,7 +300,7 @@ Values used across the system:
 ### 7.13 History and notifications (HIS, NTF)
 
 - **HIS-1** Every create, edit and status change shall write an audit record: who did it, when, the action, and the old and new values of each changed field.
-- **HIS-2** The case page shall show the case history, newest first, as plain Sinhala sentences, as in the prototype.
+- **HIS-2** The case page shall show the case history, newest first, as plain Sinhala sentences, as in the prototype: the day, what happened, and who did it with their role (or "the system" for a completion). Reasons and notes appear under the sentence. A changed detail is named there; its old and new values stay in the audit record.
 - **HIS-3** Audit records cannot be edited or deleted. The database shall refuse any update, delete or truncation of the audit table, whichever database account asks.
 - **NTF-1** Notifications appear inside the system:
   - A DS's officers get one when a case is sent back, verified, rejected, released, completed, stopped or reopened.
