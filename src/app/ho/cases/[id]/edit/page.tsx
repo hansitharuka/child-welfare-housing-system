@@ -6,7 +6,7 @@ import { StatusChip } from "@/components/cases/status-chip";
 import { CaseForm, type OfficeSetting } from "@/components/forms/case-form";
 import { FormNotice } from "@/components/forms/form-field";
 import { getCase } from "@/server/cases/queries";
-import { canChangeOffice, canDeleteDraft, canEditDetails } from "@/server/cases/rules";
+import { canChangeOffice, canDeleteDraft, canEditDetails, isBeingEntered } from "@/server/cases/rules";
 import { requireRole } from "@/server/context";
 import { db } from "@/server/db";
 import { districtsWithOffices } from "@/server/lists/queries";
@@ -18,7 +18,10 @@ import {
   uploadDocumentAction,
 } from "../../actions";
 
-/** Head Office changes a draft or a returned case of any office (SPEC section 4). */
+/**
+ * Head Office changes a draft or a returned case of any office (SPEC section 4), or corrects a verified
+ * case, with every changed field logged (CASE-9).
+ */
 export default async function HoEditCasePage({
   params,
   searchParams,
@@ -47,8 +50,8 @@ export default async function HoEditCasePage({
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        backHref="/ho/cases"
-        backLabel={t("back.ho")}
+        backHref={isBeingEntered(details.status) ? "/ho/cases" : `/ho/cases/${details.id}`}
+        backLabel={isBeingEntered(details.status) ? t("back.ho") : t("back.case")}
         title={t("form.editTitle")}
         subtitle={
           <span className="flex items-center gap-3">
@@ -66,6 +69,7 @@ export default async function HoEditCasePage({
         office={office}
         documents={details.documents}
         returnReason={details.returnReason}
+        mode={isBeingEntered(details.status) ? "entry" : "change"}
         actions={{
           save: saveCaseAction,
           upload: uploadDocumentAction,

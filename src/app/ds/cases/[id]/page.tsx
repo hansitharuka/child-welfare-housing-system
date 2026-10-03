@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { CaseView } from "@/components/cases/case-view";
+import { MoneySection } from "@/components/cases/money-section";
 import { caseName, PageHeader } from "@/components/cases/page-header";
 import { getCase } from "@/server/cases/queries";
 import { canEditDetails } from "@/server/cases/rules";
@@ -49,8 +50,14 @@ export default async function DsCasePage({
           </Link>
         </section>
       )}
+      {details.release && (
+        <div className="max-w-4xl">
+          <MoneySection release={details.release} installments={details.installments} />
+        </div>
+      )}
       <CaseView
         details={details}
+        audience="ds"
         editHref={canEditDetails(viewer.role, details.status) ? `/ds/cases/${details.id}/edit` : null}
       />
     </div>

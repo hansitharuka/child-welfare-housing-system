@@ -1,7 +1,8 @@
-import { PlaceholderPage } from "@/components/shell/placeholder-page";
 import { requireRole } from "@/server/context";
+import { ReviewScreen, type ReviewSearchParams } from "./review-screen";
 
-export default async function HoCheckPage() {
+/** The "to check" tab (CHK-1). */
+export default async function HoCheckPage({ searchParams }: { searchParams: ReviewSearchParams }) {
   await requireRole("HO_OFFICER");
-  return <PlaceholderPage titleKey="hoCheck" />;
+  return <ReviewScreen queue="check" searchParams={searchParams} />;
 }

@@ -4,7 +4,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-export type NavLinkItem = { href: string; label: string; exact?: boolean };
+export type NavLinkItem = {
+  href: string;
+  label: string;
+  exact?: boolean;
+  alsoActive?: string[];
+  /** A number in a badge, with the words a screen reader says for it. */
+  badge?: { count: number; label: string };
+};
+
+const within = (pathname: string, path: string) => pathname === path || pathname.startsWith(`${path}/`);
 
 export function NavLinks({ label, items }: { label: string; items: NavLinkItem[] }) {
   const pathname = usePathname();
@@ -14,20 +23,31 @@ export function NavLinks({ label, items }: { label: string; items: NavLinkItem[]
       {items.map((item) => {
         const active = item.exact
           ? pathname === item.href
-          : pathname === item.href || pathname.startsWith(`${item.href}/`);
+          : within(pathname, item.href) || (item.alsoActive ?? []).some((path) => within(pathname, path));
         return (
           <Link
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex items-center border-b-[3px] px-4 text-[17px] transition-colors",
+              "flex items-center gap-2.5 border-b-[3px] px-4 text-[17px] transition-colors",
               active
                 ? "border-primary font-bold text-primary"
                 : "border-transparent font-medium text-muted-foreground hover:text-primary",
             )}
           >
             {item.label}
+            {item.badge && item.badge.count > 0 && (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="flex h-6.5 min-w-6.5 items-center justify-center rounded-full bg-destructive px-2 text-sm font-bold text-white"
+                >
+                  {item.badge.count}
+                </span>
+                <span className="sr-only">({item.badge.label})</span>
+              </>
+            )}
           </Link>
         );
       })}

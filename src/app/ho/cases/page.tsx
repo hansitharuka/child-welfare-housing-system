@@ -8,7 +8,7 @@ import { CaseStatus } from "@/generated/prisma/enums";
 import { formatDate } from "@/lib/dates";
 import { CATEGORIES, KINDS } from "@/lib/validation/case";
 import { listCases, PAGE_SIZE } from "@/server/cases/queries";
-import { canEditDetails } from "@/server/cases/rules";
+import { isBeingEntered } from "@/server/cases/rules";
 import { requireRole } from "@/server/context";
 import { db } from "@/server/db";
 import { districtsWithOffices } from "@/server/lists/queries";
@@ -113,9 +113,7 @@ export default async function HoCasesPage({
                 <tr key={row.id} className="border-t hover:bg-accent/60">
                   <td className="px-5 py-2.5">
                     <Link
-                      href={
-                        canEditDetails(viewer.role, row.status) ? `/ho/cases/${row.id}/edit` : `/ho/cases/${row.id}`
-                      }
+                      href={isBeingEntered(row.status) ? `/ho/cases/${row.id}/edit` : `/ho/cases/${row.id}`}
                       className="flex flex-col"
                     >
                       <span className="text-[17px] font-semibold text-primary underline-offset-2 hover:underline">

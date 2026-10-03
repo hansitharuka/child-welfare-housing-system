@@ -4,7 +4,8 @@
  *   developer's lists don't fill up with test entries;
  * - disables the DS officer accounts they created, which frees those offices for the next run, since
  *   an office has only one active officer (ADM-3). The accounts stay, because the audit log refers to them;
- * - deletes the cases they created (named with TEST_CASE_NAME) and their files.
+ * - deletes the cases they created (named with TEST_CASE_NAME), with their files, decisions, release,
+ *   installments and notifications.
  * Runs only where sample accounts are allowed (development and test databases).
  */
 import "dotenv/config";
@@ -27,7 +28,7 @@ async function main() {
       where: { name: TEST_OFFICER_NAME, role: "DS_OFFICER", banned: false },
       data: { banned: true },
     });
-    // Cases the tests created, with their decisions and files. Their audit records stay (HIS-3).
+    // Cases the tests created, with everything that hangs off them. Their audit records stay (HIS-3).
     const cases = await prisma.case.findMany({ where: { name: { startsWith: TEST_CASE_NAME } }, select: { id: true } });
     const caseIds = cases.map((c) => c.id);
     const files = await prisma.storedFile.findMany({
@@ -35,6 +36,9 @@ async function main() {
       select: { storedName: true },
     });
     await prisma.storedFile.deleteMany({ where: { caseId: { in: caseIds } } });
+    await prisma.notification.deleteMany({ where: { caseId: { in: caseIds } } });
+    await prisma.installment.deleteMany({ where: { caseId: { in: caseIds } } });
+    await prisma.release.deleteMany({ where: { caseId: { in: caseIds } } });
     await prisma.decision.deleteMany({ where: { caseId: { in: caseIds } } });
     await prisma.case.deleteMany({ where: { id: { in: caseIds } } });
     for (const file of files) await deleteStoredFile(file.storedName);

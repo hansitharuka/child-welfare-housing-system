@@ -94,13 +94,13 @@ Amounts are whole rupees stored as integers. Nothing listed here is ever deleted
 | Case | case number, DS office, category, kind, status, name, child's name, NIC, NIC key, address, mobile 1, mobile 2, remark, sheet reference, created by, submitted at, verified at, completed at, closed at, close reason, version | See CASE-2 for field rules. `version` goes up by one on every save (CASE-10). `submitted at` is the latest submit |
 | CaseNumberCounter | DS office, year, last number | One row per office and year. Taking the next number locks the row, so two submits at once never share a number (CASE-5) |
 | Decision | case, type, reason, by, at | Types: submit, verify, send back, reject, stop, reopen, confirm import |
-| Release | case (one per case), released on, amount, reference number, note, by, at | Amount is always 2,000,000 |
-| Installment | case, number 1–4, amount, status, purpose, expected on, released on, note | Amount is always 500,000. Case plus number is unique. All four are created when the release is recorded |
+| Release | case (one per case), released on, amount, reference number, note, by, at | Amount is always 2,000,000 (a database check) |
+| Installment | case, number 1–4, amount, status, purpose, expected on, released on, note | Amount is always 500,000 and the number 1 to 4 (database checks). Case plus number is unique. All four are created when the release is recorded |
 | StageDefinition | kind, order, name, active | New-house stages are seeded (LST-4) |
 | StageUpdate | case, stage (empty means a note-only visit), on, note, by | A case's current stage is the highest stage it has reached |
 | File | case, stored name, original name, type, size, SHA-256, uploaded by, removed at | Linked to a case as a document, or to a stage update as a photo. Until the case form is saved with it, only the person who uploaded it can open it, and an upload never saved with a case is removed after a day. A document taken off a case is kept but no longer shown |
 | AuditLog | at, actor, action, entity, entity id, case, before, after | Can only be added to, never changed (HIS-3) |
-| Notification | user, case, type, read at | See NTF-1 |
+| Notification | user, case, type, created at, read at | See NTF-1 |
 
 Values used across the system:
 
@@ -225,7 +225,7 @@ Values used across the system:
   - The warning shall never block saving or submitting.
 - **CASE-7** A returned case shall show the Head Office reason at the top of the form. The DS corrects it and submits it again.
 - **CASE-8** The owning DS, or Head Office (which may also start drafts), may delete a draft with its documents. The deletion is logged without personal details.
-- **CASE-9** After a case is verified, only a Head Office officer can change its details, and every changed field is logged with its old and new value.
+- **CASE-9** After a case is verified, only a Head Office officer can change its details, and every changed field is logged with its old and new value. This is possible while the case is `VERIFIED` or `IN_PROGRESS`; a completed, rejected or stopped case can't be changed. Every required field must stay filled in, and the form has one save button and no submit.
 - **CASE-10** Saving a case that someone else changed after it was opened shall fail with ERR-3. It shall never overwrite their change silently.
 
 ### 7.6 Finding cases (FND)
@@ -234,14 +234,14 @@ Values used across the system:
 
 ### 7.7 Head Office check (CHK)
 
-- **CHK-1** The "පරීක්ෂා කිරීමට" (to check) queue shall list `SUBMITTED` cases, oldest submission first. Each row shows the name, case number, DS, days waiting and any duplicate-NIC flag.
-- **CHK-2** A case's check view shall show every field, its documents (opening in a new tab) and every duplicate-NIC match in full.
+- **CHK-1** The "පරීක්ෂා කිරීමට" (to check) queue shall list `SUBMITTED` cases, oldest submission first. Each row shows the name, case number, DS, days waiting and any duplicate-NIC flag. As in the prototype, the queue and the release queue (REL-1) are two tabs of one screen: the list is on the left and the chosen case on the right.
+- **CHK-2** A case's check view shall show every field, its documents (opening in a new tab) and every duplicate-NIC match in full: case number, name, DS and status, each linked to its case. The Head Office case page of a `SUBMITTED` case shows the same matches and decisions.
 - **CHK-3** Head Office shall have three actions:
   - **Verify:** no input needed.
   - **Send back:** a reason is required (5–1,000 characters).
   - **Reject:** a reason is required (5–1,000 characters).
 
-  Each writes a Decision and notifies every active officer of the case's DS.
+  Verifying asks once to confirm. Each writes a Decision and notifies every active officer of the case's DS. A decision is refused if the case changed after the check view showed it (CASE-10), for example when it was sent back and submitted again in the meantime.
 
 ### 7.8 The Rs. 2,000,000 release (REL)
 
@@ -253,7 +253,7 @@ Values used across the system:
 
   The amount is fixed at Rs. 2,000,000 and cannot be edited.
 - **REL-3** Saving the release shall set the case to `IN_PROGRESS`, create four `NOT_STARTED` installments and notify the DS.
-- **REL-4** Head Office shall be able to correct a release's date, reference number and note. Every correction is logged.
+- **REL-4** Head Office shall be able to correct a release's date, reference number and note. Every correction is logged with the old and new values. The REL-2 date rules apply, and the date can't move past an installment date already recorded (INS-3, INS-4).
 
 ### 7.9 Installments (INS)
 
@@ -303,7 +303,8 @@ Values used across the system:
 - **NTF-1** Notifications appear inside the system:
   - A DS's officers get one when a case is sent back, verified, rejected, released, completed, stopped or reopened.
   - Head Office officers see live counts of cases waiting for a check and waiting for release in the menu.
-  - A bell shows unread notifications, and opening one marks it read.
+  - A bell shows unread notifications, and opening one marks it read. The bell leads to a list of the officer's notifications, newest first (`/ds/notifications`).
+  - An officer moved to another DS (ADM-4) no longer sees notifications about the old DS's cases (PRM-3).
 
 ### 7.14 Importing the sheet (IMP)
 
@@ -336,6 +337,7 @@ Values used across the system:
   | DS officer | New case / edit | `/ds/cases/new`, `/ds/cases/[id]/edit` | නව ප්‍රතිලාභියෙකු |
   | DS officer | Case page | `/ds/cases/[id]` | ප්‍රතිලාභියාගේ පිටුව |
   | HO officer | Dashboard | `/ho` | සාරාංශය |
+  | DS officer | Notifications | `/ds/notifications` | — |
   | HO officer | Check and release | `/ho/check`, `/ho/release` | පරීක්ෂාව සහ මුදල් නිදහස් කිරීම |
   | HO officer | Case list, case page, new case | `/ho/cases`, `/ho/cases/[id]`, `/ho/cases/new` | ප්‍රතිලාභියාගේ පිටුව |
   | HO officer | Imported cases | `/ho/imported` | — |

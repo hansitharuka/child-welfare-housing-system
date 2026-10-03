@@ -144,15 +144,15 @@ docker-compose.yml, docker-compose.dev.yml
 
 | # | Task | SPEC | Files |
 | --- | --- | --- | --- |
-| 5.1 | One status-change module that allows only the moves in SPEC section 6 | STS-1–3 | `src/server/cases/transitions.ts` |
-| 5.2 | Check queue, oldest first, with duplicate flags | CHK-1 | `src/app/ho/check/*` |
-| 5.3 | Case check view with documents and full duplicate details | CHK-2 | `src/app/ho/cases/[id]/*` |
+| 5.1 | One status-change module that allows only the moves in SPEC section 6; the submit goes through it too | STS-1–3 | `src/server/cases/transitions.ts`, `src/server/cases/commands.ts` |
+| 5.2 | Check queue, oldest first, with duplicate flags, as one screen with the release queue (two tabs) | CHK-1 | `src/app/ho/check/*`, `src/server/cases/queues.ts` |
+| 5.3 | Case check view with documents and full duplicate details, in the queue screen and on the case page | CHK-2 | `src/app/ho/check/review-screen.tsx`, `src/app/ho/cases/[id]/*`, `src/components/review/*` |
 | 5.4 | Verify, send back and reject, with reasons and Decisions | CHK-3 | `src/server/cases/decide.ts` |
-| 5.5 | Release queue and the release form; four installments created on save; release corrections | REL-1–4 | `src/app/ho/release/*`, `src/server/releases/*` |
-| 5.6 | Notifications table and the first notices (sent back, verified, rejected, released) | NTF-1 | `src/server/notifications/*` |
-| 5.7 | Edits after verification, Head Office only, logged field by field | CASE-9 | `src/server/cases/update.ts` |
+| 5.5 | Release queue and the release form; four installments created on save; release corrections; the money section on both case pages | REL-1–4 | `src/app/ho/release/*`, `src/server/releases/*`, `src/components/cases/money-section.tsx` |
+| 5.6 | Notifications table, the notices for every decision, the DS bell and its list, the waiting counts in the Head Office menu | NTF-1 | `src/server/notifications/*`, `src/app/ds/notifications/*`, `src/components/shell/*` |
+| 5.7 | Edits after verification, Head Office only, logged field by field | CASE-9 | `src/server/cases/rules.ts`, `src/server/cases/commands.ts`, `src/components/forms/case-form.tsx` |
 
-**Tests:** every allowed and refused status change; reasons required; release date rules; e2e for the full path DS → check → send back → resubmit → verify → release (AC-8, AC-9, AC-10).
+**Tests:** every allowed and refused status change; reasons required; release date rules; e2e for the full path DS → check → send back → resubmit → verify → release (AC-8, AC-9, AC-10), rejecting, and Head Office's corrections (CASE-9, REL-4).
 
 **Done when:** AC-8, AC-9 and AC-10 pass.
 
@@ -163,10 +163,10 @@ docker-compose.yml, docker-compose.dev.yml
 | # | Task | SPEC | Files |
 | --- | --- | --- | --- |
 | 6.1 | Installment actions: start (expected date) and mark paid (date), only the next one, date rules; Head Office undo with a reason | INS-1–6 | `src/server/installments/*`, `src/app/ds/cases/[id]/*` |
-| 6.2 | Prisma: StageUpdate and photo links; stage update form with note-only option and skipped stages | STG-1, STG-2, STG-4, STG-5 | `prisma/schema.prisma`, `src/server/stages/*` |
+| 6.2 | Prisma: StageUpdate and photo links; stage update form with note-only option and skipped stages. Head Office can still change a running case's kind of help (CASE-9), so refuse that once a stage is recorded | STG-1, STG-2, STG-4, STG-5 | `prisma/schema.prisma`, `src/server/stages/*` |
 | 6.3 | Photo pipeline with sharp: resize to 1,600 px, JPEG 80, remove all metadata | STG-3 | `src/server/files/images.ts` |
 | 6.4 | Completion rule, run after every installment or stage change | CLS-1 | `src/server/cases/complete.ts` |
-| 6.5 | Stop and reopen with reasons, balance shown, changes blocked while stopped | CLS-2, CLS-3 | `src/server/cases/stop.ts` |
+| 6.5 | Stop and reopen with reasons, balance shown, changes blocked while stopped. The moves are already in `transitions.ts`; reopening needs the status before the stop, so store it on the case | CLS-2, CLS-3 | `src/server/cases/stop.ts` |
 | 6.6 | Case history in plain Sinhala sentences, from the audit log | HIS-2 | `src/server/history/*`, `messages/si.json` |
 | 6.7 | Full DS and Head Office case pages as in the prototype, photo thumbnails and viewer | STG-6, UI-7 | `src/app/ds/cases/[id]/*`, `src/app/ho/cases/[id]/*` |
 | 6.8 | DS home: money panel and the rest of the to-do panel (due installments, 30 days without an update) | HOME-3, HOME-4 | `src/app/ds/page.tsx` |

@@ -9,6 +9,7 @@ import { colomboYear } from "@/lib/dates";
 import type { CaseValues } from "@/lib/validation/case";
 import { fileForViewer, uploadDocument } from "../files/uploads";
 import { type Actor, deleteDraft, removeDocument, saveCase, type SaveCaseInput } from "./commands";
+import { decideCase } from "./decide";
 import { findNicMatches } from "./duplicates";
 import { getCase, listCases, todoItems } from "./queries";
 
@@ -54,6 +55,14 @@ async function saved(actor: Actor, input: SaveCaseInput) {
   const result = await saveCase(db, actor, input);
   if (!result.ok) throw new Error(result.error);
   return db.case.findUniqueOrThrow({ where: { id: result.value.id } });
+}
+
+/** Head Office sends a submitted case back to its office (CHK-3). */
+async function sendBack(id: string, reason = "ලිපිනය සම්පූර්ණ නැත.") {
+  const sent = await db.case.findUniqueOrThrow({ where: { id } });
+  const result = await decideCase(db, ho, { caseId: id, version: sent.version, decision: "sendBack", reason });
+  if (!result.ok) throw new Error(result.error);
+  return db.case.findUniqueOrThrow({ where: { id } });
 }
 
 async function officer(id: string): Promise<Actor> {
@@ -157,11 +166,7 @@ describe("submitting (CASE-5)", () => {
 
   it("keeps the number when a returned case is submitted again", async () => {
     const first = await saved(dsA, newCase("200100000030", { submit: true }));
-    // Head Office sends it back (Phase 5); done directly here.
-    const returned = await db.case.update({
-      where: { id: first.id },
-      data: { status: "RETURNED", version: { increment: 1 } },
-    });
+    const returned = await sendBack(first.id);
 
     const again = await saved(dsA, {
       ...newCase("200100000030"),
@@ -231,10 +236,7 @@ describe("who may change a case", () => {
     expect(moved.dsOfficeId).toBe(dsB.dsOfficeId);
 
     const sent = await saved(ho, { ...newCase("200100000045"), id: draft.id, version: moved.version, submit: true });
-    const returned = await db.case.update({
-      where: { id: sent.id },
-      data: { status: "RETURNED", version: { increment: 1 } },
-    });
+    const returned = await sendBack(sent.id);
     const result = await saveCase(db, ho, {
       ...newCase("200100000045"),
       id: draft.id,
@@ -365,10 +367,7 @@ describe("lists (HOME-1 to HOME-3, FND-1)", () => {
 
   it("puts returned cases, with Head Office's reason, before drafts in the to-do panel", async () => {
     const sent = await saved(dsA, newCase("200100000070", { submit: true }));
-    await db.case.update({ where: { id: sent.id }, data: { status: "RETURNED" } });
-    await db.decision.create({
-      data: { id: randomUUID(), caseId: sent.id, type: "SEND_BACK", reason: "ලිපිනය සම්පූර්ණ නැත.", byId: ho.userId },
-    });
+    await sendBack(sent.id);
 
     const items = await todoItems(db, dsA);
     expect(items[0]).toMatchObject({ id: sent.id, type: "returned", reason: "ලිපිනය සම්පූර්ණ නැත." });

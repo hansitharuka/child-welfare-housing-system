@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { CaseFormState } from "@/components/forms/case-form";
+import { isBeingEntered } from "@/server/cases/rules";
 import { requireRole } from "@/server/context";
 import {
   deleteCaseDraft,
@@ -21,7 +22,9 @@ export async function saveCaseAction(_previous: CaseFormState, form: FormData): 
 
   revalidatePath("/ho/cases");
   const { id, status } = result.saved;
-  redirect(status === "SUBMITTED" ? `/ho/cases/${id}?notice=submitted` : `/ho/cases/${id}/edit?notice=saved`);
+  if (status === "SUBMITTED") redirect(`/ho/cases/${id}?notice=submitted`);
+  // A verified case was corrected (CASE-9): back to its page.
+  redirect(isBeingEntered(status) ? `/ho/cases/${id}/edit?notice=saved` : `/ho/cases/${id}?notice=changed`);
 }
 
 export async function uploadDocumentAction(form: FormData) {
