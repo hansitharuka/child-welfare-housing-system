@@ -292,10 +292,13 @@ Only the DS office starts and pays installments (section 4). Each change is refu
   An "update" is any installment change, stage update or case edit. The amount released is the Rs. 2,000,000 releases, stopped cases included; the amount paid out is the installments marked paid. The filters narrow every figure except the waiting counts, which are the whole queues, as the menu shows them. The table lists every district, and a district's active DS offices plus any inactive one that has cases. The stale list shows the 10 cases waiting longest and how many there are in all.
 - **DSH-2** Dashboard figures shall come from the database when the page loads, and never be more than 1 minute old.
 - **EXP-1** Any list shall be exportable to `.xlsx` with Sinhala headers, limited to what the user may see.
+  - The lists are Head Office's case list (FND-1), with its filters, and the DS officer's list (HOME-2), with its tab and search. The check and release queues are the case list filtered by status.
+  - The file holds every case the list matches, not only the page shown, in the list's order, one row per case: case number, category, kind, status, names, NIC, address, phones, district, DS, the days it was sent, verified, released and completed, the amount released, the installments and amount paid out, the balance left with the DS, the stage reached, the last change and the remark.
+  - Days are real Excel dates shown as `YYYY.MM.DD` (UI-3), amounts are numbers, and NICs and phone numbers stay text.
 - **EXP-2** Head Office shall be able to export in the sheet's layout:
   - Two sheets, නිවාසගත and අවදානම් දරුවන්, with the original columns: serial number, names, NIC, address, phone, district, DS, four installment columns, four progress columns and remark.
   - Each installment cell shows its status and date. Each progress cell shows the date the stage was reached.
-- **EXP-3** Every export shall be logged with who made it, which filters were used and how many rows it held.
+- **EXP-3** Every export shall be logged with who made it, which filters were used and how many rows it held. It is an audit record of the list, not part of any case's history.
 
 ### 7.13 History and notifications (HIS, NTF)
 

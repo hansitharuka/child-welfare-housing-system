@@ -183,7 +183,7 @@ docker-compose.yml, docker-compose.dev.yml
 | --- | --- | --- | --- |
 | 7.1 | Load-test data: a script that creates 5,000 made-up cases across all districts | PRF-1 | `scripts/seed-load.ts` |
 | 7.2 | Dashboard: filters, totals, district table with DS drill-down, waiting counts, stale cases | DSH-1, DSH-2 | `src/app/ho/page.tsx`, `src/server/dashboard/*` |
-| 7.3 | Excel export of any list, limited to what the user may see, and logged | EXP-1, EXP-3 | `src/server/exports/*` |
+| 7.3 | Excel export of any list, limited to what the user may see, and logged | EXP-1, EXP-3 | `src/server/exports/*`, `src/app/ho/cases/export/route.ts`, `src/app/ds/export/route.ts` |
 | 7.4 | Sheet-layout export (two tabs, original columns) | EXP-2 | `src/server/exports/sheet-layout.ts` |
 | 7.5 | Notifications: the bell, the menu's queue counts and every notice, completed, stopped and reopened included, were built in Phases 5 and 6; check they stay right beside the dashboard | NTF-1 | `src/components/shell/*` |
 

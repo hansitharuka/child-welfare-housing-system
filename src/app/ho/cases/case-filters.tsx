@@ -6,15 +6,7 @@ import { useState } from "react";
 import type { CaseStatus } from "@/generated/prisma/enums";
 import { CATEGORIES, KINDS } from "@/lib/validation/case";
 import type { DistrictOptions } from "@/server/lists/queries";
-
-export type FilterValues = {
-  q: string;
-  districtId: string;
-  dsOfficeId: string;
-  status: string;
-  category: string;
-  kind: string;
-};
+import type { FilterValues } from "./filters";
 
 const selectClass = "h-11 rounded-lg border border-input bg-card px-3 text-base";
 

@@ -102,7 +102,8 @@ describe("Head Office dashboard (DSH-1)", () => {
     const all = await dashboard(db, ho, {}, now);
     for (const value of Object.values(all.totals)) expect(value).toBeGreaterThan(0);
     expect(all.totals.cases).toBeGreaterThan(LOAD * 0.9);
-  });
+    // 18 filters, each read twice over 5,000 cases: a check of the sums, not of speed (that is AC-21).
+  }, 30_000);
 
   it("shows every district, each equal to its own sums; a district opens into its DS offices", async () => {
     const all = await dashboard(db, ho, {});

@@ -200,8 +200,11 @@ export function staleBefore(now: Date): Date {
   return colomboStartOf(addDays(colomboDay(now), 1 - STALE_DAYS));
 }
 
-/** The Prisma filter for what the viewer may see and asked for; null when they may see nothing. */
-function caseWhere(viewer: Viewer, filter: CaseFilter): Prisma.CaseWhereInput | null {
+/**
+ * The Prisma filter for what the viewer may see and asked for; null when they may see nothing.
+ * The list and its Excel export (EXP-1) both use it, so the file holds exactly the screen's cases.
+ */
+export function caseWhere(viewer: Viewer, filter: CaseFilter): Prisma.CaseWhereInput | null {
   const scope = officeFilter(viewer);
   if (!scope) return null;
 

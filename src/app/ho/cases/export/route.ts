@@ -1,0 +1,17 @@
+import { notFound } from "next/navigation";
+import type { NextRequest } from "next/server";
+import { getTranslations } from "next-intl/server";
+import { requireRole } from "@/server/context";
+import { db } from "@/server/db";
+import { exportCaseList } from "@/server/exports/case-list";
+import { xlsxResponse } from "@/server/exports/workbook";
+import { readFilters } from "../filters";
+
+/** EXP-1: Head Office's case list as an Excel file, with the filters the list page shows (FND-1). */
+export async function GET(request: NextRequest) {
+  const viewer = await requireRole("HO_OFFICER");
+  const { filter } = readFilters((key) => request.nextUrl.searchParams.get(key) ?? "");
+  const file = await exportCaseList(db, viewer, "ho_cases", filter, await getTranslations("cases"));
+  if (!file) notFound();
+  return xlsxResponse(file.bytes, file.fileName, file.asciiName);
+}

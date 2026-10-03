@@ -530,6 +530,10 @@ export async function addLoadData(db: PrismaClient, options: LoadOptions = {}): 
     },
     { maxWait: 10_000, timeout: 10 * 60_000 },
   );
+  // Until autoanalyze notices the new rows, the planner may still think the tables are as small as
+  // before, and its plans make the dashboard about 20 times slower. Refresh the statistics now. With no
+  // table named, ANALYZE covers the whole database, so it also reaches the database tests' own schema.
+  await db.$executeRawUnsafe("ANALYZE");
   return { offices: new Set(planned.map((p) => p.case.dsOfficeId)).size };
 }
 

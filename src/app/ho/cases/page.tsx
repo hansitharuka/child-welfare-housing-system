@@ -1,25 +1,18 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { caseName } from "@/components/cases/page-header";
+import { ExportLink } from "@/components/cases/export-link";
 import { Pager } from "@/components/cases/pager";
 import { StatusChip } from "@/components/cases/status-chip";
 import { FormNotice } from "@/components/forms/form-field";
-import { CaseStatus } from "@/generated/prisma/enums";
 import { formatDate } from "@/lib/dates";
-import { CATEGORIES, KINDS } from "@/lib/validation/case";
 import { listCases, PAGE_SIZE } from "@/server/cases/queries";
 import { isBeingEntered } from "@/server/cases/rules";
 import { requireRole } from "@/server/context";
 import { db } from "@/server/db";
 import { districtsWithOffices } from "@/server/lists/queries";
-import { CaseFilters, type FilterValues } from "./case-filters";
-
-const STATUSES = Object.values(CaseStatus);
-const FILTERS = ["q", "districtId", "dsOfficeId", "status", "category", "kind"] as const;
-
-const oneOf = <T extends string>(list: readonly T[], value: string): T | undefined =>
-  list.find((item) => item === value);
-const positive = (value: string) => (/^\d+$/.test(value) && Number(value) > 0 ? Number(value) : undefined);
+import { CaseFilters } from "./case-filters";
+import { FILTERS, filterQuery, positive, readFilters, STATUSES } from "./filters";
 
 /** FND-1: every case, filterable by name, NIC, number, district, DS, status, category and kind. */
 export default async function HoCasesPage({
@@ -30,37 +23,20 @@ export default async function HoCasesPage({
   const viewer = await requireRole("HO_OFFICER");
   const params = await searchParams;
   const read = (key: string) => (typeof params[key] === "string" ? params[key] : "");
-  const values: FilterValues = {
-    q: read("q").slice(0, 100),
-    districtId: read("districtId"),
-    dsOfficeId: read("dsOfficeId"),
-    status: read("status"),
-    category: read("category"),
-    kind: read("kind"),
-  };
+  const { values, filter } = readFilters(read);
   const page = positive(read("page")) ?? 1;
-  const status = oneOf(STATUSES, values.status);
 
   const [t, districts, list] = await Promise.all([
     getTranslations("cases"),
     districtsWithOffices(db),
-    listCases(db, viewer, {
-      q: values.q,
-      districtId: positive(values.districtId),
-      dsOfficeId: positive(values.dsOfficeId),
-      statuses: status ? [status] : undefined,
-      category: oneOf(CATEGORIES, values.category),
-      kind: oneOf(KINDS, values.kind),
-      page,
-    }),
+    listCases(db, viewer, { ...filter, page }),
   ]);
 
+  const withQuery = (path: string, query: URLSearchParams) => (query.size > 0 ? `${path}?${query}` : path);
   const pageHref = (p: number) => {
-    const query = new URLSearchParams();
-    for (const key of FILTERS) if (values[key]) query.set(key, values[key]);
+    const query = filterQuery(values);
     if (p > 1) query.set("page", String(p));
-    const text = query.toString();
-    return text ? `/ho/cases?${text}` : "/ho/cases";
+    return withQuery("/ho/cases", query);
   };
 
   return (
@@ -70,12 +46,21 @@ export default async function HoCasesPage({
           <h1 className="text-[28px] leading-snug font-bold">{t("list.title")}</h1>
           <p className="text-muted-foreground">{t("list.summary", { total: list.total })}</p>
         </div>
-        <Link
-          href="/ho/cases/new"
-          className="flex h-13 items-center rounded-lg bg-primary px-6 text-[17px] font-semibold text-primary-foreground"
-        >
-          + {t("list.add")}
-        </Link>
+        <div className="flex items-center gap-3">
+          {list.total > 0 && (
+            <ExportLink
+              href={withQuery("/ho/cases/export", filterQuery(values))}
+              label={t("export.button")}
+              hint={t("export.hint")}
+            />
+          )}
+          <Link
+            href="/ho/cases/new"
+            className="flex h-13 items-center rounded-lg bg-primary px-6 text-[17px] font-semibold text-primary-foreground"
+          >
+            + {t("list.add")}
+          </Link>
+        </div>
       </div>
 
       {read("notice") === "deleted" && <FormNotice message={t("notices.deleted")} />}
