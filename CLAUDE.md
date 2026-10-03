@@ -19,7 +19,7 @@ Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists
 - the DS home's money panel and its full to-do panel
 - tests and CI
 
-The Head Office dashboard and the Excel exports come next (Phase 7); the dashboard is still a placeholder.
+Phase 7 (the Head Office dashboard and the Excel exports) is being built one task at a time. Task 7.1, the load-test data script, is done; the dashboard is still a placeholder.
 
 The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
@@ -38,6 +38,7 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 | Production build and server | `npm run build`, then `npm run start:standalone` |
 | Change the database schema | edit `prisma/schema.prisma`, then `npx prisma migrate dev --name <change>` and `npx prisma generate` (Prisma 7's `migrate dev` no longer regenerates the client). When `migrate dev` stops to ask about a change (for example a new unique column), write the SQL with `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` into a new `prisma/migrations/<timestamp>_<change>/migration.sql` and apply it with `npx prisma migrate deploy` |
 | Put the sample accounts back to their start state | `npx tsx prisma/seed-users.ts --reset` (the end-to-end tests do this themselves) |
+| Add 5,000 made-up cases for load tests, or remove them | `npm run db:seed-load` (`-- --count 500`, `-- --seed 7`), `npm run db:seed-load -- --remove`. Remove them before running the end-to-end tests |
 
 ## Things to know when coding
 
@@ -132,6 +133,15 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 - **The history** (`caseHistory` in `src/server/history/queries.ts`) reads the audit log; `src/components/progress/case-history.tsx` turns each action into a Sinhala sentence. A new audit action needs a sentence there and under `history.actions` in `messages/si.json`, or it shows as "a change was made".
 - **Case pages** use `CaseColumns` (`src/components/cases/case-view.tsx`): money, decisions and history on the left; stages and details on the right; one column below 1,280 px. The pop-ups for installments, stages, stopping, reopening and undoing are in `src/components/progress/`; `ReasonAction` is the shared "give a reason" pop-up. `Modal` takes a `size` and sets `text-left`, because some pop-ups live in right-aligned table cells.
 - **Test helpers:** `releasedCase` (`tests/e2e/case-helpers.ts`) gives a case released today. E2E tests read the stage names from the form, because the admin may rename or reorder stages. The development database's new-house stages have been reordered by hand. `cleanup.ts` also deletes test cases' stage updates and photo thumbnails.
+
+### Dashboard and exports (Phase 7)
+
+- **Load-test data** (`scripts/seed-load.ts`, PRF-1) makes made-up cases at every status in every active DS office: drafts, queues, cases being built (a quarter with no update for 30 days or more), completed, rejected and stopped. It runs on development, CI, test and staging databases, never in production. The same `--seed` gives the same cases.
+  - The cases' ids start with `load-`, which is how `--remove` finds them. They belong to the disabled account `load-test-account`, which has no username, so it can't sign in and isn't on the admin's users screen.
+  - It writes no audit records, because those can never be removed (HIS-3), and no notifications, files or photos. A load-test case's history is empty.
+  - Case numbers are taken in one block per office and year from `case_number_counter`. `--remove` puts each counter back where it stood before, unless a later case holds a higher number.
+  - `addLoadData(db, { count, seed, now })` and `removeLoadData(db)` are exported for the database tests.
+  - **Remove it before the end-to-end tests.** The check queue lists 50 per page, oldest first (CHK-1), and the release test expects its new case on the first page. While load-test cases use a test office or stage that an end-to-end run left behind, `cleanup.ts` leaves that office or stage in place. It is removed on the first run after the load-test cases are gone.
 
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 
