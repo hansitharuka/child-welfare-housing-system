@@ -121,8 +121,10 @@ test("rejecting needs a reason the DS office then reads (CHK-3)", async ({ page:
   await ho.context().close();
 
   await ds.goto(url);
-  await expect(ds.getByRole("heading", { name: "ප්‍රධාන කාර්යාලය මෙය ප්‍රතික්ෂේප කර ඇත" })).toBeVisible();
-  await expect(ds.getByText("මෙම පවුලට වෙනත් නිවාස ආධාරයක් ලැබී ඇත.")).toBeVisible();
+  // The reason box at the top; the history repeats the reason further down.
+  await expect(ds.getByRole("region", { name: "ප්‍රධාන කාර්යාලය මෙය ප්‍රතික්ෂේප කර ඇත" })).toContainText(
+    "මෙම පවුලට වෙනත් නිවාස ආධාරයක් ලැබී ඇත.",
+  );
 });
 
 test("Head Office corrects a verified case and its release, and both are saved (CASE-9, REL-4)", async ({

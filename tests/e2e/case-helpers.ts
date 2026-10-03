@@ -1,11 +1,13 @@
 import { type Browser, expect, type Page } from "@playwright/test";
-import { signInAs } from "./helpers";
+import { signInAs, TEST_CASE_NAME } from "./helpers";
 
 /** Screen text the case tests look for (messages/si.json). */
 export const SEND = "ප්‍රධාන කාර්යාලයට යවන්න";
 export const CONFIRM = "ඔව්, යවන්න";
 export const SUBMITTED = "පරීක්ෂාවට යවා ඇත";
 export const YEAR = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Colombo", year: "numeric" }).format(new Date());
+/** Today in Colombo as a date field takes it, "YYYY-MM-DD". */
+export const TODAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Colombo" }).format(new Date());
 
 /** A made-up 12-digit NIC (SEC-11), different in every test. */
 export function randomNic(): string {
@@ -60,4 +62,22 @@ export async function openAs(browser: Browser, username: string): Promise<Page> 
   const page = await context.newPage();
   await signInAs(page, username, username.startsWith("ho") ? /\/ho$/ : /\/ds$/);
   return page;
+}
+
+/**
+ * A case of the DS officer's office that Head Office has verified and released today, from the case's
+ * own page: ready for its installments and building progress (Phase 6).
+ */
+export async function releasedCase(ds: Page, ho: Page, label: string) {
+  const name = `${TEST_CASE_NAME} ${label} ${Date.now()}`;
+  const { url, number } = await newSubmittedCase(ds, { name, nic: randomNic() });
+  const caseId = url.split("/").at(-1) ?? "";
+  await ho.goto(`/ho/cases/${caseId}`);
+  await ho.getByRole("button", { name: "අනුමත කරන්න", exact: true }).click();
+  await ho.getByRole("dialog").getByRole("button", { name: "ඔව්, අනුමත කරන්න" }).click();
+  await expect(ho).toHaveURL(new RegExp(`/ho/cases/${caseId}\\?notice=verified$`));
+  await ho.getByLabel("යොමු අංකය *").fill("HO/2026/E2E-P6");
+  await ho.getByRole("button", { name: "රු. 2,000,000 නිදහස් කළ බව සටහන් කරන්න" }).click();
+  await expect(ho).toHaveURL(new RegExp(`/ho/cases/${caseId}\\?notice=released$`));
+  return { caseId, url, name, number };
 }

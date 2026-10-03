@@ -4,8 +4,8 @@
  *   developer's lists don't fill up with test entries;
  * - disables the DS officer accounts they created, which frees those offices for the next run, since
  *   an office has only one active officer (ADM-3). The accounts stay, because the audit log refers to them;
- * - deletes the cases they created (named with TEST_CASE_NAME), with their files, decisions, release,
- *   installments and notifications.
+ * - deletes the cases they created (named with TEST_CASE_NAME), with their files and photos, decisions,
+ *   release, installments, stage updates and notifications.
  * Runs only where sample accounts are allowed (development and test databases).
  */
 import "dotenv/config";
@@ -33,15 +33,16 @@ async function main() {
     const caseIds = cases.map((c) => c.id);
     const files = await prisma.storedFile.findMany({
       where: { caseId: { in: caseIds } },
-      select: { storedName: true },
+      select: { storedName: true, thumbName: true },
     });
     await prisma.storedFile.deleteMany({ where: { caseId: { in: caseIds } } });
     await prisma.notification.deleteMany({ where: { caseId: { in: caseIds } } });
     await prisma.installment.deleteMany({ where: { caseId: { in: caseIds } } });
     await prisma.release.deleteMany({ where: { caseId: { in: caseIds } } });
+    await prisma.stageUpdate.deleteMany({ where: { caseId: { in: caseIds } } });
     await prisma.decision.deleteMany({ where: { caseId: { in: caseIds } } });
     await prisma.case.deleteMany({ where: { id: { in: caseIds } } });
-    for (const file of files) await deleteStoredFile(file.storedName);
+    for (const name of files.flatMap((f) => [f.storedName, f.thumbName])) if (name) await deleteStoredFile(name);
     console.log(
       `Removed test entries: ${offices.count} offices, ${stages.count} stages, ${caseIds.length} cases; disabled ${officers.count} test officers.`,
     );
