@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { balance, formatRupees, paidOut, RELEASE_AMOUNT } from "./money";
+import { balance, formatNumber, formatRupees, paidOut, RELEASE_AMOUNT } from "./money";
+
+describe("formatNumber", () => {
+  it("writes Western digits with thousand separators", () => {
+    expect(formatNumber(7_600_000_000)).toBe("7,600,000,000");
+    expect(formatNumber(4_812)).toBe("4,812");
+    expect(formatNumber(0)).toBe("0");
+  });
+
+  it("refuses anything but whole numbers", () => {
+    expect(() => formatNumber(1.5)).toThrow(RangeError);
+    expect(() => formatNumber(Number.NaN)).toThrow(RangeError);
+  });
+});
 
 describe("formatRupees", () => {
   it("adds the rupee label and thousand separators", () => {

@@ -2,10 +2,16 @@ const RUPEES = "රු.";
 
 const digits = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
-/** Formats whole rupees as "රු. 2,000,000": Western digits with comma separators (UI-3). */
+/** Formats a count, or whole rupees under a "(රු.)" heading, as "2,000,000": Western digits with comma separators (UI-3). */
+export function formatNumber(value: number): string {
+  if (!Number.isSafeInteger(value)) throw new RangeError(`Not a whole number: ${value}`);
+  return digits.format(value);
+}
+
+/** Formats whole rupees as "රු. 2,000,000" (UI-3). */
 export function formatRupees(amount: number): string {
   if (!Number.isSafeInteger(amount)) throw new RangeError(`Amounts are whole rupees: ${amount}`);
-  return `${RUPEES} ${digits.format(amount)}`;
+  return `${RUPEES} ${formatNumber(amount)}`;
 }
 
 /** Each case gets Rs. 2,000,000 (REL-2), paid to the beneficiary in four installments of Rs. 500,000 (INS-1). */

@@ -289,7 +289,7 @@ Only the DS office starts and pays installments (section 4). Each change is refu
   - the number of cases waiting for a check and waiting for release, linked to those queues
   - cases in progress with no update for 30 days or more, the longest first
 
-  An "update" is any installment change, stage update or case edit.
+  An "update" is any installment change, stage update or case edit. The amount released is the Rs. 2,000,000 releases, stopped cases included; the amount paid out is the installments marked paid. The filters narrow every figure except the waiting counts, which are the whole queues, as the menu shows them. The table lists every district, and a district's active DS offices plus any inactive one that has cases. The stale list shows the 10 cases waiting longest and how many there are in all.
 - **DSH-2** Dashboard figures shall come from the database when the page loads, and never be more than 1 minute old.
 - **EXP-1** Any list shall be exportable to `.xlsx` with Sinhala headers, limited to what the user may see.
 - **EXP-2** Head Office shall be able to export in the sheet's layout:

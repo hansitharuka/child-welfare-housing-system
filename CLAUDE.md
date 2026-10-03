@@ -19,7 +19,7 @@ Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists
 - the DS home's money panel and its full to-do panel
 - tests and CI
 
-Phase 7 (the Head Office dashboard and the Excel exports) is being built one task at a time. Task 7.1, the load-test data script, is done; the dashboard is still a placeholder.
+Phase 7 (the Head Office dashboard and the Excel exports) is being built one task at a time. Tasks 7.1 (the load-test data script) and 7.2 (the Head Office dashboard) are done; the Excel exports are next.
 
 The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
@@ -142,6 +142,14 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
   - Case numbers are taken in one block per office and year from `case_number_counter`. `--remove` puts each counter back where it stood before, unless a later case holds a higher number.
   - `addLoadData(db, { count, seed, now })` and `removeLoadData(db)` are exported for the database tests.
   - **Remove it before the end-to-end tests.** The check queue lists 50 per page, oldest first (CHK-1), and the release test expects its new case on the first page. While load-test cases use a test office or stage that an end-to-end run left behind, `cleanup.ts` leaves that office or stage in place. It is removed on the first run after the load-test cases are gone.
+- **The dashboard** (`/ho`, DSH-1) is built from `dashboard()` in `src/server/dashboard/queries.ts`: the totals, each DS office's figures and the stale cases.
+  - `tableRows()` is pure. It groups the office figures by district, or lists a chosen district's offices.
+  - The figures are read on every load (DSH-2); the page renders per request anyway.
+  - The filters (`districtId`, `category`, `kind`) are in the address. They narrow every figure except the waiting counts, which come from `queueCounts`, as in the menu.
+  - Prisma can't sum a related table by office, and raw SQL would miss the schema the tests and CI's end-to-end run use. So the money figures come from one row per case with a release. With 5,000 cases the reads take about 65 ms, and the page about 0.3 s.
+  - "No update for 30 days" is `staleBefore(now)` in `src/server/cases/queries.ts`, shared with the DS to-do panel.
+  - Its database test (AC-17, AC-21) adds 5,000 load-test cases and removes them again, which takes about 20 seconds.
+- **A filter form on a page whose links change only its address needs a `key` made from the filter values.** Otherwise the uncontrolled fields keep their old choices after a client-side move, such as "clear filters". The dashboard and the Head Office case list both do this.
 
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 

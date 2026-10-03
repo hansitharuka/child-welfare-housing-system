@@ -84,7 +84,13 @@ export default async function HoCasesPage({
         <h2 id="cases-title" className="sr-only">
           {t("list.title")}
         </h2>
-        <CaseFilters values={values} districts={districts} statuses={STATUSES} />
+        <CaseFilters
+          // "Clear" changes the address without leaving the page; a new form shows the new choices.
+          key={FILTERS.map((key) => values[key]).join("|")}
+          values={values}
+          districts={districts}
+          statuses={STATUSES}
+        />
         {list.rows.length === 0 ? (
           <p className="px-5 py-8 text-center text-muted-foreground">{t("list.empty")}</p>
         ) : (
