@@ -313,6 +313,7 @@ Only the DS office starts and pays installments (section 4). Each change is refu
   - A DS's officers get one when a case is sent back, verified, rejected, released, completed, stopped or reopened.
   - Head Office officers see live counts of cases waiting for a check and waiting for release in the menu.
   - A bell shows unread notifications, and opening one marks it read. The bell leads to a list of the officer's notifications, newest first (`/ds/notifications`).
+  - The menu's count and the bell are read again after every move between screens, so they agree with the page beside them, such as the dashboard's waiting counts (DSH-1). A screen left open doesn't change by itself.
   - An officer moved to another DS (ADM-4) no longer sees notifications about the old DS's cases (PRM-3).
 
 ### 7.14 Importing the sheet (IMP)

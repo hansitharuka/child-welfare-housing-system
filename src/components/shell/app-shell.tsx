@@ -1,9 +1,8 @@
-import { Bell } from "lucide-react";
-import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { signOut } from "@/app/(auth)/actions";
+import { Bell } from "./bell";
 import { NavLinks } from "./nav-links";
-import type { Area, NavEntry } from "./types";
+import type { Area, LiveCount, NavEntry } from "./types";
 
 /** Header, menu and page area shared by every role's screens, as in the prototype (UI-7). */
 export async function AppShell({
@@ -20,7 +19,7 @@ export async function AppShell({
   officeName?: string | null;
   nav: NavEntry[];
   /** NTF-1: the notifications page and how many are unread. */
-  bell?: { href: string; unread: number };
+  bell?: { href: string; unread: LiveCount };
   children: React.ReactNode;
 }) {
   const t = await getTranslations();
@@ -38,25 +37,7 @@ export async function AppShell({
               {t("app.testBanner")}
             </span>
           )}
-          {bell && (
-            <Link
-              href={bell.href}
-              aria-label={
-                bell.unread > 0 ? t("notifications.bellUnread", { count: bell.unread }) : t("notifications.bell")
-              }
-              className="relative flex size-10 items-center justify-center rounded-lg hover:bg-white/10"
-            >
-              <Bell aria-hidden="true" className="size-6" />
-              {bell.unread > 0 && (
-                <span
-                  aria-hidden="true"
-                  className="absolute -top-1 -right-1 flex h-5.5 min-w-5.5 items-center justify-center rounded-full bg-notice px-1.5 text-[13px] font-bold text-notice-foreground"
-                >
-                  {bell.unread}
-                </span>
-              )}
-            </Link>
-          )}
+          {bell && <Bell href={bell.href} unread={bell.unread} />}
           <span className="text-base" aria-label={`${t("shell.signedInAs")} ${userName}`}>
             {userName}
           </span>
@@ -77,10 +58,7 @@ export async function AppShell({
           label: t(`nav.${entry.labelKey}`),
           exact: entry.exact,
           alsoActive: entry.alsoActive,
-          badge:
-            entry.count === undefined
-              ? undefined
-              : { count: entry.count, label: t("nav.waiting", { count: entry.count }) },
+          count: entry.count,
         }))}
       />
       <main className="flex-1 px-8 pt-7 pb-10">{children}</main>

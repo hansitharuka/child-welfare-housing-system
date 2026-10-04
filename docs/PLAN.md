@@ -185,9 +185,9 @@ docker-compose.yml, docker-compose.dev.yml
 | 7.2 | Dashboard: filters, totals, district table with DS drill-down, waiting counts, stale cases | DSH-1, DSH-2 | `src/app/ho/page.tsx`, `src/server/dashboard/*` |
 | 7.3 | Excel export of any list, limited to what the user may see, and logged | EXP-1, EXP-3 | `src/server/exports/*`, `src/app/ho/cases/export/route.ts`, `src/app/ds/export/route.ts` |
 | 7.4 | Sheet-layout export (two tabs, original columns) | EXP-2 | `src/server/exports/sheet-layout.ts` |
-| 7.5 | Notifications: the bell, the menu's queue counts and every notice, completed, stopped and reopened included, were built in Phases 5 and 6; check they stay right beside the dashboard | NTF-1 | `src/components/shell/*` |
+| 7.5 | Notifications: the bell, the menu's queue counts and every notice, completed, stopped and reopened included, were built in Phases 5 and 6; check they stay right beside the dashboard. The menu's count and the bell are read again after every move, because a layout isn't rendered again on a client-side move | NTF-1 | `src/components/shell/*`, `src/app/ho/waiting/route.ts`, `src/app/ds/notifications/unread/route.ts` |
 
-**Tests:** dashboard totals against direct database sums (AC-17); the exported sheet reopened with ExcelJS and checked (AC-18); dashboard time with 5,000 cases (AC-21); full export under 60 seconds (PRF-4).
+**Tests:** dashboard totals against direct database sums (AC-17); the exported sheet reopened with ExcelJS and checked (AC-18); dashboard time with 5,000 cases (AC-21); full export under 60 seconds (PRF-4); the menu's count matching the dashboard, and the bell, after moves by the menu alone (NTF-1).
 
 **Done when:** AC-17, AC-18 and AC-21 pass.
 

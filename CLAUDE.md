@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists), 4 (cases), 5 (check and release) and 6 (installments, progress and closing) of `docs/PLAN.md` are built. You get:
+Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists), 4 (cases), 5 (check and release), 6 (installments, progress and closing) and 7 (dashboard, exports and notifications) of `docs/PLAN.md` are built. You get:
 
 - a Sinhala Next.js shell for the three roles, and PostgreSQL with the place and stage lists
 - sign-in with lockout and forced password change, a permission layer, an append-only audit log and security headers
@@ -17,9 +17,10 @@ Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists
 - notifications for the DS (a bell) and waiting counts in the Head Office menu; Head Office's corrections to verified cases and releases
 - the four installments paid in order by the DS, building stages with photos, completion, stopping and reopening, and each case's history, on two-column case pages as in the prototype
 - the DS home's money panel and its full to-do panel
+- Head Office's dashboard, the Excel exports of the case lists and the export in the old sheet's layout, and a load-test data script
 - tests and CI
 
-Phase 7 (the Head Office dashboard and the Excel exports) is being built one task at a time. Tasks 7.1 (the load-test data script), 7.2 (the Head Office dashboard), 7.3 (the Excel export of the case lists) and 7.4 (the export in the old sheet's layout) are done; 7.5 (checking the notifications beside the dashboard) is next.
+Phase 7 was built one task at a time: 7.1 (the load-test data script), 7.2 (the Head Office dashboard), 7.3 (the Excel export of the case lists), 7.4 (the export in the old sheet's layout) and 7.5 (the notifications beside the dashboard). Phase 8 (the sheet import) is next.
 
 The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
@@ -116,7 +117,8 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
   - Database checks (hand-written in the `release` migration) hold the amounts at 2,000,000 and 500,000 and installment numbers at 1 to 4.
 - **Date-only columns** (`@db.Date`): store a day with `dayToDate`, read it with `dateToDay`, and compare days as `"YYYY-MM-DD"` strings. Today is `colomboDay(new Date())`.
 - **Notifications** are made by `notifyOffice` inside the move's transaction, for the office's active officers only. Lists and the bell show only cases the officer may still see (PRM-3).
-  - Head Office's menu counts come from `src/app/ho/layout.tsx`. A layout doesn't render again on client-side moves, so actions that change a queue call `revalidatePath("/ho", "layout")`.
+  - Head Office's menu counts come from `src/app/ho/layout.tsx`, and the bell's from `src/app/ds/layout.tsx`. A layout doesn't render again on client-side moves, so actions that change a queue call `revalidatePath("/ho", "layout")`, and the actions on notifications `revalidatePath("/ds", "layout")`.
+  - Someone else's change doesn't refresh the layout, so the menu's badge and the bell read their count again after every move (`useLiveCount`, `src/components/shell/live-count.ts`, Phase 7) from `/ho/waiting` or `/ds/notifications/unread`. Each reading carries the server time it was read (`waitingNow`, `unreadNow`), and the newer one is shown. A refreshed layout's 0 then wins over an earlier read's 1 after "mark all read".
 - **Edits after verification (CASE-9)** reuse `saveCase` and the case form in `mode="change"`: one save button, every required field checked (`mustStayComplete`), no submit. The changed fields are logged as `case_updated` with old and new values.
 - **Test helpers:** e2e case entry is in `tests/e2e/case-helpers.ts` (`openAs` keeps a second person's window open). `cleanup.ts` also deletes test cases' notifications, installments and releases. The database tests' config skips `.next/`, where a standalone build copies the test files.
 
