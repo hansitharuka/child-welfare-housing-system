@@ -1,16 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
+import { ExportLink } from "@/components/cases/export-link";
 import { caseName } from "@/components/cases/page-header";
 import { Pager } from "@/components/cases/pager";
 import { StatusChip } from "@/components/cases/status-chip";
 import { FormNotice } from "@/components/forms/form-field";
-import type { CaseStatus } from "@/generated/prisma/enums";
 import { daysBetween, formatDate } from "@/lib/dates";
 import { formatRupees, INSTALLMENT_COUNT } from "@/lib/money";
 import { canEditDetails } from "@/server/cases/rules";
 import {
-  type CaseFilter,
   type CaseRow,
   countCases,
   listCases,
@@ -23,16 +22,7 @@ import {
 } from "@/server/cases/queries";
 import { requireRole } from "@/server/context";
 import { db } from "@/server/db";
-
-/** HOME-2: the tabs and the statuses each one shows. */
-const TABS = {
-  all: undefined,
-  inProgress: ["IN_PROGRESS"],
-  completed: ["COMPLETED"],
-} as const satisfies Record<string, CaseStatus[] | undefined>;
-type Tab = keyof typeof TABS;
-
-const isTab = (value: unknown): value is Tab => typeof value === "string" && value in TABS;
+import { readHomeList, type Tab, TABS, tabStatuses } from "./list";
 
 /** The colour of each kind of to-do item, as in the prototype. */
 const TODO_COLOUR: Record<TodoItem["type"], string> = {
@@ -58,29 +48,25 @@ export default async function DsHomePage({
   if (!office) notFound();
 
   const params = await searchParams;
-  const tab: Tab = isTab(params.tab) ? params.tab : "all";
-  const q = typeof params.q === "string" ? params.q.slice(0, 100) : "";
+  const { tab, q, filter } = readHomeList(params);
   const page = Math.max(1, Number(params.page) || 1);
-  const filter: CaseFilter = { q, statuses: TABS[tab] ? [...TABS[tab]] : undefined, page };
 
   const [t, list, counts, todo, money] = await Promise.all([
     getTranslations("cases"),
-    listCases(db, viewer, filter),
-    Promise.all(
-      (Object.keys(TABS) as Tab[]).map((key) => countCases(db, viewer, { statuses: TABS[key] && [...TABS[key]] })),
-    ),
+    listCases(db, viewer, { ...filter, page }),
+    Promise.all((Object.keys(TABS) as Tab[]).map((key) => countCases(db, viewer, { statuses: tabStatuses(key) }))),
     todoItems(db, viewer),
     officeMoney(db, viewer),
   ]);
   const now = new Date();
-  const href = (changes: { tab?: Tab; page?: number }) => {
+  const href = (changes: { tab?: Tab; page?: number }, path = "/ds") => {
     const query = new URLSearchParams();
     const nextTab = changes.tab ?? tab;
     if (nextTab !== "all") query.set("tab", nextTab);
     if (q) query.set("q", q);
     if (changes.page && changes.page > 1) query.set("page", String(changes.page));
     const text = query.toString();
-    return text ? `/ds?${text}` : "/ds";
+    return text ? `${path}?${text}` : path;
   };
 
   /** What comes next for the case, in the progress column: for a running case, the stage reached (HOME-1). */
@@ -113,14 +99,19 @@ export default async function DsHomePage({
             {t("home.subtitle", { office: office.name, district: office.districtName })}
           </p>
         </div>
-        {office.active && (
-          <Link
-            href="/ds/cases/new"
-            className="flex h-13 items-center rounded-lg bg-primary px-6 text-[17px] font-semibold text-primary-foreground"
-          >
-            + {t("home.add")}
-          </Link>
-        )}
+        <div className="flex items-center gap-3">
+          {list.total > 0 && (
+            <ExportLink href={href({}, "/ds/export")} label={t("export.button")} hint={t("export.hint")} />
+          )}
+          {office.active && (
+            <Link
+              href="/ds/cases/new"
+              className="flex h-13 items-center rounded-lg bg-primary px-6 text-[17px] font-semibold text-primary-foreground"
+            >
+              + {t("home.add")}
+            </Link>
+          )}
+        </div>
       </div>
 
       {params.notice === "deleted" && <FormNotice message={t("notices.deleted")} />}

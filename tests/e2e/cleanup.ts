@@ -1,7 +1,8 @@
 /**
  * Tidies up after earlier end-to-end runs:
  * - removes the DS offices and building stages they added (everything carries TEST_MARKER), so a
- *   developer's lists don't fill up with test entries;
+ *   developer's lists don't fill up with test entries. An office with cases, or a stage a case has
+ *   reached, stays: load-test cases (scripts/seed-load.ts) may use them, and they go once those are removed;
  * - disables the DS officer accounts they created, which frees those offices for the next run, since
  *   an office has only one active officer (ADM-3). The accounts stay, because the audit log refers to them;
  * - deletes the cases they created (named with TEST_CASE_NAME), with their files and photos, decisions,
@@ -21,9 +22,11 @@ async function main() {
   const prisma = createPrismaClient(databaseUrl);
   try {
     const offices = await prisma.dsOffice.deleteMany({
-      where: { nameEn: { startsWith: `${TEST_MARKER} ` }, users: { none: {} } },
+      where: { nameEn: { startsWith: `${TEST_MARKER} ` }, users: { none: {} }, cases: { none: {} } },
     });
-    const stages = await prisma.stageDefinition.deleteMany({ where: { nameSi: { endsWith: ` ${TEST_MARKER}` } } });
+    const stages = await prisma.stageDefinition.deleteMany({
+      where: { nameSi: { endsWith: ` ${TEST_MARKER}` }, updates: { none: {} } },
+    });
     const officers = await prisma.user.updateMany({
       where: { name: TEST_OFFICER_NAME, role: "DS_OFFICER", banned: false },
       data: { banned: true },

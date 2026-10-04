@@ -1,0 +1,144 @@
+import ExcelJS from "exceljs";
+import { createTranslator } from "next-intl";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import messages from "../../../messages/si.json";
+import { seed } from "../../../prisma/seed-data";
+import { addLoadData, removeLoadData } from "../../../scripts/seed-load";
+import { createTestClient } from "../../../tests/db/client";
+import { CATEGORIES, KINDS } from "@/lib/validation/case";
+import { countCases, listCases, PAGE_SIZE } from "../cases/queries";
+import type { Viewer } from "../permissions";
+import { caseListRows, exportCaseList, type ListFilter } from "./case-list";
+
+const db = createTestClient();
+const t = createTranslator({ locale: "si", messages, namespace: "cases" });
+const LOAD = 5_000;
+
+/** The audit log has no foreign key to the account, so a made-up actor is enough. */
+const ho = { role: "HO_OFFICER", dsOfficeId: null, userId: "export-test-ho" } as const satisfies Viewer & {
+  userId: string;
+};
+
+let busiestOffice: number;
+let district: number;
+
+beforeAll(async () => {
+  await seed(db);
+  await addLoadData(db, { count: LOAD, seed: 11 });
+  const [top] = await db.case.groupBy({
+    by: ["dsOfficeId"],
+    _count: { _all: true },
+    orderBy: { _count: { dsOfficeId: "desc" } },
+    take: 1,
+  });
+  busiestOffice = top.dsOfficeId;
+  district = (await db.dsOffice.findUniqueOrThrow({ where: { id: busiestOffice }, select: { districtId: true } }))
+    .districtId;
+}, 300_000);
+
+afterAll(async () => {
+  await removeLoadData(db);
+  await db.$disconnect();
+}, 300_000);
+
+async function lastExportAudit(actorId: string) {
+  return db.auditLog.findFirst({ where: { actorId, action: "cases_exported" }, orderBy: { id: "desc" } });
+}
+
+describe("Excel export of a case list (EXP-1, EXP-3)", () => {
+  it("holds every case of the list, every page, in the screen's order, for each filter", async () => {
+    const filters: ListFilter[] = [
+      {},
+      { statuses: ["IN_PROGRESS"] },
+      { districtId: district, category: CATEGORIES[0] },
+      { dsOfficeId: busiestOffice, kind: KINDS[0] },
+      { q: "HMG" },
+    ];
+    for (const filter of filters) {
+      const rows = await caseListRows(db, ho, filter);
+      expect(rows?.length, JSON.stringify(filter)).toBe(await countCases(db, ho, filter));
+      const first = await listCases(db, ho, { ...filter, page: 1 });
+      expect(rows!.slice(0, PAGE_SIZE).map((r) => r.caseNumber)).toEqual(first.rows.map((r) => r.caseNumber));
+    }
+  });
+
+  it("gives each released case its money and stage from the database", async () => {
+    const rows = (await caseListRows(db, ho, { dsOfficeId: busiestOffice }))!;
+    const cases = await db.case.findMany({
+      where: { dsOfficeId: busiestOffice },
+      select: {
+        caseNumber: true,
+        release: { select: { amount: true } },
+        installments: { where: { status: "RELEASED" }, select: { amount: true } },
+      },
+    });
+    const byNumber = new Map(cases.filter((c) => c.caseNumber).map((c) => [c.caseNumber, c]));
+    const released = rows.filter((r) => r.release);
+    expect(released.length).toBeGreaterThan(0);
+    for (const row of released) {
+      const found = byNumber.get(row.caseNumber)!;
+      expect(row.release!.amount).toBe(found.release!.amount);
+      expect(row.release!.paidCount).toBe(found.installments.length);
+      expect(row.release!.paidOut).toBe(found.installments.reduce((sum, i) => sum + i.amount, 0));
+    }
+    expect(rows.filter((r) => !r.release).every((r) => r.status !== "IN_PROGRESS" && r.status !== "COMPLETED")).toBe(
+      true,
+    );
+    expect(rows.some((r) => r.stageName)).toBe(true);
+  });
+
+  it("keeps a DS officer to their own office, and gives an admin nothing (PRM-1, PRM-2)", async () => {
+    const ds = { role: "DS_OFFICER", dsOfficeId: busiestOffice, userId: "export-test-ds" } as const;
+    const rows = (await caseListRows(db, ds, {}))!;
+    const own = await db.dsOffice.findUniqueOrThrow({ where: { id: busiestOffice }, select: { nameSi: true } });
+    expect(rows.length).toBe(await db.case.count({ where: { dsOfficeId: busiestOffice } }));
+    expect(new Set(rows.map((r) => r.officeName))).toEqual(new Set([own.nameSi]));
+
+    // A search can't reach past the office, even with another office's number.
+    const other = await db.case.findFirstOrThrow({
+      where: { dsOfficeId: { not: busiestOffice }, caseNumber: { not: null } },
+      select: { caseNumber: true },
+    });
+    expect(await caseListRows(db, ds, { q: other.caseNumber! })).toEqual([]);
+
+    const admin = { role: "ADMIN", dsOfficeId: null, userId: "export-test-admin" } as const;
+    expect(await exportCaseList(db, admin, "ho_cases", {}, t)).toBeNull();
+    expect(await lastExportAudit(admin.userId)).toBeNull();
+  });
+
+  it("EXP-3: logs who exported which list, with the filters used and the number of rows", async () => {
+    const filter: ListFilter = { q: " HMG ", statuses: ["IN_PROGRESS"], districtId: district };
+    const file = (await exportCaseList(db, ho, "ho_cases", filter, t))!;
+    const audit = await lastExportAudit(ho.userId);
+    expect(audit).toMatchObject({ entityType: "case_list", entityId: "ho_cases", caseId: null });
+    expect(audit?.after).toEqual({
+      filters: { q: "HMG", statuses: ["IN_PROGRESS"], districtId: district },
+      rows: file.rows,
+    });
+
+    const ds = { role: "DS_OFFICER", dsOfficeId: busiestOffice, userId: "export-test-ds" } as const;
+    const own = (await exportCaseList(db, ds, "ds_cases", { statuses: ["COMPLETED"] }, t))!;
+    expect((await lastExportAudit(ds.userId))?.after).toEqual({
+      filters: { statuses: ["COMPLETED"], officeScope: busiestOffice },
+      rows: own.rows,
+    });
+  });
+
+  it("PRF-4: every case goes to Excel in under 60 seconds, and the file opens again with one row per case", async () => {
+    const total = await db.case.count();
+    expect(total).toBeGreaterThanOrEqual(LOAD);
+
+    const started = performance.now();
+    const file = (await exportCaseList(db, ho, "ho_cases", {}, t))!;
+    const seconds = (performance.now() - started) / 1000;
+    expect(seconds).toBeLessThan(60);
+    expect(file.rows).toBe(total);
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.bytes.buffer);
+    const sheet = workbook.worksheets[0];
+    expect(sheet.name).toBe(t("export.sheet"));
+    expect(sheet.getRow(1).getCell(1).value).toBe(t("export.columns.number"));
+    expect(sheet.rowCount).toBe(total + 1);
+  }, 120_000);
+});

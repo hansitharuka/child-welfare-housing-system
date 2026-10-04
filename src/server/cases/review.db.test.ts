@@ -5,13 +5,13 @@ import { createTestClient, freeOfficeId } from "../../../tests/db/client";
 import { colomboDay, dayToDate } from "@/lib/dates";
 import type { CaseValues } from "@/lib/validation/case";
 import type { ReleaseField } from "@/lib/validation/release";
-import { listNotifications, unreadCount } from "../notifications/queries";
+import { listNotifications, unreadCount, unreadNow } from "../notifications/queries";
 import { openNotification } from "../notifications/commands";
 import { correctRelease, recordRelease } from "../releases/commands";
 import { type Actor, saveCase, type SaveCaseInput } from "./commands";
 import { decideCase } from "./decide";
 import { getCase, todoItems } from "./queries";
-import { listQueue, queueCounts } from "./queues";
+import { listQueue, queueCounts, waitingNow } from "./queues";
 
 const db = createTestClient();
 
@@ -178,6 +178,7 @@ describe("checking a case (CHK-3)", () => {
 
     expect(rejected.status).toBe("REJECTED");
     expect((await getCase(db, dsA, sent.id))?.rejectReason).toBe("වෙනත් ආධාර ලැබී ඇත.");
+    expect(await db.notification.count({ where: { caseId: sent.id, userId: dsA.userId, type: "REJECTED" } })).toBe(1);
     expect(
       await decideCase(db, ho, { caseId: sent.id, version: rejected.version, decision: "verify", reason: null }),
     ).toEqual({ ok: false, error: "notAllowedNow" });
@@ -283,11 +284,17 @@ describe("the queues (CHK-1, REL-1)", () => {
   });
 
   it("counts both queues for Head Office only", async () => {
+    const before = Date.now();
     const counts = await queueCounts(db, ho);
     expect(counts.check).toBe(await db.case.count({ where: { status: "SUBMITTED" } }));
     expect(counts.release).toBe(await db.case.count({ where: { status: "VERIFIED" } }));
+    // The menu's reading: both together, and when they were read (NTF-1).
+    const menu = await waitingNow(db, ho);
+    expect(menu.count).toBe(counts.check + counts.release);
+    expect(menu.at).toBeGreaterThanOrEqual(before);
     for (const actor of [dsA, admin]) {
       expect(await queueCounts(db, actor)).toEqual({ check: 0, release: 0 });
+      expect((await waitingNow(db, actor)).count).toBe(0);
       expect(await listQueue(db, actor, "check", 1)).toEqual({ rows: [], total: 0 });
     }
   });
@@ -487,6 +494,7 @@ describe("notifications (NTF-1)", () => {
       ["VERIFIED", false],
     ]);
     const before = await unreadCount(db, dsA);
+    expect((await unreadNow(db, dsA)).count).toBe(before);
     expect(await openNotification(db, dsA, mine[0]!.id)).toEqual({ caseId: ready.id });
     expect(await unreadCount(db, dsA)).toBe(before - 1);
     // Opening it again changes nothing.

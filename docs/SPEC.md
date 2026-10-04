@@ -74,7 +74,7 @@ Every account has exactly one role. A DS officer is the DS's Child Rights Promot
 | Record a stage update, photos and documents | Own DS | — | — |
 | Stop or reopen a case | — | Yes | — |
 | Dashboard | Own DS | National | — |
-| Export to Excel | Own DS lists | Any list, and the sheet layout | — |
+| Export to Excel | Own DS lists | Any list | — |
 | Manage accounts and lists | — | — | Yes |
 
 - **PRM-1** When a DS officer asks for a case, file or history belonging to another DS, the system shall answer "not found" (HTTP 404). It shall not answer "forbidden", so nobody can learn which case numbers exist.
@@ -289,13 +289,14 @@ Only the DS office starts and pays installments (section 4). Each change is refu
   - the number of cases waiting for a check and waiting for release, linked to those queues
   - cases in progress with no update for 30 days or more, the longest first
 
-  An "update" is any installment change, stage update or case edit.
+  An "update" is any installment change, stage update or case edit. The amount released is the Rs. 2,000,000 releases, stopped cases included; the amount paid out is the installments marked paid. The filters narrow every figure except the waiting counts, which are the whole queues, as the menu shows them. The table lists every district, and a district's active DS offices plus any inactive one that has cases. The stale list shows the 10 cases waiting longest and how many there are in all.
 - **DSH-2** Dashboard figures shall come from the database when the page loads, and never be more than 1 minute old.
 - **EXP-1** Any list shall be exportable to `.xlsx` with Sinhala headers, limited to what the user may see.
-- **EXP-2** Head Office shall be able to export in the sheet's layout:
-  - Two sheets, නිවාසගත and අවදානම් දරුවන්, with the original columns: serial number, names, NIC, address, phone, district, DS, four installment columns, four progress columns and remark.
-  - Each installment cell shows its status and date. Each progress cell shows the date the stage was reached.
-- **EXP-3** Every export shall be logged with who made it, which filters were used and how many rows it held.
+  - The lists are Head Office's case list (FND-1), with its filters, and the DS officer's list (HOME-2), with its tab and search. The check and release queues are the case list filtered by status.
+  - The file holds every case the list matches, not only the page shown, in the list's order, one row per case: case number, category, kind, status, names, NIC, address, phones, district, DS, the days it was sent, verified, released and completed, the amount released, the installments and amount paid out, the balance left with the DS, the stage reached, the last change and the remark.
+  - Days are real Excel dates shown as `YYYY.MM.DD` (UI-3), amounts are numbers, and NICs and phone numbers stay text.
+- **EXP-2** Removed on 2026-10-04: the Ministry no longer needs a copy in the old sheet's layout. EXP-1's export is the only one. The number stays unused.
+- **EXP-3** Every export shall be logged with who made it, which filters were used and how many rows it held. It is an audit record of the list, not part of any case's history.
 
 ### 7.13 History and notifications (HIS, NTF)
 
@@ -306,6 +307,7 @@ Only the DS office starts and pays installments (section 4). Each change is refu
   - A DS's officers get one when a case is sent back, verified, rejected, released, completed, stopped or reopened.
   - Head Office officers see live counts of cases waiting for a check and waiting for release in the menu.
   - A bell shows unread notifications, and opening one marks it read. The bell leads to a list of the officer's notifications, newest first (`/ds/notifications`).
+  - The menu's count and the bell are read again after every move between screens, so they agree with the page beside them, such as the dashboard's waiting counts (DSH-1). A screen left open doesn't change by itself.
   - An officer moved to another DS (ADM-4) no longer sees notifications about the old DS's cases (PRM-3).
 
 ### 7.14 Importing the sheet (IMP)
@@ -420,7 +422,7 @@ Version 1 is accepted when every check below passes on staging with made-up data
 | AC-15 | Every change appears in the case history with who made it and when. The app's database account cannot update or delete audit rows. | HIS-1–3 |
 | AC-16 | A photo uploaded with GPS data is stored without it. Its file link works only for permitted users. | STG-3, SEC-7 |
 | AC-17 | Dashboard totals equal the sums in the database for each filter, tested with seeded data. | DSH-1 |
-| AC-18 | The sheet-layout export opens in Excel with Sinhala headers and one row per case. | EXP-2 |
+| AC-18 | Removed with EXP-2 (2026-10-04). | — |
 | AC-19 | Importing a made-up sample sheet creates `IMPORTED` cases and maps English district spellings. It reports unknown DS offices, and a second run creates no duplicates. | IMP-1–7 |
 | AC-20 | No screen shows English interface text. A check in CI finds no hard-coded strings in components. | UI-1 |
 | AC-21 | With 5,000 seeded cases, the dashboard loads in under 2 seconds. | PRF-3 |

@@ -81,3 +81,13 @@ export async function queueCounts(db: PrismaClient, viewer: Viewer): Promise<Rec
   ]);
   return { check, release };
 }
+
+/**
+ * The menu's count (NTF-1): both queues together, with when they were read, so the screen can tell
+ * which of two readings is newer (src/components/shell/live-count.ts).
+ */
+export async function waitingNow(db: PrismaClient, viewer: Viewer): Promise<{ count: number; at: number }> {
+  const at = Date.now();
+  const { check, release } = await queueCounts(db, viewer);
+  return { count: check + release, at };
+}

@@ -28,6 +28,15 @@ export async function unreadCount(db: PrismaClient, viewer: Viewer & { userId: s
   return where ? db.notification.count({ where: { ...where, readAt: null } }) : 0;
 }
 
+/** The bell's count with when it was read, so the screen can tell which of two readings is newer. */
+export async function unreadNow(
+  db: PrismaClient,
+  viewer: Viewer & { userId: string },
+): Promise<{ count: number; at: number }> {
+  const at = Date.now();
+  return { count: await unreadCount(db, viewer), at };
+}
+
 /** NTF-1: the newest notifications first. */
 export async function listNotifications(
   db: PrismaClient,

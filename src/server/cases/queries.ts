@@ -195,8 +195,16 @@ export type CaseRow = {
 /** A case in progress with no update for this many days is shown as waiting for one (HOME-1, HOME-3, DSH-1). */
 export const STALE_DAYS = 30;
 
-/** The Prisma filter for what the viewer may see and asked for; null when they may see nothing. */
-function caseWhere(viewer: Viewer, filter: CaseFilter): Prisma.CaseWhereInput | null {
+/** A case last changed before this moment has had no update for STALE_DAYS days or more, in Colombo days. */
+export function staleBefore(now: Date): Date {
+  return colomboStartOf(addDays(colomboDay(now), 1 - STALE_DAYS));
+}
+
+/**
+ * The Prisma filter for what the viewer may see and asked for; null when they may see nothing.
+ * The list and its Excel export (EXP-1) both use it, so the file holds exactly the screen's cases.
+ */
+export function caseWhere(viewer: Viewer, filter: CaseFilter): Prisma.CaseWhereInput | null {
   const scope = officeFilter(viewer);
   if (!scope) return null;
 
@@ -326,7 +334,7 @@ export async function todoItems(db: PrismaClient, viewer: Viewer, now = new Date
       select: { number: true, expectedOn: true, case: { select: caseFields } },
     }),
     db.case.findMany({
-      where: { ...scope, status: "IN_PROGRESS", updatedAt: { lt: colomboStartOf(addDays(today, 1 - STALE_DAYS)) } },
+      where: { ...scope, status: "IN_PROGRESS", updatedAt: { lt: staleBefore(now) } },
       orderBy: { updatedAt: "asc" },
       take: TODO_TAKE,
       select: { ...caseFields, updatedAt: true },

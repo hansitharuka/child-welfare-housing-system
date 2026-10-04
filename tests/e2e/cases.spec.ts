@@ -201,4 +201,10 @@ test("Head Office enters a case for a DS it chooses, and finds it in the case li
   const row = page.getByRole("row", { name: new RegExp(number) });
   await expect(row).toContainText("කඩුවෙල");
   await expect(row).toContainText(SUBMITTED);
+
+  // Clearing the filters empties the search box too, not only the list's search.
+  await expect(page.getByRole("searchbox")).toHaveValue(nic);
+  await page.getByRole("link", { name: "පෙරහන් ඉවත් කරන්න" }).click();
+  await expect(page).toHaveURL(/\/ho\/cases$/);
+  await expect(page.getByRole("searchbox")).toHaveValue("");
 });

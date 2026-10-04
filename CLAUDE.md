@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists), 4 (cases), 5 (check and release) and 6 (installments, progress and closing) of `docs/PLAN.md` are built. You get:
+Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists), 4 (cases), 5 (check and release), 6 (installments, progress and closing) and 7 (dashboard, exports and notifications) of `docs/PLAN.md` are built. You get:
 
 - a Sinhala Next.js shell for the three roles, and PostgreSQL with the place and stage lists
 - sign-in with lockout and forced password change, a permission layer, an append-only audit log and security headers
@@ -17,9 +17,10 @@ Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists
 - notifications for the DS (a bell) and waiting counts in the Head Office menu; Head Office's corrections to verified cases and releases
 - the four installments paid in order by the DS, building stages with photos, completion, stopping and reopening, and each case's history, on two-column case pages as in the prototype
 - the DS home's money panel and its full to-do panel
+- Head Office's dashboard, the Excel exports of the case lists, and a load-test data script
 - tests and CI
 
-The Head Office dashboard and the Excel exports come next (Phase 7); the dashboard is still a placeholder.
+Phase 7 was built one task at a time: 7.1 (the load-test data script), 7.2 (the Head Office dashboard), 7.3 (the Excel export of the case lists), 7.4 (an export in the old sheet's layout, since removed) and 7.5 (the notifications beside the dashboard). Phase 8 (the sheet import) is next.
 
 The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
@@ -38,6 +39,7 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 | Production build and server | `npm run build`, then `npm run start:standalone` |
 | Change the database schema | edit `prisma/schema.prisma`, then `npx prisma migrate dev --name <change>` and `npx prisma generate` (Prisma 7's `migrate dev` no longer regenerates the client). When `migrate dev` stops to ask about a change (for example a new unique column), write the SQL with `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` into a new `prisma/migrations/<timestamp>_<change>/migration.sql` and apply it with `npx prisma migrate deploy` |
 | Put the sample accounts back to their start state | `npx tsx prisma/seed-users.ts --reset` (the end-to-end tests do this themselves) |
+| Add 5,000 made-up cases for load tests, or remove them | `npm run db:seed-load` (`-- --count 500`, `-- --seed 7`), `npm run db:seed-load -- --remove`. Remove them before running the end-to-end tests |
 
 ## Things to know when coding
 
@@ -47,7 +49,7 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 - **Never run `prisma migrate reset`.** It wipes a database, and Prisma blocks it when an AI agent runs it. The database tests make a new schema in the test database for each run and drop only that schema (`tests/db/global-setup.ts`).
 - **Screen text lives only in `messages/si.json`.** Message keys are typed (`src/types/next-intl.d.ts`), and `npm run check:strings` fails on text written in components.
 - **The Sinhala font is committed** in `src/app/fonts/`, copied from `@fontsource-variable/noto-sans-sinhala`. Nothing loads from Google at runtime.
-- **The `overrides` in `package.json`** force patched `deepmerge-ts` and `mysql2` inside the Prisma CLI. Remove them once Prisma ships fixed versions.
+- **The `overrides` in `package.json`** force patched `deepmerge-ts` and `mysql2` inside the Prisma CLI, and `uuid` inside ExcelJS. Remove them once Prisma and ExcelJS ship fixed versions.
 - **Pinned versions.** `.npmrc` saves exact versions. Upgrade one dependency at a time, on purpose.
 
 ### Sign-in and permissions (Phase 2)
@@ -115,7 +117,8 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
   - Database checks (hand-written in the `release` migration) hold the amounts at 2,000,000 and 500,000 and installment numbers at 1 to 4.
 - **Date-only columns** (`@db.Date`): store a day with `dayToDate`, read it with `dateToDay`, and compare days as `"YYYY-MM-DD"` strings. Today is `colomboDay(new Date())`.
 - **Notifications** are made by `notifyOffice` inside the move's transaction, for the office's active officers only. Lists and the bell show only cases the officer may still see (PRM-3).
-  - Head Office's menu counts come from `src/app/ho/layout.tsx`. A layout doesn't render again on client-side moves, so actions that change a queue call `revalidatePath("/ho", "layout")`.
+  - Head Office's menu counts come from `src/app/ho/layout.tsx`, and the bell's from `src/app/ds/layout.tsx`. A layout doesn't render again on client-side moves, so actions that change a queue call `revalidatePath("/ho", "layout")`, and the actions on notifications `revalidatePath("/ds", "layout")`.
+  - Someone else's change doesn't refresh the layout, so the menu's badge and the bell read their count again after every move (`useLiveCount`, `src/components/shell/live-count.ts`, Phase 7) from `/ho/waiting` or `/ds/notifications/unread`. Each reading carries the server time it was read (`waitingNow`, `unreadNow`), and the newer one is shown. A refreshed layout's 0 then wins over an earlier read's 1 after "mark all read".
 - **Edits after verification (CASE-9)** reuse `saveCase` and the case form in `mode="change"`: one save button, every required field checked (`mustStayComplete`), no submit. The changed fields are logged as `case_updated` with old and new values.
 - **Test helpers:** e2e case entry is in `tests/e2e/case-helpers.ts` (`openAs` keeps a second person's window open). `cleanup.ts` also deletes test cases' notifications, installments and releases. The database tests' config skips `.next/`, where a standalone build copies the test files.
 
@@ -132,6 +135,34 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 - **The history** (`caseHistory` in `src/server/history/queries.ts`) reads the audit log; `src/components/progress/case-history.tsx` turns each action into a Sinhala sentence. A new audit action needs a sentence there and under `history.actions` in `messages/si.json`, or it shows as "a change was made".
 - **Case pages** use `CaseColumns` (`src/components/cases/case-view.tsx`): money, decisions and history on the left; stages and details on the right; one column below 1,280 px. The pop-ups for installments, stages, stopping, reopening and undoing are in `src/components/progress/`; `ReasonAction` is the shared "give a reason" pop-up. `Modal` takes a `size` and sets `text-left`, because some pop-ups live in right-aligned table cells.
 - **Test helpers:** `releasedCase` (`tests/e2e/case-helpers.ts`) gives a case released today. E2E tests read the stage names from the form, because the admin may rename or reorder stages. The development database's new-house stages have been reordered by hand. `cleanup.ts` also deletes test cases' stage updates and photo thumbnails.
+
+### Dashboard and exports (Phase 7)
+
+- **Load-test data** (`scripts/seed-load.ts`, PRF-1) makes made-up cases at every status in every active DS office: drafts, queues, cases being built (a quarter with no update for 30 days or more), completed, rejected and stopped. It runs on development, CI, test and staging databases, never in production. The same `--seed` gives the same cases.
+  - The cases' ids start with `load-`, which is how `--remove` finds them. They belong to the disabled account `load-test-account`, which has no username, so it can't sign in and isn't on the admin's users screen.
+  - It writes no audit records, because those can never be removed (HIS-3), and no notifications, files or photos. A load-test case's history is empty.
+  - Case numbers are taken in one block per office and year from `case_number_counter`. `--remove` puts each counter back where it stood before, unless a later case holds a higher number.
+  - `addLoadData(db, { count, seed, now })` and `removeLoadData(db)` are exported for the database tests.
+  - `addLoadData` ends with a plain `ANALYZE`. Until autoanalyze notices 5,000 new cases, the planner may still think the tables are as small as before, which made the dashboard's reads about 20 times slower and the database tests time out now and then.
+  - **Remove it before the end-to-end tests.** The check queue lists 50 per page, oldest first (CHK-1), and the release test expects its new case on the first page. While load-test cases use a test office or stage that an end-to-end run left behind, `cleanup.ts` leaves that office or stage in place. It is removed on the first run after the load-test cases are gone.
+- **The dashboard** (`/ho`, DSH-1) is built from `dashboard()` in `src/server/dashboard/queries.ts`: the totals, each DS office's figures and the stale cases.
+  - `tableRows()` is pure. It groups the office figures by district, or lists a chosen district's offices.
+  - The figures are read on every load (DSH-2); the page renders per request anyway.
+  - The filters (`districtId`, `category`, `kind`) are in the address. They narrow every figure except the waiting counts, which come from `queueCounts`, as in the menu.
+  - Prisma can't sum a related table by office, and raw SQL would miss the schema the tests and CI's end-to-end run use. So the money figures come from one row per case with a release. With 5,000 cases the reads take about 65 ms, and the page about 0.3 s.
+  - "No update for 30 days" is `staleBefore(now)` in `src/server/cases/queries.ts`, shared with the DS to-do panel.
+  - Its database test (AC-17, AC-21) adds 5,000 load-test cases and removes them again, which takes about 20 seconds.
+- **A filter form on a page whose links change only its address needs a `key` made from the filter values.** Otherwise the uncontrolled fields keep their old choices after a client-side move, such as "clear filters". The dashboard and the Head Office case list both do this.
+- **The Excel exports** (EXP-1, EXP-3) are route handlers that answer with a file: `/ho/cases/export` and `/ds/export`. Each list links to its own with `ExportLink` (`src/components/cases/export-link.tsx`), a plain `<a download>`, not `<Link>`.
+  - Each route reads the address with its list page's own reader, `readFilters` (`src/app/ho/cases/filters.ts`) or `readHomeList` (`src/app/ds/list.ts`), and the query uses `caseWhere` from `src/server/cases/queries.ts`. So the file holds exactly the screen's cases, every page of them.
+  - `exportCaseList` (`src/server/exports/case-list.ts`) builds the file and writes a `cases_exported` audit record (entity `case_list`, id `ho_cases` or `ds_cases`) with the filters used and the number of rows. It answers null for an admin.
+  - ExcelJS is a `serverExternalPackages` entry in `next.config.ts`: Node loads it from `node_modules`. Compiling it in the dev server held up the other pages, and the end-to-end tests timed out.
+  - `src/server/exports/workbook.ts` holds the shared parts: `addSheet` (a bold header row that stays in view, filter buttons, days as real dates shown `yyyy.mm.dd`, amounts as `#,##0`, text kept as text) and `xlsxResponse`.
+  - Server code gets its labels from `getTranslations("cases")`. Tests make the same translator with `createTranslator({ locale: "si", messages, namespace: "cases" })`.
+  - **File names avoid zero-width joiners.** Chrome saves one in a download's name as `_` (ප්‍ර becomes ප්_ර), so the file is "දිවියට සවියක් ලැයිස්තුව <date>.xlsx". A unit test checks it.
+  - The button says එක්සෙල්, not "Excel", because the smoke test allows no Latin letters on `/ds` and `/ho` (AC-20).
+  - With 5,000 cases the whole export takes about 3 seconds (PRF-4 allows 60). Its database test adds 5,000 load-test cases too.
+- **There is no export in the old sheet's layout.** Task 7.4 built one (EXP-2), and it was removed on 2026-10-04 because the Ministry no longer needs it. Don't add it back unless asked.
 
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 
