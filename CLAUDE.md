@@ -22,7 +22,7 @@ Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists
 
 Phase 7 was built one task at a time: 7.1 (the load-test data script), 7.2 (the Head Office dashboard), 7.3 (the Excel export of the case lists), 7.4 (an export in the old sheet's layout, since removed) and 7.5 (the notifications beside the dashboard).
 
-Phase 8 (the sheet import) is being built one task at a time, on the branch `phase-8-import`. Task 8.1 (the made-up sample sheet) is done.
+Phase 8 (the sheet import) is being built one task at a time, on the branch `phase-8-import`. Tasks 8.1 (the made-up sample sheet) and 8.2 (the import script) are done.
 
 The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
@@ -43,6 +43,7 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 | Put the sample accounts back to their start state | `npx tsx prisma/seed-users.ts --reset` (the end-to-end tests do this themselves) |
 | Add 5,000 made-up cases for load tests, or remove them | `npm run db:seed-load` (`-- --count 500`, `-- --seed 7`), `npm run db:seed-load -- --remove`. Remove them before running the end-to-end tests |
 | Make the made-up sample sheet for the import | `npm run sheet:sample` writes `data/sample-sheet.xlsx`, which git ignores (`-- --out <file.xlsx>`, `-- --seed 7`) |
+| Import a sheet | `npm run sheet:import -- <file.xlsx>`; `-- <file.xlsx> --dry-run` checks it and writes nothing. Try it with the sample sheet; the real sheet is imported on the production server only (Phase 9) |
 
 ## Things to know when coding
 
@@ -174,6 +175,13 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
   - An office is in the key when its name matches the list once spaces, capitals and zero-width characters are ignored. Rows the import can't place (no district, an unknown district, no office, an unknown office, or another district's office) have `officeCode: null`.
   - The special rows name DS offices from `data/places.json` by district and English name. When task 9.7 replaces that list, keep those offices or change the special rows; the script stops and names any office it can't find.
 - **Made-up people** (names, NICs, phone numbers and the seeded random number generator) are in `scripts/made-up.ts`, shared by the sample sheet and the load-test data.
+- **The import** (`scripts/import-sheet.ts`, task 8.2) calls `importSheet(db, workbook, { dryRun })` in `src/server/import/commands.ts`. It returns what it made and two lists for the report: rows `skipped` and imported rows needing `attention`, each with its tab, row and reason only (IMP-6).
+  - `sheet.ts` finds the tabs and columns. A column's header is its row 2 text, or its row 1 text when row 2 is empty (a merged cell reads its master's text). Headers and place names compare after `squash()`: no spaces, capitals or zero-width characters. Each tab's one column with no header is the care leavers' phone numbers or the children's serial numbers. A missing tab or column throws `SheetLayoutError`, and nothing is written.
+  - `values.ts` tidies NICs and phone numbers. A bad one isn't stored; its cell as written goes into the case's `sheet_notes` with the installment, level and remark notes (`SheetNotes`). A missing NIC or phone number isn't reported (IMP-4).
+  - `places.ts` maps districts (English, Sinhala and the sheet's own spellings in `DISTRICT_SPELLINGS`) and then the DS office within that district, from the database's lists. Rows it can't place, or with no name, are skipped.
+  - **The key (IMP-7)** is `sheet_key`, unique: `CARE_LEAVER:serial:45`, or `CHILD_AT_RISK:row:380` for a row with no serial number or one used above it in its tab (decided with the user on 5 Oct). Rows already imported are passed over, so a later run adds only rows that couldn't come in before.
+  - Imported cases have no case number and no kind. They're created by the disabled account `sheet-import` ("පැරණි පත්‍රිකාව", no username, so it can't sign in). One transaction writes them, a `case_imported` audit record each (no actor, so the history says "the system"), and one `sheet_imported` record for the run.
+  - The development database's DS offices differ from `data/places.json` (the user renamed some by hand), so a dry run there skips more rows than the sample's answer key expects. The tests use the seeded list.
 
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 

@@ -21,6 +21,7 @@
     "db:seed": "prisma db seed",
     "db:seed-load": "tsx scripts/seed-load.ts",
     "sheet:sample": "tsx scripts/make-sample-sheet.ts",
+    "sheet:import": "tsx scripts/import-sheet.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

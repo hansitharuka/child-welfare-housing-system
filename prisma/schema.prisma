@@ -290,6 +290,16 @@ model Case {
   statusBeforeStop CaseStatus?    @map("status_before_stop")
   /// Goes up by one on every save, so a form opened earlier can't overwrite a newer change (CASE-10).
   version          Int            @default(1)
+  /// Only on a case brought in from the old sheet: the key that stops a second import making it again
+  /// (IMP-7). It is the tab and serial number, or the tab and row number when the row has no serial
+  /// number or one already used above it.
+  sheetKey         String?        @unique @map("sheet_key")
+  /// The case's row in its tab of the old sheet, and the serial number written there.
+  sheetRow         Int?           @map("sheet_row")
+  sheetSerial      Int?           @map("sheet_serial")
+  /// The old sheet's installment, building-level and remark notes, kept read-only (IMP-5), and the NIC
+  /// or phone cell as written when it couldn't all be stored. See SheetNotes in src/server/import/.
+  sheetNotes       Json?          @map("sheet_notes")
   decisions        Decision[]
   files            StoredFile[]
   release          Release?

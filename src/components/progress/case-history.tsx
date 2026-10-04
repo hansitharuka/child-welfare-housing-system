@@ -18,6 +18,7 @@ const ACTIONS = [
   "case_completed",
   "case_stopped",
   "case_reopened",
+  "case_imported",
   "case_import_confirmed",
 ] as const;
 type Action = (typeof ACTIONS)[number];

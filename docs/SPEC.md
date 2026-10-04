@@ -91,7 +91,7 @@ Amounts are whole rupees stored as integers. Nothing listed here is ever deleted
 | District | name, province | 25 rows, seeded |
 | DsOffice | name, code, district, active | `code` is 3 capital letters, unique nationally, and used in case numbers. Name is unique within its district |
 | User | full name, designation, mobile, email, username, role, DS office, active, must change password, last sign-in, failed sign-ins, locked until | DS office is required for DS officers only, and an office has at most one active DS officer (ADM-3). Username is generated (ADM-2) and unique |
-| Case | case number, DS office, category, kind, status, name, child's name, NIC, NIC key, address, mobile 1, mobile 2, remark, sheet reference, created by, submitted at, verified at, completed at, status before stop, version | See CASE-2 for field rules. `version` goes up by one on every save and every installment, stage or status change (CASE-10). `submitted at` is the latest submit. While the case is stopped, `status before stop` holds the status it goes back to (CLS-3); the stop's day and reason are its Decision |
+| Case | case number, DS office, category, kind, status, name, child's name, NIC, NIC key, address, mobile 1, mobile 2, remark, sheet reference (key, row and serial number), sheet notes, created by, submitted at, verified at, completed at, status before stop, version | See CASE-2 for field rules. The sheet reference and notes are set only on a case brought in from the sheet: the key is unique (IMP-7), and a case with a key always has its row (a database check). `version` goes up by one on every save and every installment, stage or status change (CASE-10). `submitted at` is the latest submit. While the case is stopped, `status before stop` holds the status it goes back to (CLS-3); the stop's day and reason are its Decision |
 | CaseNumberCounter | DS office, year, last number | One row per office and year. Taking the next number locks the row, so two submits at once never share a number (CASE-5) |
 | Decision | case, type, reason, by, at | Types: submit, verify, send back, reject, stop, reopen, confirm import |
 | Release | case (one per case), released on, amount, reference number, note, by, at | Amount is always 2,000,000 (a database check) |
@@ -312,17 +312,17 @@ Only the DS office starts and pays installments (section 4). Each change is refu
 
 ### 7.14 Importing the sheet (IMP)
 
-- **IMP-1** A command-line script (not a screen) shall import the `.xlsx` file from a path given when it runs. The file shall never be stored in the repository.
+- **IMP-1** A command-line script (not a screen) shall import the `.xlsx` file from a path given when it runs. The file shall never be stored in the repository. A dry run (`--dry-run`) reads and checks the file and writes nothing. The whole import is one transaction, so a run that fails adds nothing.
 - **IMP-2** Rows from the නිවාසගත tab become `CARE_LEAVER` cases, and rows from අවදානම් දරුවන් become `CHILD_AT_RISK` cases. Headers are matched after removing zero-width joiners (U+200D) and spaces, using both header rows.
-- **IMP-3** District names shall be mapped to the 25 official names, with English and Sinhala spellings both accepted. DS offices are matched by name within the district. Anything that doesn't match goes in the report.
+- **IMP-3** District names shall be mapped to the 25 official names, with English and Sinhala spellings both accepted. DS offices are matched by their Sinhala or English name within the district. Names compare without spaces, capitals or zero-width characters. Anything that doesn't match goes in the report and is not imported: no district, an unknown district, no DS office, an unknown DS office, an office of another district, or an inactive office.
 - **IMP-4** A missing NIC or phone number is allowed on imported cases. They appear under a "details missing" filter, so offices can fill them in.
 - **IMP-5** Imported cases start as `IMPORTED`:
-  - The sheet's installment, stage and remark notes are kept as read-only text.
+  - The sheet's installment, stage and remark notes are kept as read-only text. A NIC or phone cell that couldn't be stored in full (not a valid NIC, a bad phone number, or more than two numbers) is kept there as written, and the report names the row.
   - The owning DS may fill in the NIC, phone numbers and kind of help.
   - A Head Office officer confirms each case as verified, in progress (entering the release and installment statuses), rejected or stopped.
   - Imported cases are left out of the money totals until confirmed.
 - **IMP-6** The script shall write a report of rows skipped or needing attention: tab, row number and reason, with no other personal details. The report is saved outside the repository.
-- **IMP-7** Running the import again shall not create duplicates. The key is the tab plus the sheet serial number.
+- **IMP-7** Running the import again shall not create duplicates. The key is the tab plus the sheet serial number. A row with no serial number, or with one already used above it in its tab, is keyed on the tab plus its row number instead, and the report says so. (Decided on 5 Oct: the real children's tab has 38 rows without a serial number, and the care leavers' tab uses one number twice.) A later run brings in only the rows not imported before, such as those of a DS office added to the list since.
 
 ### 7.15 Screens and language (UI)
 
