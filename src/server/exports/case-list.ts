@@ -13,8 +13,11 @@ export type CasesT = Awaited<ReturnType<typeof getTranslations<"cases">>>;
 /** The search of a list, without its page: the export holds every page. */
 export type ListFilter = Omit<CaseFilter, "page">;
 
-/** Which list was exported, as the audit record names it (EXP-3). */
-export type ListName = "ho_cases" | "ds_cases";
+/**
+ * Which list was exported, as the audit record names it (EXP-3). `ho_sheet` is Head Office's list
+ * in the old sheet's layout (EXP-2).
+ */
+export type ListName = "ho_cases" | "ds_cases" | "ho_sheet";
 
 export type ExportRow = {
   caseNumber: string | null;
@@ -146,6 +149,23 @@ function usedFilters(viewer: Viewer, filter: ListFilter): Prisma.InputJsonObject
 
 export type ExportedFile = { bytes: Uint8Array<ArrayBuffer>; fileName: string; asciiName: string; rows: number };
 
+/** EXP-3: who exported which list, with which filters, and how many rows the file held. */
+export async function logExport(
+  db: PrismaClient,
+  viewer: Viewer & { userId: string },
+  list: ListName,
+  filter: ListFilter,
+  rows: number,
+) {
+  await writeAudit(db, {
+    actorId: viewer.userId,
+    action: "cases_exported",
+    entityType: "case_list",
+    entityId: list,
+    after: { filters: usedFilters(viewer, filter), rows },
+  });
+}
+
 /**
  * EXP-1 and EXP-3: the list as an `.xlsx` file of every matching case, and an audit record of who
  * made it, with which filters and how many rows. Null when the viewer may see no cases (PRM-2).
@@ -166,13 +186,7 @@ export async function exportCaseList(
   addSheet(workbook, t("export.sheet"), caseListColumns(t), rows);
   const bytes = await workbookBytes(workbook);
 
-  await writeAudit(db, {
-    actorId: viewer.userId,
-    action: "cases_exported",
-    entityType: "case_list",
-    entityId: list,
-    after: { filters: usedFilters(viewer, filter), rows: rows.length },
-  });
+  await logExport(db, viewer, list, filter, rows.length);
 
   const today = colomboDay(now);
   return {

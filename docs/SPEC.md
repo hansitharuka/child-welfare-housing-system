@@ -298,6 +298,10 @@ Only the DS office starts and pays installments (section 4). Each change is refu
 - **EXP-2** Head Office shall be able to export in the sheet's layout:
   - Two sheets, නිවාසගත and අවදානම් දරුවන්, with the original columns: serial number, names, NIC, address, phone, district, DS, four installment columns, four progress columns and remark.
   - Each installment cell shows its status and date. Each progress cell shows the date the stage was reached.
+  - The file holds the cases of Head Office's case list (FND-1), with its filters, except drafts, which haven't been sent and may have no category yet. The rows run district by district and office by office, as the sheet's did, then by case number.
+  - The header keeps the sheet's two rows: "financial progress" over the four installments and "physical progress" over the four stages. Each tab keeps its own headers, such as භාරකරුගේ නම on the children-at-risk tab. The case number stands in the serial number's place, the two phone numbers share one cell, and the sheet's English headers are in Sinhala (AC-18).
+  - The last progress column is the kind's last active stage, which finishes the house (CLS-1). The three before it take the kind's first stages, as many as fit, so the four new-house stages fill one column each. The progress headers are the new-house stage names; a renovation case's columns hold its own stages in the same places (section 13, question 3).
+  - An installment cell reads "not started", "processing (expected <date>)" or "paid (<date>)". A case not yet released leaves those cells empty. Progress days are real Excel dates, as in EXP-1.
 - **EXP-3** Every export shall be logged with who made it, which filters were used and how many rows it held. It is an audit record of the list, not part of any case's history.
 
 ### 7.13 History and notifications (HIS, NTF)
