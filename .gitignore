@@ -56,3 +56,6 @@ next-env.d.ts
 # uploaded files and import reports never belong in git (SEC-11)
 /data/files/
 /reports/
+
+# the made-up sample sheet (npm run sheet:sample) is made again whenever it is needed
+/data/sample-sheet.xlsx

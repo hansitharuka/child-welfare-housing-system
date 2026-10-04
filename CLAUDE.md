@@ -20,7 +20,9 @@ Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists
 - Head Office's dashboard, the Excel exports of the case lists, and a load-test data script
 - tests and CI
 
-Phase 7 was built one task at a time: 7.1 (the load-test data script), 7.2 (the Head Office dashboard), 7.3 (the Excel export of the case lists), 7.4 (an export in the old sheet's layout, since removed) and 7.5 (the notifications beside the dashboard). Phase 8 (the sheet import) is next.
+Phase 7 was built one task at a time: 7.1 (the load-test data script), 7.2 (the Head Office dashboard), 7.3 (the Excel export of the case lists), 7.4 (an export in the old sheet's layout, since removed) and 7.5 (the notifications beside the dashboard).
+
+Phase 8 (the sheet import) is being built one task at a time, on the branch `phase-8-import`. Task 8.1 (the made-up sample sheet) is done.
 
 The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
@@ -40,6 +42,7 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 | Change the database schema | edit `prisma/schema.prisma`, then `npx prisma migrate dev --name <change>` and `npx prisma generate` (Prisma 7's `migrate dev` no longer regenerates the client). When `migrate dev` stops to ask about a change (for example a new unique column), write the SQL with `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` into a new `prisma/migrations/<timestamp>_<change>/migration.sql` and apply it with `npx prisma migrate deploy` |
 | Put the sample accounts back to their start state | `npx tsx prisma/seed-users.ts --reset` (the end-to-end tests do this themselves) |
 | Add 5,000 made-up cases for load tests, or remove them | `npm run db:seed-load` (`-- --count 500`, `-- --seed 7`), `npm run db:seed-load -- --remove`. Remove them before running the end-to-end tests |
+| Make the made-up sample sheet for the import | `npm run sheet:sample` writes `data/sample-sheet.xlsx`, which git ignores (`-- --out <file.xlsx>`, `-- --seed 7`) |
 
 ## Things to know when coding
 
@@ -164,6 +167,14 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
   - With 5,000 cases the whole export takes about 3 seconds (PRF-4 allows 60). Its database test adds 5,000 load-test cases too.
 - **There is no export in the old sheet's layout.** Task 7.4 built one (EXP-2), and it was removed on 2026-10-04 because the Ministry no longer needs it. Don't add it back unless asked.
 
+### Sheet import (Phase 8)
+
+- **The sample sheet** (`scripts/make-sample-sheet.ts`, task 8.1) is a made-up copy of the real sheet for building and testing the import (SEC-11). Its two header rows, merges and header text, zero-width joiners included, are the same as the real file's. Its rows copy the real sheet's oddities (see "Source data" below). The same `--seed` gives the same sheet.
+  - `makeSampleSheet(seed)` returns the workbook and an answer key, one `SampleRow` per sheet row: the district and DS office (by code) the row belongs to, its NIC and phone numbers as they should be stored, and its `quirks`. `QUIRKS` lists every oddity with a short description; the unit test checks each one appears at least once.
+  - An office is in the key when its name matches the list once spaces, capitals and zero-width characters are ignored. Rows the import can't place (no district, an unknown district, no office, an unknown office, or another district's office) have `officeCode: null`.
+  - The special rows name DS offices from `data/places.json` by district and English name. When task 9.7 replaces that list, keep those offices or change the special rows; the script stops and names any office it can't find.
+- **Made-up people** (names, NICs, phone numbers and the seeded random number generator) are in `scripts/made-up.ts`, shared by the sample sheet and the load-test data.
+
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 
 ## Workflow: PRD → SPEC → PLAN before code
@@ -205,8 +216,8 @@ These may not be in `docs/PRD.md` yet. Once the PRD is approved, it overrides th
 
 The live spreadsheet is `../Documents/ප්_රගතිය - දිවියට සවියක්.xlsx`. It sits outside this repo and is not under version control. It has two sheets:
 
-- `නිවාසගත` (housed beneficiaries, about 240 rows). Columns: serial no, name, NIC, address, phone, district, divisional secretariat.
-- `අවදානම් දරුවන්` (children at risk, about 500 rows). Columns: child's name, guardian's name, guardian's NIC, address, phone, district, divisional secretariat.
+- `නිවාසගත` (housed beneficiaries, 240 rows and one empty row). Columns A to P: serial no, name, NIC, address, phone, district, divisional secretariat (`ප්‍රා.ලේ. කොට්ඨාසය`).
+- `අවදානම් දරුවන්` (children at risk, 504 rows). Columns A to Q: serial no, child's name, guardian's name, guardian's NIC, address, phone, district, divisional secretariat (`ප්‍රා.ලේ. කාර්යාලය`, worded differently from the other tab).
 
 Both sheets end with the same columns:
 
@@ -216,7 +227,13 @@ Both sheets end with the same columns:
 
 Things to know when parsing:
 
-- **Two-row header.** Row 1 holds the group headers and the ungrouped columns. Row 2 holds the sub-columns under "financial progress" and "physical progress".
+- **Two-row header.** Row 1 holds the group headers and the ungrouped columns, which are merged over both rows. Row 2 holds the sub-columns under "financial progress" and "physical progress".
+- **Missing headers.** The care leavers' phone column has no header, and their district's header is on row 2 only. The children's serial number column has no header.
+- **Serial numbers.** On the care leavers' tab one serial number is used twice. On the children's tab a block of 38 rows, all from one DS office, has no serial number, and the numbers go on after it.
+- **NICs and phone numbers.** Most rows have no NIC (2 of 240 care leavers, 37 of 504 children) and most children have no phone number. Excel holds some as numbers: 12-digit NICs, and phone numbers without their first 0. Old NICs come with a small `v`, sometimes after a space, and a few have the wrong number of digits. Phone numbers are written `07X-XXXXXXX`, sometimes two or three in one cell split by spaces.
+- **Districts** are in Sinhala, or in English in the north (Jaffna, Mannar, Kilinochchi, Vavuniya), and some are spelled unlike the list: අනුරාධපුර (the list has අනුරාධපුරය), ත්‍රීකුණාමලය (ත්‍රිකුණාමලය), රත්නපුර (රත්නපුරය), මොනරාගල (මොණරාගල) and Mullative (Mullaitivu).
+- **DS offices** are in Sinhala or English, with other spellings: extra or missing spaces, a zero-width non-joiner (U+200C), capitals, typing slips, words in another order, and now and then an office of another district.
+- **Progress columns hold notes, not amounts:** ඔව්, නැත, No, or a sentence about when an installment is expected. The children's tab has notes only in the first installment column. Remarks are rare, and one is a number.
 - **Zero-width joiners.** The Sinhala headers contain U+200D (ZWJ), for example `ප්‍රා.ලේ.` Match headers after normalising, not on the raw strings.
 - **Cell colours.** Some cells are colour-coded in the sheet, but the colours are deliberately ignored on import.
 - **Windows console.** Printing Sinhala text from Python on Windows needs `sys.stdout.reconfigure(encoding='utf-8')`.
