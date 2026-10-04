@@ -1,14 +1,12 @@
 import { expect, type Page, test } from "@playwright/test";
 import ExcelJS from "exceljs";
-import { newSubmittedCase, openAs, randomNic, releasedCase, SUBMITTED } from "./case-helpers";
+import { newSubmittedCase, openAs, randomNic, SUBMITTED } from "./case-helpers";
 import { signInAs, TEST_CASE_NAME } from "./helpers";
 
 /** Screen and file text the test looks for (messages/si.json). */
 const EXPORT = "එක්සෙල් ගොනුවක් ලෙස බාගන්න";
 const FILE_NAME = /^දිවියට සවියක් ලැයිස්තුව \d{4}-\d{2}-\d{2}\.xlsx$/;
 const HEADERS = ["ලියාපදිංචි අංකය", "කාණ්ඩය", "ආධාරය", "තත්ත්වය", "නම (අවදානම් දරුවන් සඳහා භාරකරුගේ නම)"];
-const SHEET_EXPORT = "පැරණි පත්‍රිකාවේ ආකෘතියෙන් බාගන්න";
-const SHEET_FILE_NAME = /^දිවියට සවියක් පැරණි ආකෘතිය \d{4}-\d{2}-\d{2}\.xlsx$/;
 
 /** Clicks the export button and opens the file it downloads. */
 async function exportList(page: Page) {
@@ -59,44 +57,7 @@ test("the DS officer and Head Office take their lists to Excel, with the screen'
   await ho.context().close();
 });
 
-test("Head Office takes its list to Excel in the old sheet's layout, two tabs with its columns (EXP-2, AC-18)", async ({
-  page,
-  browser,
-}) => {
-  test.slow();
-  await signInAs(page, "ds0101", /\/ds$/);
-  const ho = await openAs(browser, "ho0001");
-  const { number, name } = await releasedCase(page, ho, "පැරණි ආකෘතිය");
-
-  await ho.goto(`/ho/cases?q=${number}`);
-  await expect(ho.getByText("ගැළපෙන ප්‍රතිලාභීන් 1")).toBeVisible();
-  const [download] = await Promise.all([
-    ho.waitForEvent("download"),
-    ho.getByRole("link", { name: SHEET_EXPORT }).click(),
-  ]);
-  expect(download.suggestedFilename()).toMatch(SHEET_FILE_NAME);
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(await download.path());
-  expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["නිවාසගත", "අවදානම් දරුවන්"]);
-
-  // The case is on its category's tab, under the old sheet's two header rows; the other tab is empty.
-  const [careLeavers, atRisk] = workbook.worksheets;
-  expect(careLeavers.getRow(1).getCell(2).value).toBe("නම");
-  expect(careLeavers.getRow(1).getCell(8).value).toBe("මූල්‍ය ප්‍රගතිය (රු)");
-  expect(careLeavers.getRow(2).getCell(8).value).toBe("පළමු වාරිකය");
-  expect(careLeavers.rowCount).toBe(3);
-  expect(atRisk.rowCount).toBe(2);
-  const row = careLeavers.getRow(3);
-  expect([1, 2, 6, 7].map((cell) => row.getCell(cell).value)).toEqual([number, name, "කොළඹ", "හෝමාගම"]);
-  expect([8, 9, 10, 11].map((cell) => row.getCell(cell).value)).toEqual(Array(4).fill("තවම ආරම්භ කර නැත"));
-
-  // The file belongs to Head Office (PRM-1).
-  expect((await page.request.get("/ho/cases/export/sheet")).status()).toBe(404);
-  await ho.context().close();
-});
-
 test("an admin can't export any list (PRM-2, AC-2)", async ({ page }) => {
   await signInAs(page, "ad0001", /\/admin\/users$/);
-  for (const path of ["/ho/cases/export", "/ho/cases/export/sheet", "/ds/export"])
-    expect((await page.request.get(path)).status()).toBe(404);
+  for (const path of ["/ho/cases/export", "/ds/export"]) expect((await page.request.get(path)).status()).toBe(404);
 });

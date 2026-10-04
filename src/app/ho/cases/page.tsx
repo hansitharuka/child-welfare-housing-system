@@ -54,14 +54,6 @@ export default async function HoCasesPage({
               hint={t("export.hint")}
             />
           )}
-          {/* The old sheet's layout leaves drafts out (EXP-2), so a list of drafts has nothing to give. */}
-          {list.total > 0 && filter.statuses?.[0] !== "DRAFT" && (
-            <ExportLink
-              href={withQuery("/ho/cases/export/sheet", filterQuery(values))}
-              label={t("export.sheetLayout.button")}
-              hint={t("export.sheetLayout.hint")}
-            />
-          )}
           <Link
             href="/ho/cases/new"
             className="flex h-13 items-center rounded-lg bg-primary px-6 text-[17px] font-semibold text-primary-foreground"

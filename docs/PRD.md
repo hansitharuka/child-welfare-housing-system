@@ -147,7 +147,7 @@ Version 1 covers a case from first entry to completion, with dashboards, history
 
 - Head Office dashboard: cases by status, category, kind of help, district and DS; money released and paid out; houses at each stage; cases with no update in 30 days.
 - DS dashboard: the office's own cases and what needs doing next.
-- Export any list to Excel, including a copy in the sheet's current layout.
+- Export any list to Excel.
 
 ### History and alerts
 

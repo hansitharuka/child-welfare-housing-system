@@ -17,10 +17,10 @@ Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists
 - notifications for the DS (a bell) and waiting counts in the Head Office menu; Head Office's corrections to verified cases and releases
 - the four installments paid in order by the DS, building stages with photos, completion, stopping and reopening, and each case's history, on two-column case pages as in the prototype
 - the DS home's money panel and its full to-do panel
-- Head Office's dashboard, the Excel exports of the case lists and the export in the old sheet's layout, and a load-test data script
+- Head Office's dashboard, the Excel exports of the case lists, and a load-test data script
 - tests and CI
 
-Phase 7 was built one task at a time: 7.1 (the load-test data script), 7.2 (the Head Office dashboard), 7.3 (the Excel export of the case lists), 7.4 (the export in the old sheet's layout) and 7.5 (the notifications beside the dashboard). Phase 8 (the sheet import) is next.
+Phase 7 was built one task at a time: 7.1 (the load-test data script), 7.2 (the Head Office dashboard), 7.3 (the Excel export of the case lists), 7.4 (an export in the old sheet's layout, since removed) and 7.5 (the notifications beside the dashboard). Phase 8 (the sheet import) is next.
 
 The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
@@ -157,16 +157,12 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
   - Each route reads the address with its list page's own reader, `readFilters` (`src/app/ho/cases/filters.ts`) or `readHomeList` (`src/app/ds/list.ts`), and the query uses `caseWhere` from `src/server/cases/queries.ts`. So the file holds exactly the screen's cases, every page of them.
   - `exportCaseList` (`src/server/exports/case-list.ts`) builds the file and writes a `cases_exported` audit record (entity `case_list`, id `ho_cases` or `ds_cases`) with the filters used and the number of rows. It answers null for an admin.
   - ExcelJS is a `serverExternalPackages` entry in `next.config.ts`: Node loads it from `node_modules`. Compiling it in the dev server held up the other pages, and the end-to-end tests timed out.
-  - `src/server/exports/workbook.ts` is the part the sheet-layout export will share: `addSheet` (a bold header row that stays in view, filter buttons, days as real dates shown `yyyy.mm.dd`, amounts as `#,##0`, text kept as text) and `xlsxResponse`.
+  - `src/server/exports/workbook.ts` holds the shared parts: `addSheet` (a bold header row that stays in view, filter buttons, days as real dates shown `yyyy.mm.dd`, amounts as `#,##0`, text kept as text) and `xlsxResponse`.
   - Server code gets its labels from `getTranslations("cases")`. Tests make the same translator with `createTranslator({ locale: "si", messages, namespace: "cases" })`.
   - **File names avoid zero-width joiners.** Chrome saves one in a download's name as `_` (ප්‍ර becomes ප්_ර), so the file is "දිවියට සවියක් ලැයිස්තුව <date>.xlsx". A unit test checks it.
   - The button says එක්සෙල්, not "Excel", because the smoke test allows no Latin letters on `/ds` and `/ho` (AC-20).
   - With 5,000 cases the whole export takes about 3 seconds (PRF-4 allows 60). Its database test adds 5,000 load-test cases too.
-- **The sheet-layout export** (EXP-2) is `/ho/cases/export/sheet`, a second button on Head Office's case list with the same filters. `exportSheetLayout` (`src/server/exports/sheet-layout.ts`) writes two tabs, නිවාසගත and අවදානම් දරුවන්, with the old sheet's columns and two header rows, and logs a `cases_exported` record with the id `ho_sheet`.
-  - It leaves drafts out, so the button is hidden while the list shows only drafts. Rows run by district and office (their English names, as the sheet's care-leaver tab did), then by case number.
-  - `addSheet` makes the two header rows when some columns have a `group`: the group's cell is merged across its columns, and each other header is merged down both rows. A two-row header gets no filter buttons. `wrap` wraps a column's long text.
-  - `progressStages` decides which stage each of the four progress columns shows: the last column is always the kind's last active stage, and the others take its first stages. The headers are the new-house stage names, read from the database, because the admin may rename or reorder them.
-  - The headers copy each tab of the real sheet, which differ: ප්‍රා.ලේ. කොට්ඨාසය on the care-leaver tab, ප්‍රා.ලේ. කාර්යාලය on the children-at-risk tab. The sheet's English headers (Foundation Level and so on, Remark) are in Sinhala.
+- **There is no export in the old sheet's layout.** Task 7.4 built one (EXP-2), and it was removed on 2026-10-04 because the Ministry no longer needs it. Don't add it back unless asked.
 
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 

@@ -74,7 +74,7 @@ Every account has exactly one role. A DS officer is the DS's Child Rights Promot
 | Record a stage update, photos and documents | Own DS | — | — |
 | Stop or reopen a case | — | Yes | — |
 | Dashboard | Own DS | National | — |
-| Export to Excel | Own DS lists | Any list, and the sheet layout | — |
+| Export to Excel | Own DS lists | Any list | — |
 | Manage accounts and lists | — | — | Yes |
 
 - **PRM-1** When a DS officer asks for a case, file or history belonging to another DS, the system shall answer "not found" (HTTP 404). It shall not answer "forbidden", so nobody can learn which case numbers exist.
@@ -295,13 +295,7 @@ Only the DS office starts and pays installments (section 4). Each change is refu
   - The lists are Head Office's case list (FND-1), with its filters, and the DS officer's list (HOME-2), with its tab and search. The check and release queues are the case list filtered by status.
   - The file holds every case the list matches, not only the page shown, in the list's order, one row per case: case number, category, kind, status, names, NIC, address, phones, district, DS, the days it was sent, verified, released and completed, the amount released, the installments and amount paid out, the balance left with the DS, the stage reached, the last change and the remark.
   - Days are real Excel dates shown as `YYYY.MM.DD` (UI-3), amounts are numbers, and NICs and phone numbers stay text.
-- **EXP-2** Head Office shall be able to export in the sheet's layout:
-  - Two sheets, නිවාසගත and අවදානම් දරුවන්, with the original columns: serial number, names, NIC, address, phone, district, DS, four installment columns, four progress columns and remark.
-  - Each installment cell shows its status and date. Each progress cell shows the date the stage was reached.
-  - The file holds the cases of Head Office's case list (FND-1), with its filters, except drafts, which haven't been sent and may have no category yet. The rows run district by district and office by office, as the sheet's did, then by case number.
-  - The header keeps the sheet's two rows: "financial progress" over the four installments and "physical progress" over the four stages. Each tab keeps its own headers, such as භාරකරුගේ නම on the children-at-risk tab. The case number stands in the serial number's place, the two phone numbers share one cell, and the sheet's English headers are in Sinhala (AC-18).
-  - The last progress column is the kind's last active stage, which finishes the house (CLS-1). The three before it take the kind's first stages, as many as fit, so the four new-house stages fill one column each. The progress headers are the new-house stage names; a renovation case's columns hold its own stages in the same places (section 13, question 3).
-  - An installment cell reads "not started", "processing (expected <date>)" or "paid (<date>)". A case not yet released leaves those cells empty. Progress days are real Excel dates, as in EXP-1.
+- **EXP-2** Removed on 2026-10-04: the Ministry no longer needs a copy in the old sheet's layout. EXP-1's export is the only one. The number stays unused.
 - **EXP-3** Every export shall be logged with who made it, which filters were used and how many rows it held. It is an audit record of the list, not part of any case's history.
 
 ### 7.13 History and notifications (HIS, NTF)
@@ -428,7 +422,7 @@ Version 1 is accepted when every check below passes on staging with made-up data
 | AC-15 | Every change appears in the case history with who made it and when. The app's database account cannot update or delete audit rows. | HIS-1–3 |
 | AC-16 | A photo uploaded with GPS data is stored without it. Its file link works only for permitted users. | STG-3, SEC-7 |
 | AC-17 | Dashboard totals equal the sums in the database for each filter, tested with seeded data. | DSH-1 |
-| AC-18 | The sheet-layout export opens in Excel with Sinhala headers and one row per case. | EXP-2 |
+| AC-18 | Removed with EXP-2 (2026-10-04). | — |
 | AC-19 | Importing a made-up sample sheet creates `IMPORTED` cases and maps English district spellings. It reports unknown DS offices, and a second run creates no duplicates. | IMP-1–7 |
 | AC-20 | No screen shows English interface text. A check in CI finds no hard-coded strings in components. | UI-1 |
 | AC-21 | With 5,000 seeded cases, the dashboard loads in under 2 seconds. | PRF-3 |
