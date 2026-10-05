@@ -1,4 +1,5 @@
 import type { CaseStatus } from "@/generated/prisma/enums";
+import { IMPORTED_NEEDS } from "@/lib/validation/case";
 import type { Role } from "../auth/roles";
 
 /**
@@ -29,6 +30,21 @@ export function canEditDetails(role: Role, status: CaseStatus): boolean {
 /** The statuses canEditDetails() allows a role, for a query that must not change anything else. */
 export function editableStatuses(role: Role): readonly CaseStatus[] {
   return EDITABLE[role];
+}
+
+/**
+ * IMP-5: until Head Office confirms a case brought in from the old sheet, its office may fill in the
+ * kind of help, the NIC and the phone numbers, and nothing else.
+ */
+export function canFillImported(role: Role, status: CaseStatus): boolean {
+  return role === "DS_OFFICER" && status === "IMPORTED";
+}
+
+/** IMP-4: what an imported case still lacks of what its office fills in; nothing once it is confirmed. */
+export function missingImported(
+  found: { status: CaseStatus } & Record<(typeof IMPORTED_NEEDS)[number], unknown>,
+): (typeof IMPORTED_NEEDS)[number][] {
+  return found.status === "IMPORTED" ? IMPORTED_NEEDS.filter((field) => !found[field]) : [];
 }
 
 /** A case still being entered opens in its form; any other opens on its page. */

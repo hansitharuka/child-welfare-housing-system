@@ -135,6 +135,36 @@ export function parseCaseForm(
   return Object.keys(errors).length === 0 ? { ok: true, value } : { ok: false, errors };
 }
 
+/**
+ * IMP-5: what the office may fill in on a case brought in from the old sheet, until Head Office
+ * confirms it. The sheet has no kind of help, and many rows have no NIC or phone number.
+ */
+export const IMPORTED_FIELDS = ["kind", "nic", "mobile1", "mobile2"] as const;
+export type ImportedField = (typeof IMPORTED_FIELDS)[number];
+export type ImportedValues = Pick<CaseValues, ImportedField>;
+
+/** IMP-4: an imported case is missing details while any of these is empty. */
+export const IMPORTED_NEEDS = ["kind", "nic", "mobile1"] as const satisfies readonly ImportedField[];
+
+/**
+ * Reads the imported case's form (IMP-5). Like a draft (CASE-4), an empty field is allowed and a filled
+ * one must be valid. A lone phone number goes first, as the import stores it.
+ */
+export function parseImportedForm(
+  read: (field: ImportedField) => string,
+): { ok: true; value: ImportedValues } | { ok: false; errors: CaseErrors } {
+  const values = {} as Record<ImportedField, string | null>;
+  const errors: CaseErrors = {};
+  for (const field of IMPORTED_FIELDS) {
+    const result = FIELD_SCHEMAS[field].safeParse(read(field));
+    values[field] = result.success ? result.data : null;
+    if (!result.success) errors[field] = result.error.issues[0]?.message as CaseErrorKey;
+  }
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  if (!values.mobile1 && values.mobile2) [values.mobile1, values.mobile2] = [values.mobile2, null];
+  return { ok: true, value: values as ImportedValues };
+}
+
 /** A DS office chosen on the form (CASE-3), or null when none is. */
 export function parseOfficeId(raw: string): number | null {
   const id = Number(raw);

@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { CaseStatus } from "@/generated/prisma/enums";
 import { formatCaseNumber } from "./numbers";
-import { canChangeOffice, canDeleteDraft, canEditDetails, isBeingEntered, mustStayComplete } from "./rules";
+import {
+  canChangeOffice,
+  canDeleteDraft,
+  canEditDetails,
+  canFillImported,
+  isBeingEntered,
+  missingImported,
+  mustStayComplete,
+} from "./rules";
 import { type Move, moveRefusal, MOVES, type Mover, movesFrom } from "./transitions";
 
 const STATUSES: CaseStatus[] = [
@@ -34,6 +42,27 @@ describe("case rules (SPEC sections 4 and 6)", () => {
       expect(canEditDetails("HO_OFFICER", status), status).toBe(entry || afterCheck.includes(status));
       expect(mustStayComplete(status), status).toBe(afterCheck.includes(status));
     }
+  });
+
+  it("lets only the office fill in a case from the sheet, until Head Office confirms it (IMP-5)", () => {
+    for (const status of STATUSES) {
+      expect(canFillImported("DS_OFFICER", status), status).toBe(status === "IMPORTED");
+      expect(canFillImported("HO_OFFICER", status), status).toBe(false);
+      expect(canFillImported("ADMIN", status), status).toBe(false);
+    }
+  });
+
+  it("names what a case from the sheet still lacks: the kind of help, the NIC or a phone number (IMP-4)", () => {
+    const empty = { kind: null, nic: null, mobile1: null };
+    expect(missingImported({ status: "IMPORTED", ...empty })).toEqual(["kind", "nic", "mobile1"]);
+    expect(missingImported({ status: "IMPORTED", ...empty, kind: "NEW_HOUSE", mobile1: "0712345678" })).toEqual([
+      "nic",
+    ]);
+    expect(
+      missingImported({ status: "IMPORTED", kind: "RENOVATION", nic: "880001234V", mobile1: "0712345678" }),
+    ).toEqual([]);
+    // Once Head Office has confirmed it, the case follows the case form's rules instead.
+    expect(missingImported({ status: "VERIFIED", ...empty })).toEqual([]);
   });
 
   it("deletes drafts only (CASE-8)", () => {

@@ -22,7 +22,7 @@ Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists
 
 Phase 7 was built one task at a time: 7.1 (the load-test data script), 7.2 (the Head Office dashboard), 7.3 (the Excel export of the case lists), 7.4 (an export in the old sheet's layout, since removed) and 7.5 (the notifications beside the dashboard).
 
-Phase 8 (the sheet import) is being built one task at a time, on the branch `phase-8-import`. Tasks 8.1 (the made-up sample sheet), 8.2 (the import script) and 8.3 (the import report) are done.
+Phase 8 (the sheet import) is being built one task at a time, on the branch `phase-8-import`. Tasks 8.1 (the made-up sample sheet), 8.2 (the import script), 8.3 (the import report) and 8.4 (the DS office filling in imported cases) are done.
 
 The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
@@ -187,6 +187,13 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
   - It starts with a byte-order mark and uses CRLF, so Excel shows the Sinhala. A cell starting with `=`, `+`, `-` or `@` gets a `'` first, so a place name can't become a formula.
   - The file is opened (`wx`) before the import, so a folder that doesn't exist or an earlier report of the same name stops the run before anything is imported (`ReportError`). Otherwise the imported rows to check would be lost: a later run passes over them. A failed import removes the empty file.
   - The reasons are in English, like the script's other output.
+- **The DS office fills in imported cases (IMP-4, IMP-5, task 8.4).** While a case is `IMPORTED`, its office may change the kind of help, the NIC and the phone numbers (`IMPORTED_FIELDS` in `src/lib/validation/case.ts`), and nothing else (`canFillImported` in `src/server/cases/rules.ts`). Head Office can't; it confirms the case instead (task 8.5).
+  - `fillImported` (`src/server/cases/imported.ts`) saves them like `saveCase` does: the version the page opened with (CASE-10), only while still `IMPORTED`, the NIC key for CASE-6, and a `case_updated` record with old and new values. A save that changes nothing writes nothing.
+  - The form is its own page, `/ds/cases/[id]/fill` (`src/components/forms/imported-form.tsx`), not the case form: a field may stay empty, a filled one has CASE-2's format rules (`parseImportedForm`), and a lone phone number becomes the first. Where the sheet's NIC or phone cell couldn't be stored, the form shows it as written.
+  - "Details missing" means `IMPORTED` with no kind, NIC or first phone number (`IMPORTED_NEEDS`). `DETAILS_MISSING` in `src/server/cases/queries.ts` is the filter (`CaseFilter.detailsMissing`), and `missingImported()` names what one case lacks, for the list's progress column and the case page's note.
+  - The DS home's tabs are filters now (`tabFilter` in `src/app/ds/list.ts`). The "details missing" tab shows only while its count is above 0, or while it is open.
+  - The sheet's notes (`case.sheet_notes`) are on `CaseDetails` and shown read-only by `SheetNotesSection` (`src/components/cases/sheet-notes.tsx`) on the DS case page, grouped as on the sheet; empty columns are left out.
+  - The end-to-end test makes its imported case with `tests/e2e/imported-case.ts`, run through `npx tsx`, because Playwright can't load Prisma's generated client.
 
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 

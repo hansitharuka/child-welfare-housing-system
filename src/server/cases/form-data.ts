@@ -1,5 +1,6 @@
-import { type CaseErrors, parseCaseForm, parseOfficeId } from "@/lib/validation/case";
+import { type CaseErrors, parseCaseForm, parseImportedForm, parseOfficeId } from "@/lib/validation/case";
 import type { SaveCaseInput } from "./commands";
+import type { FillImportedInput } from "./imported";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -32,4 +33,22 @@ export function readCaseForm(
     ok: true,
     input: { id, version, dsOfficeId: parseOfficeId(read("dsOfficeId")), values: parsed.value, documentIds, submit },
   };
+}
+
+/** Reads the form for a case brought in from the old sheet (IMP-5), like readCaseForm. */
+export function readImportedForm(
+  form: FormData,
+): { ok: true; input: FillImportedInput } | { ok: false; errors: CaseErrors } | { ok: false; notFound: true } {
+  const read = (field: string) => {
+    const value = form.get(field);
+    return typeof value === "string" ? value : "";
+  };
+  const id = read("id");
+  const versionText = read("version");
+  const version = Number(versionText);
+  if (!UUID.test(id) || versionText === "" || !Number.isInteger(version)) return { ok: false, notFound: true };
+
+  const parsed = parseImportedForm(read);
+  if (!parsed.ok) return { ok: false, errors: parsed.errors };
+  return { ok: true, input: { id, version, values: parsed.value } };
 }

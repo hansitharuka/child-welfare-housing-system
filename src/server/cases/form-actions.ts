@@ -1,9 +1,11 @@
 import type { CaseFormState } from "@/components/forms/case-form";
+import type { ImportedFormState } from "@/components/forms/imported-form";
 import { db } from "../db";
 import { type UploadedFile, type UploadError, uploadDocument } from "../files/uploads";
 import { type Actor, type CaseCommandError, deleteDraft, removeDocument, type SavedCase, saveCase } from "./commands";
 import { findNicMatches, type NicMatch } from "./duplicates";
-import { readCaseForm } from "./form-data";
+import { readCaseForm, readImportedForm } from "./form-data";
+import { fillImported } from "./imported";
 
 /**
  * What the DS and Head Office case actions share. Each role's actions.ts checks the role first
@@ -25,6 +27,23 @@ export async function saveCaseForm(
   const result = await saveCase(db, actor, read.input);
   if (!result.ok) return { ok: false, state: { errors: {}, error: result.error } };
   return { ok: true, saved: result.value };
+}
+
+/** Reads and saves what the office fills in on a case brought in from the old sheet (IMP-5). */
+export async function fillImportedForm(
+  actor: Actor,
+  form: FormData,
+): Promise<{ ok: true; id: string } | { ok: false; state: ImportedFormState }> {
+  const read = readImportedForm(form);
+  if (!read.ok) {
+    return {
+      ok: false,
+      state: "errors" in read ? { errors: read.errors, error: null } : { errors: {}, error: "notFound" },
+    };
+  }
+  const result = await fillImported(db, actor, read.input);
+  if (!result.ok) return { ok: false, state: { errors: {}, error: result.error } };
+  return { ok: true, id: read.input.id };
 }
 
 /** Stores one uploaded document (CASE-2, ERR-5). */

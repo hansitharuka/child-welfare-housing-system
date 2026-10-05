@@ -200,7 +200,7 @@ docker-compose.yml, docker-compose.dev.yml
 | 8.1 | A script that makes a made-up sample sheet with the real layout (two tabs, two-row headers, zero-width joiners, mixed district spellings) | SEC-11 | `scripts/make-sample-sheet.ts` |
 | 8.2 | Import script with a dry run: header matching, district and DS mapping, IMPORTED status, the case's sheet reference and read-only sheet notes, no duplicates on re-run (serial number, else row number) | IMP-1–3, IMP-5, IMP-7 | `scripts/import-sheet.ts`, `src/server/import/*`, `prisma/schema.prisma` |
 | 8.3 | Import report (tab, row, reason) written outside the repository | IMP-6 | `scripts/import-sheet.ts` |
-| 8.4 | "Details missing" filter; DS can fill NIC, phones and kind of help on imported cases | IMP-4, IMP-5 | `src/server/cases/*`, `src/app/ds/page.tsx` |
+| 8.4 | "Details missing" filter; DS can fill NIC, phones and kind of help on imported cases | IMP-4, IMP-5 | `src/server/cases/*`, `src/app/ds/page.tsx`, `src/app/ds/cases/[id]/fill/*`, `src/components/cases/sheet-notes.tsx` |
 | 8.5 | Head Office "imported cases" screen to confirm each case's real status, with release and installments | IMP-5 | `src/app/ho/imported/*` |
 
 **Tests:** import of the sample sheet, including every mapping and report case, and a second run with no new rows (AC-19).

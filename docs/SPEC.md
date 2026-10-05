@@ -183,7 +183,7 @@ Values used across the system:
   - installments released (for example `2 / 4`)
   - current stage or next step
   - for a case in progress, days since the last update, when that is 30 or more (the same rule as HOME-3 and DSH-1)
-- **HOME-2** Tabs shall filter the list to all cases, cases in progress or completed cases. Search shall match name, child's name, case number or NIC.
+- **HOME-2** Tabs shall filter the list to all cases, cases in progress or completed cases, and, while the office has any, the cases from the old sheet whose details are missing (IMP-4). Search shall match name, child's name, case number or NIC.
 - **HOME-3** A "to do" panel shall list:
   - returned cases, with the Head Office reason
   - drafts
@@ -315,10 +315,10 @@ Only the DS office starts and pays installments (section 4). Each change is refu
 - **IMP-1** A command-line script (not a screen) shall import the `.xlsx` file from a path given when it runs. The file shall never be stored in the repository. A dry run (`--dry-run`) reads and checks the file and writes nothing. The whole import is one transaction, so a run that fails adds nothing.
 - **IMP-2** Rows from the නිවාසගත tab become `CARE_LEAVER` cases, and rows from අවදානම් දරුවන් become `CHILD_AT_RISK` cases. Headers are matched after removing zero-width joiners (U+200D) and spaces, using both header rows.
 - **IMP-3** District names shall be mapped to the 25 official names, with English and Sinhala spellings both accepted. DS offices are matched by their Sinhala or English name within the district. Names compare without spaces, capitals or zero-width characters. Anything that doesn't match goes in the report and is not imported: no district, an unknown district, no DS office, an unknown DS office, an office of another district, or an inactive office.
-- **IMP-4** A missing NIC or phone number is allowed on imported cases. They appear under a "details missing" filter, so offices can fill them in.
+- **IMP-4** A missing NIC or phone number is allowed on imported cases. They appear under a "details missing" filter, so offices can fill them in. It is a tab on the DS home (HOME-2), shown only while the office has such cases: `IMPORTED` cases with no kind of help, no NIC or no first phone number. The row says what to do next, and the tab's Excel export (EXP-1) holds the same cases.
 - **IMP-5** Imported cases start as `IMPORTED`:
   - The sheet's installment, stage and remark notes are kept as read-only text. A NIC or phone cell that couldn't be stored in full (not a valid NIC, a bad phone number, or more than two numbers) is kept there as written, and the report names the row.
-  - The owning DS may fill in the NIC, phone numbers and kind of help.
+  - The owning DS may fill in the NIC, phone numbers and kind of help, and nothing else, while the case is `IMPORTED`. It does so on a page of its own, reached from the case page, which names what is still missing and shows the sheet's notes. A field may stay empty; a filled one follows CASE-2's rules. A lone phone number is stored as the first. The NIC is compared with other cases as in CASE-6. Each changed field is logged with its old and new value (HIS-1). Head Office doesn't fill these in; it confirms the case.
   - A Head Office officer confirms each case as verified, in progress (entering the release and installment statuses), rejected or stopped.
   - Imported cases are left out of the money totals until confirmed.
 - **IMP-6** The script shall write a report of rows skipped or needing attention: tab, row number and reason, with no other personal details. The report is saved outside the repository.

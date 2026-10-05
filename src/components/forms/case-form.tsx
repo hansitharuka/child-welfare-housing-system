@@ -529,7 +529,7 @@ function Part({
 }
 
 /** Large radio cards with a hint, as in the prototype. */
-function ChoiceCards({
+export function ChoiceCards({
   name,
   labelledBy,
   options,

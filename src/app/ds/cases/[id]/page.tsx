@@ -4,6 +4,7 @@ import { getTranslations } from "next-intl/server";
 import { CaseColumns, CaseDetailsSection, CaseNotes, caseSubtitle } from "@/components/cases/case-view";
 import { MoneySection } from "@/components/cases/money-section";
 import { caseName, PageHeader } from "@/components/cases/page-header";
+import { SheetNotesSection } from "@/components/cases/sheet-notes";
 import { StatusChip } from "@/components/cases/status-chip";
 import { FormNotice } from "@/components/forms/form-field";
 import { CompletedBanner, StoppedBanner } from "@/components/progress/case-banners";
@@ -14,7 +15,7 @@ import { StageUpdate } from "@/components/progress/stage-update";
 import { colomboDay } from "@/lib/dates";
 import { paidLimits, stageLimits, startLimits } from "@/lib/validation/progress";
 import { getCase, type InstallmentDetails } from "@/server/cases/queries";
-import { canEditDetails } from "@/server/cases/rules";
+import { canEditDetails, canFillImported } from "@/server/cases/rules";
 import { requireRole } from "@/server/context";
 import { db } from "@/server/db";
 import { caseHistory } from "@/server/history/queries";
@@ -30,7 +31,8 @@ const isNotice = (value: unknown): value is (typeof NOTICES)[number] =>
 /**
  * The DS officer's case page (UI-7), as in the prototype: the money and its installments with the
  * next step (INS-1 to INS-5), the history (HIS-2), the building stages with the update button
- * (STG-1 to STG-6) and the beneficiary's details. Another office's case is "not found" (PRM-1, AC-1).
+ * (STG-1 to STG-6) and the beneficiary's details. A case brought in from the old sheet also shows the
+ * sheet's notes (IMP-5). Another office's case is "not found" (PRM-1, AC-1).
  */
 export default async function DsCasePage({
   params,
@@ -114,6 +116,7 @@ export default async function DsCasePage({
         </section>
       )}
       {isNotice(notice) && <FormNotice message={tp(`notices.${notice}`)} />}
+      {notice === "changed" && <FormNotice message={t("notices.changed")} />}
       <CaseNotes details={details} audience="ds" />
       <StoppedBanner details={details} />
       <CompletedBanner details={details} />
@@ -123,6 +126,7 @@ export default async function DsCasePage({
             {details.release && (
               <MoneySection release={details.release} installments={details.installments} actions={installmentStep} />
             )}
+            {details.sheetNotes && <SheetNotesSection notes={details.sheetNotes} />}
             <CaseHistory entries={history ?? []} />
           </>
         }
@@ -150,7 +154,13 @@ export default async function DsCasePage({
             )}
             <CaseDetailsSection
               details={details}
-              editHref={canEditDetails(viewer.role, details.status) ? `/ds/cases/${details.id}/edit` : null}
+              editHref={
+                canEditDetails(viewer.role, details.status)
+                  ? `/ds/cases/${details.id}/edit`
+                  : canFillImported(viewer.role, details.status)
+                    ? `/ds/cases/${details.id}/fill`
+                    : null
+              }
             />
           </>
         }
