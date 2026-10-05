@@ -198,14 +198,14 @@ docker-compose.yml, docker-compose.dev.yml
 | # | Task | SPEC | Files |
 | --- | --- | --- | --- |
 | 8.1 | A script that makes a made-up sample sheet with the real layout (two tabs, two-row headers, zero-width joiners, mixed district spellings) | SEC-11 | `scripts/make-sample-sheet.ts` |
-| 8.2 | Import script: header matching, district and DS mapping, IMPORTED status, sheet notes kept read-only, no duplicates on re-run | IMP-1–3, IMP-5, IMP-7 | `scripts/import-sheet.ts`, `src/server/import/*` |
+| 8.2 | Import script with a dry run: header matching, district and DS mapping, IMPORTED status, the case's sheet reference and read-only sheet notes, no duplicates on re-run (serial number, else row number) | IMP-1–3, IMP-5, IMP-7 | `scripts/import-sheet.ts`, `src/server/import/*`, `prisma/schema.prisma` |
 | 8.3 | Import report (tab, row, reason) written outside the repository | IMP-6 | `scripts/import-sheet.ts` |
-| 8.4 | "Details missing" filter; DS can fill NIC, phones and kind of help on imported cases | IMP-4, IMP-5 | `src/server/cases/*`, `src/app/ds/page.tsx` |
-| 8.5 | Head Office "imported cases" screen to confirm each case's real status, with release and installments | IMP-5 | `src/app/ho/imported/*` |
+| 8.4 | "Details missing" filter; DS can fill NIC, phones and kind of help on imported cases | IMP-4, IMP-5 | `src/server/cases/*`, `src/app/ds/page.tsx`, `src/app/ds/cases/[id]/fill/*`, `src/components/cases/sheet-notes.tsx` |
+| 8.5 | Head Office "imported cases" screen to confirm each case's real status, with release and installments, also on the case page; a case number on confirmation; the DS still fills in a missing NIC or phone after it | IMP-4, IMP-5, CASE-9 | `src/app/ho/imported/*`, `src/server/cases/confirm-import.ts`, `src/lib/validation/confirm.ts`, `src/components/review/confirm-import.tsx` |
 
-**Tests:** import of the sample sheet, including every mapping and report case, and a second run with no new rows (AC-19).
+**Tests:** import of the sample sheet, including every mapping and report case, and a second run with no new rows (AC-19); confirming imported cases as each status, and filling in what they lack afterwards (AC-24).
 
-**Done when:** AC-19 passes on the sample sheet. The real sheet is not imported until Phase 9.
+**Done when:** AC-19 passes on the sample sheet, and AC-24 on cases made like the import's. The real sheet is not imported until Phase 9.
 
 ## Phase 9 — Go-live
 

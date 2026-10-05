@@ -22,7 +22,7 @@ import {
 } from "@/server/cases/queries";
 import { requireRole } from "@/server/context";
 import { db } from "@/server/db";
-import { readHomeList, type Tab, TABS, tabStatuses } from "./list";
+import { readHomeList, type Tab, TABS, tabFilter } from "./list";
 
 /** The colour of each kind of to-do item, as in the prototype. */
 const TODO_COLOUR: Record<TodoItem["type"], string> = {
@@ -54,7 +54,7 @@ export default async function DsHomePage({
   const [t, list, counts, todo, money] = await Promise.all([
     getTranslations("cases"),
     listCases(db, viewer, { ...filter, page }),
-    Promise.all((Object.keys(TABS) as Tab[]).map((key) => countCases(db, viewer, { statuses: tabStatuses(key) }))),
+    Promise.all(TABS.map((key) => countCases(db, viewer, tabFilter(key)))),
     todoItems(db, viewer),
     officeMoney(db, viewer),
   ]);
@@ -77,13 +77,18 @@ export default async function DsHomePage({
         return days === 0 ? t("home.progress.submittedToday") : t("home.progress.SUBMITTED", { days });
       }
       case "IN_PROGRESS":
+        // On the "details missing" tab, a confirmed case from the sheet says what to do next (IMP-4).
+        if (tab === "detailsMissing" && row.detailsMissing) return t("home.progress.importedMissing");
         return row.stageName ?? t("home.progress.IN_PROGRESS");
+      case "IMPORTED":
+        return row.detailsMissing ? t("home.progress.importedMissing") : t("home.progress.IMPORTED");
+      case "VERIFIED":
+        if (tab === "detailsMissing" && row.detailsMissing) return t("home.progress.importedMissing");
+        return t("home.progress.VERIFIED");
       case "DRAFT":
       case "RETURNED":
-      case "VERIFIED":
       case "COMPLETED":
       case "STOPPED":
-      case "IMPORTED":
         return t(`home.progress.${row.status}`);
       default:
         return t("none");
@@ -123,18 +128,21 @@ export default async function DsHomePage({
           </h2>
           <div className="flex flex-wrap items-center gap-4 border-b px-5 py-3.5">
             <nav aria-label={t("home.tabsLabel")} className="flex gap-1 rounded-lg bg-muted p-1">
-              {(Object.keys(TABS) as Tab[]).map((key, index) => (
-                <Link
-                  key={key}
-                  href={href({ tab: key, page: 1 })}
-                  aria-current={tab === key ? "page" : undefined}
-                  className={`flex h-10.5 items-center rounded-md px-4.5 font-semibold ${
-                    tab === key ? "bg-card text-primary shadow-sm" : "text-[#3F4843]"
-                  }`}
-                >
-                  {t(`home.tabs.${key}`, { count: counts[index] ?? 0 })}
-                </Link>
-              ))}
+              {TABS.map((key, index) =>
+                // Only offices with cases from the old sheet still to fill in see that tab (IMP-4).
+                key === "detailsMissing" && counts[index] === 0 && tab !== key ? null : (
+                  <Link
+                    key={key}
+                    href={href({ tab: key, page: 1 })}
+                    aria-current={tab === key ? "page" : undefined}
+                    className={`flex h-10.5 items-center rounded-md px-4.5 font-semibold ${
+                      tab === key ? "bg-card text-primary shadow-sm" : "text-[#3F4843]"
+                    }`}
+                  >
+                    {t(`home.tabs.${key}`, { count: counts[index] ?? 0 })}
+                  </Link>
+                ),
+              )}
             </nav>
             <form method="get" action="/ds" className="ms-auto flex items-center gap-2">
               {tab !== "all" && <input type="hidden" name="tab" value={tab} />}

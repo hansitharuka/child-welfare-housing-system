@@ -1,4 +1,5 @@
 import { getTranslations } from "next-intl/server";
+import { CaseStatus } from "@/generated/prisma/enums";
 import { formatDate } from "@/lib/dates";
 import type { HistoryEntry } from "@/server/history/queries";
 
@@ -18,6 +19,7 @@ const ACTIONS = [
   "case_completed",
   "case_stopped",
   "case_reopened",
+  "case_imported",
   "case_import_confirmed",
 ] as const;
 type Action = (typeof ACTIONS)[number];
@@ -41,6 +43,9 @@ const FIELDS = [
 type Field = (typeof FIELDS)[number];
 
 const text = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value : null);
+const record = (value: unknown): Record<string, unknown> | null =>
+  typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+const isStatus = (value: string): value is CaseStatus => (Object.values(CaseStatus) as string[]).includes(value);
 const count = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
 const installmentNumber = (value: unknown): 1 | 2 | 3 | 4 | null =>
   value === 1 || value === 2 || value === 3 || value === 4 ? value : null;
@@ -83,6 +88,26 @@ export async function CaseHistory({ entries }: { entries: HistoryEntry[] }) {
         const number = text(after.caseNumber);
         return {
           sentence: number ? t("actions.case_submittedNumber", { number }) : t("actions.case_submitted"),
+          lines,
+        };
+      }
+      case "case_import_confirmed": {
+        // IMP-5: the status Head Office confirmed, with the money it recorded for a case in progress.
+        const release = record(after.release);
+        if (release) {
+          const reference = text(release.referenceNumber) ?? tc("none");
+          lines.push(t("importRelease", { date: day(release.releasedOn), reference }));
+          const paid = Array.isArray(after.installments)
+            ? after.installments.filter((i) => record(i)?.status === "RELEASED").length
+            : 0;
+          lines.push(t("importPaid", { count: paid }));
+        }
+        const status = text(after.status);
+        return {
+          sentence: t("actions.case_import_confirmed", {
+            status: status && isStatus(status) ? tc(`status.${status}`) : tc("none"),
+            number: text(after.caseNumber) ?? tc("noNumber"),
+          }),
           lines,
         };
       }

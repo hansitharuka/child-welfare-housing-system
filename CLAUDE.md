@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists), 4 (cases), 5 (check and release), 6 (installments, progress and closing) and 7 (dashboard, exports and notifications) of `docs/PLAN.md` are built. You get:
+Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists), 4 (cases), 5 (check and release), 6 (installments, progress and closing), 7 (dashboard, exports and notifications) and 8 (the sheet import) of `docs/PLAN.md` are built. You get:
 
 - a Sinhala Next.js shell for the three roles, and PostgreSQL with the place and stage lists
 - sign-in with lockout and forced password change, a permission layer, an append-only audit log and security headers
@@ -18,9 +18,12 @@ Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists
 - the four installments paid in order by the DS, building stages with photos, completion, stopping and reopening, and each case's history, on two-column case pages as in the prototype
 - the DS home's money panel and its full to-do panel
 - Head Office's dashboard, the Excel exports of the case lists, and a load-test data script
+- the import script for the old sheet, with its report; the DS office filling in what imported cases lack, and Head Office confirming each one's real status
 - tests and CI
 
-Phase 7 was built one task at a time: 7.1 (the load-test data script), 7.2 (the Head Office dashboard), 7.3 (the Excel export of the case lists), 7.4 (an export in the old sheet's layout, since removed) and 7.5 (the notifications beside the dashboard). Phase 8 (the sheet import) is next.
+Phase 7 was built one task at a time: 7.1 (the load-test data script), 7.2 (the Head Office dashboard), 7.3 (the Excel export of the case lists), 7.4 (an export in the old sheet's layout, since removed) and 7.5 (the notifications beside the dashboard).
+
+Phase 8 (the sheet import) was built one task at a time, on the branch `phase-8-import`: 8.1 (the made-up sample sheet), 8.2 (the import script), 8.3 (the import report), 8.4 (the DS office filling in imported cases) and 8.5 (Head Office confirming them).
 
 The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
@@ -40,6 +43,8 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 | Change the database schema | edit `prisma/schema.prisma`, then `npx prisma migrate dev --name <change>` and `npx prisma generate` (Prisma 7's `migrate dev` no longer regenerates the client). When `migrate dev` stops to ask about a change (for example a new unique column), write the SQL with `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` into a new `prisma/migrations/<timestamp>_<change>/migration.sql` and apply it with `npx prisma migrate deploy` |
 | Put the sample accounts back to their start state | `npx tsx prisma/seed-users.ts --reset` (the end-to-end tests do this themselves) |
 | Add 5,000 made-up cases for load tests, or remove them | `npm run db:seed-load` (`-- --count 500`, `-- --seed 7`), `npm run db:seed-load -- --remove`. Remove them before running the end-to-end tests |
+| Make the made-up sample sheet for the import | `npm run sheet:sample` writes `data/sample-sheet.xlsx`, which git ignores (`-- --out <file.xlsx>`, `-- --seed 7`) |
+| Import a sheet | `npm run sheet:import -- <file.xlsx>`; `-- <file.xlsx> --dry-run` checks it and writes nothing to the database. Either way it writes a report next to the sheet (`-- --report <file.csv>` puts it elsewhere). Try it with the sample sheet; the real sheet is imported on the production server only (Phase 9) |
 
 ## Things to know when coding
 
@@ -164,6 +169,41 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
   - With 5,000 cases the whole export takes about 3 seconds (PRF-4 allows 60). Its database test adds 5,000 load-test cases too.
 - **There is no export in the old sheet's layout.** Task 7.4 built one (EXP-2), and it was removed on 2026-10-04 because the Ministry no longer needs it. Don't add it back unless asked.
 
+### Sheet import (Phase 8)
+
+- **The sample sheet** (`scripts/make-sample-sheet.ts`, task 8.1) is a made-up copy of the real sheet for building and testing the import (SEC-11). Its two header rows, merges and header text, zero-width joiners included, are the same as the real file's. Its rows copy the real sheet's oddities (see "Source data" below). The same `--seed` gives the same sheet.
+  - `makeSampleSheet(seed)` returns the workbook and an answer key, one `SampleRow` per sheet row: the district and DS office (by code) the row belongs to, its NIC and phone numbers as they should be stored, and its `quirks`. `QUIRKS` lists every oddity with a short description; the unit test checks each one appears at least once.
+  - An office is in the key when its name matches the list once spaces, capitals and zero-width characters are ignored. Rows the import can't place (no district, an unknown district, no office, an unknown office, or another district's office) have `officeCode: null`.
+  - The special rows name DS offices from `data/places.json` by district and English name. When task 9.7 replaces that list, keep those offices or change the special rows; the script stops and names any office it can't find.
+- **Made-up people** (names, NICs, phone numbers and the seeded random number generator) are in `scripts/made-up.ts`, shared by the sample sheet and the load-test data.
+- **The import** (`scripts/import-sheet.ts`, task 8.2) calls `importSheet(db, workbook, { dryRun })` in `src/server/import/commands.ts`. It returns what it made and two lists for the report: rows `skipped` and imported rows needing `attention`, each with its tab, row and reason only (IMP-6).
+  - `sheet.ts` finds the tabs and columns. A column's header is its row 2 text, or its row 1 text when row 2 is empty (a merged cell reads its master's text). Headers and place names compare after `squash()`: no spaces, capitals or zero-width characters. Each tab's one column with no header is the care leavers' phone numbers or the children's serial numbers. A missing tab or column throws `SheetLayoutError`, and nothing is written.
+  - `values.ts` tidies NICs and phone numbers. A bad one isn't stored; its cell as written goes into the case's `sheet_notes` with the installment, level and remark notes (`SheetNotes`). A missing NIC or phone number isn't reported (IMP-4).
+  - `places.ts` maps districts (English, Sinhala and the sheet's own spellings in `DISTRICT_SPELLINGS`) and then the DS office within that district, from the database's lists. Rows it can't place, or with no name, are skipped.
+  - **The key (IMP-7)** is `sheet_key`, unique: `CARE_LEAVER:serial:45`, or `CHILD_AT_RISK:row:380` for a row with no serial number or one used above it in its tab (decided with the user on 5 Oct). Rows already imported are passed over, so a later run adds only rows that couldn't come in before.
+  - Imported cases have no case number and no kind. They're created by the disabled account `sheet-import` ("පැරණි පත්‍රිකාව", no username, so it can't sign in). One transaction writes them, a `case_imported` audit record each (no actor, so the history says "the system"), and one `sheet_imported` record for the run.
+  - The development database's DS offices differ from `data/places.json` (the user renamed some by hand), so a dry run there skips more rows than the sample's answer key expects. The tests use the seeded list.
+- **The report (IMP-6, task 8.3)** is a CSV file that `runImport` (`scripts/import-sheet.ts`) writes on every run, dry or not, next to the sheet: `<sheet>-import-report-<YYYY-MM-DD-HHmmss in Colombo>[-dry-run].csv`. Git ignores that name anywhere, so the sample sheet's reports in `data/` stay out too.
+  - One line per row and reason: tab, row, imported (no or yes), reason, and for a row that couldn't be placed, the district and DS office as written. Nothing else about the person. The rows not imported come first, then the imported rows to check, each in the sheet's order.
+  - It starts with a byte-order mark and uses CRLF, so Excel shows the Sinhala. A cell starting with `=`, `+`, `-` or `@` gets a `'` first, so a place name can't become a formula.
+  - The file is opened (`wx`) before the import, so a folder that doesn't exist or an earlier report of the same name stops the run before anything is imported (`ReportError`). Otherwise the imported rows to check would be lost: a later run passes over them. A failed import removes the empty file.
+  - The reasons are in English, like the script's other output.
+- **The DS office fills in imported cases (IMP-4, IMP-5, task 8.4).** While a case is `IMPORTED`, its office may change the kind of help, the NIC and the phone numbers (`IMPORTED_FIELDS` in `src/lib/validation/case.ts`), and nothing else. Head Office can't; it confirms the case instead (task 8.5). `fillableFields` in `src/server/cases/rules.ts` says what the office may fill in now, and `canFillImported` whether there is anything.
+  - `fillImported` (`src/server/cases/imported.ts`) saves them like `saveCase` does: the version the page opened with (CASE-10), only while the status is still the one read, the NIC key for CASE-6, and a `case_updated` record with old and new values. A save that changes nothing writes nothing; one that changes a field not in `fillableFields` is refused (`notEditable`).
+  - The form is its own page, `/ds/cases/[id]/fill` (`src/components/forms/imported-form.tsx`), not the case form: a field may stay empty, a filled one has CASE-2's format rules (`parseImportedForm`), and a lone phone number becomes the first. Where the sheet's NIC or phone cell couldn't be stored, the form shows it as written.
+  - "Details missing" means `IMPORTED` with no kind, NIC or first phone number (`IMPORTED_NEEDS`), or, after the confirmation, a case from the sheet that is `VERIFIED` or `IN_PROGRESS` with no NIC or first phone number (`CONFIRMED_NEEDS`). `DETAILS_MISSING` in `src/server/cases/queries.ts` is the filter (`CaseFilter.detailsMissing`), and `missingImported()` names what one case lacks, for the list's progress column and the case page's note. A case is "from the sheet" when it has a `sheet_key` (`CaseDetails.fromSheet`).
+  - The DS home's tabs are filters now (`tabFilter` in `src/app/ds/list.ts`). The "details missing" tab shows only while its count is above 0, or while it is open.
+  - The sheet's notes (`case.sheet_notes`) are on `CaseDetails` and shown read-only by `SheetNotesSection` (`src/components/cases/sheet-notes.tsx`) on both roles' case pages and the confirm screen, grouped as on the sheet; empty columns are left out.
+  - The end-to-end test makes its imported case with `tests/e2e/imported-case.ts`, run through `npx tsx`, because Playwright can't load Prisma's generated client. `--kind NEW_HOUSE` makes one whose kind the office has filled in.
+- **Head Office confirms imported cases (IMP-5, task 8.5)** as verified, in progress, rejected or stopped, with `confirmImported` (`src/server/cases/confirm-import.ts`), the `confirmImport` move in `transitions.ts`.
+  - `parseConfirmForm` (`src/lib/validation/confirm.ts`) checks the form in the browser and on the server. In progress takes the release (REL-2's rules with no earliest day: the sheet has no verification date) and each installment's status and day, in order (INS-2 to INS-4). Rejected and stopped take a reason; `MOVES.confirmImport.needsReason` lists the targets that need one (`reasonNeeded()`).
+  - Verified and in progress need the kind of help (`NEEDS_KIND`); until the office fills it in, the form offers only rejecting and stopping, and the command refuses with `kindMissing`.
+  - One transaction gives the case its number (`nextCaseNumber`, tried again on a unique-key clash as `saveCase` does), moves it, writes a `CONFIRM_IMPORT` Decision with any reason and a `case_import_confirmed` audit record with the release and installments, saves them for a case in progress, and runs `completeIfDone`. A verified one gets `verified_at` now; the others have none. A stopped one has no `status_before_stop`, so `statusToReopen` reopens it as verified. The DS isn't notified.
+  - `getCase` reads a rejected or stopped case's reason from its `CONFIRM_IMPORT` decision too.
+  - The screen is `/ho/imported` (`src/app/ho/imported/`), laid out like the check screen: `listImported` (`src/server/cases/queues.ts`) in the sheet's order (care leavers' tab, then children's, by row), narrowed by district (`importedByDistrict`), with the case's details, NIC matches, sheet notes and the form (`src/components/review/confirm-import.tsx`). The menu shows it only while `importedCount` is above 0. The form is on the Head Office case page too; afterwards both go back with `?notice=confirmed`.
+  - **After the confirmation,** the office may still fill in a NIC or phone numbers the case lacks, while it is verified or in progress (`fillableFields`): the fill page shows only those fields. Head Office's changes (CASE-9) may leave empty what the sheet left empty, but not empty a filled field (`mayStayEmpty` in `rules.ts`, the `mayStayEmpty` argument of `parseCaseForm` and the case form's prop).
+  - The import's database tests keep to the keys the import makes (`CARE_LEAVER:…`, `CHILD_AT_RISK:…`), because confirmed test cases from other files have decisions and can't be deleted.
+
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 
 ## Workflow: PRD → SPEC → PLAN before code
@@ -205,8 +245,8 @@ These may not be in `docs/PRD.md` yet. Once the PRD is approved, it overrides th
 
 The live spreadsheet is `../Documents/ප්_රගතිය - දිවියට සවියක්.xlsx`. It sits outside this repo and is not under version control. It has two sheets:
 
-- `නිවාසගත` (housed beneficiaries, about 240 rows). Columns: serial no, name, NIC, address, phone, district, divisional secretariat.
-- `අවදානම් දරුවන්` (children at risk, about 500 rows). Columns: child's name, guardian's name, guardian's NIC, address, phone, district, divisional secretariat.
+- `නිවාසගත` (housed beneficiaries, 240 rows and one empty row). Columns A to P: serial no, name, NIC, address, phone, district, divisional secretariat (`ප්‍රා.ලේ. කොට්ඨාසය`).
+- `අවදානම් දරුවන්` (children at risk, 504 rows). Columns A to Q: serial no, child's name, guardian's name, guardian's NIC, address, phone, district, divisional secretariat (`ප්‍රා.ලේ. කාර්යාලය`, worded differently from the other tab).
 
 Both sheets end with the same columns:
 
@@ -216,7 +256,13 @@ Both sheets end with the same columns:
 
 Things to know when parsing:
 
-- **Two-row header.** Row 1 holds the group headers and the ungrouped columns. Row 2 holds the sub-columns under "financial progress" and "physical progress".
+- **Two-row header.** Row 1 holds the group headers and the ungrouped columns, which are merged over both rows. Row 2 holds the sub-columns under "financial progress" and "physical progress".
+- **Missing headers.** The care leavers' phone column has no header, and their district's header is on row 2 only. The children's serial number column has no header.
+- **Serial numbers.** On the care leavers' tab one serial number is used twice. On the children's tab a block of 38 rows, all from one DS office, has no serial number, and the numbers go on after it.
+- **NICs and phone numbers.** Most rows have no NIC (2 of 240 care leavers, 37 of 504 children) and most children have no phone number. Excel holds some as numbers: 12-digit NICs, and phone numbers without their first 0. Old NICs come with a small `v`, sometimes after a space, and a few have the wrong number of digits. Phone numbers are written `07X-XXXXXXX`, sometimes two or three in one cell split by spaces.
+- **Districts** are in Sinhala, or in English in the north (Jaffna, Mannar, Kilinochchi, Vavuniya), and some are spelled unlike the list: අනුරාධපුර (the list has අනුරාධපුරය), ත්‍රීකුණාමලය (ත්‍රිකුණාමලය), රත්නපුර (රත්නපුරය), මොනරාගල (මොණරාගල) and Mullative (Mullaitivu).
+- **DS offices** are in Sinhala or English, with other spellings: extra or missing spaces, a zero-width non-joiner (U+200C), capitals, typing slips, words in another order, and now and then an office of another district.
+- **Progress columns hold notes, not amounts:** ඔව්, නැත, No, or a sentence about when an installment is expected. The children's tab has notes only in the first installment column. Remarks are rare, and one is a number.
 - **Zero-width joiners.** The Sinhala headers contain U+200D (ZWJ), for example `ප්‍රා.ලේ.` Match headers after normalising, not on the raw strings.
 - **Cell colours.** Some cells are colour-coded in the sheet, but the colours are deliberately ignored on import.
 - **Windows console.** Printing Sinhala text from Python on Windows needs `sys.stdout.reconfigure(encoding='utf-8')`.

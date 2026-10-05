@@ -20,7 +20,9 @@ async function counters() {
   return rows.map((c) => `${c.dsOfficeId}:${c.year}:${c.last}`);
 }
 
-describe("load-test data (PRF-1)", () => {
+// Adding or removing hundreds of cases takes seconds, more on a CI runner than vitest's default 5. A test
+// that times out keeps running underneath the next one, which then fails too.
+describe("load-test data (PRF-1)", { timeout: 120_000 }, () => {
   let countersBefore: string[] = [];
 
   it("is never made in production", () => {

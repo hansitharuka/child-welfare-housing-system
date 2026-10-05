@@ -3,12 +3,14 @@ import { getTranslations } from "next-intl/server";
 import { CaseColumns, CaseDetailsSection, CaseNotes, caseSubtitle } from "@/components/cases/case-view";
 import { MoneySection } from "@/components/cases/money-section";
 import { caseName, PageHeader } from "@/components/cases/page-header";
+import { SheetNotesSection } from "@/components/cases/sheet-notes";
 import { StatusChip } from "@/components/cases/status-chip";
 import { FormNotice } from "@/components/forms/form-field";
 import { CompletedBanner, StoppedBanner } from "@/components/progress/case-banners";
 import { CaseHistory } from "@/components/progress/case-history";
 import { ReasonAction } from "@/components/progress/reason-action";
 import { StageSection } from "@/components/progress/stage-section";
+import { ConfirmImport } from "@/components/review/confirm-import";
 import { CorrectRelease } from "@/components/review/correct-release";
 import { DecisionPanel } from "@/components/review/decision-panel";
 import { DuplicateCases } from "@/components/review/duplicate-cases";
@@ -26,6 +28,7 @@ import { caseHistory } from "@/server/history/queries";
 import { lastPaid } from "@/server/installments/rules";
 import { getStageProgress } from "@/server/stages/queries";
 import { correctReleaseAction, decideAction, releaseAction } from "../../check/actions";
+import { confirmImportAction } from "../../imported/actions";
 import { reopenAction, stopAction, undoInstallmentAction } from "./actions";
 
 /** What a stop, reopen or undo leaves on the page, by its key under "progress.notices". */
@@ -37,7 +40,8 @@ const isNotice = (value: unknown): value is (typeof NOTICES)[number] =>
  * Head Office's case page (UI-7). A submitted case can be decided here as in the check view (CHK-2,
  * CHK-3), a verified one released (REL-2), and a recorded release corrected (REL-4). A running case
  * shows its installments, stages with photos (STG-6) and history (HIS-2); Head Office can stop and
- * reopen it (CLS-2, CLS-3) and undo the last payment (INS-6).
+ * reopen it (CLS-2, CLS-3) and undo the last payment (INS-6). A case from the old sheet shows the
+ * sheet's notes, and is confirmed here as on the imported cases' screen (IMP-5).
  */
 export default async function HoCasePage({
   params,
@@ -66,7 +70,7 @@ export default async function HoCasePage({
   const now = new Date();
   const limits = { earliest: details.verifiedAt && colomboDay(details.verifiedAt), today: colomboDay(now) };
   const duplicates =
-    details.status === "SUBMITTED"
+    details.status === "SUBMITTED" || details.status === "IMPORTED"
       ? await duplicatesInFull(db, viewer, { caseId: details.id, nic: details.nic, dsOfficeId: details.dsOfficeId })
       : [];
   const hidden = { caseId: details.id, version: String(details.version) };
@@ -194,6 +198,21 @@ export default async function HoCasePage({
                 />
               </div>
             )}
+            {details.status === "IMPORTED" && (
+              <div className="rounded-xl border bg-card px-6 pb-5 [&>section]:border-t-0">
+                <ConfirmImport
+                  key={details.version}
+                  caseId={details.id}
+                  version={details.version}
+                  from="case"
+                  caseName={name}
+                  kindMissing={details.kind === null}
+                  today={limits.today}
+                  sheetInstallments={details.sheetNotes?.installments ?? []}
+                  action={confirmImportAction}
+                />
+              </div>
+            )}
             {details.status === "VERIFIED" && (
               <section
                 aria-labelledby="release-title"
@@ -235,6 +254,7 @@ export default async function HoCasePage({
                 }
               />
             )}
+            {details.sheetNotes && <SheetNotesSection notes={details.sheetNotes} />}
             <CaseHistory entries={history ?? []} />
           </>
         }

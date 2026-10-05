@@ -23,8 +23,8 @@ type MoveRule = {
   /** Where the case goes. Reopening and confirming an import choose one of several. */
   to: readonly CaseStatus[];
   who: readonly Mover[];
-  /** A reason is required (CHK-3, CLS-2, CLS-3). */
-  needsReason: boolean;
+  /** A reason is required (CHK-3, CLS-2, CLS-3), always or only for these targets (IMP-5). */
+  needsReason: boolean | readonly CaseStatus[];
   decision: DecisionType | null;
   /** What the DS office's officers are told (NTF-1). */
   notify: NotificationType | null;
@@ -110,7 +110,8 @@ export const MOVES: Record<Move, MoveRule> = {
     from: ["IMPORTED"],
     to: ["VERIFIED", "IN_PROGRESS", "REJECTED", "STOPPED"],
     who: ["HO_OFFICER"],
-    needsReason: false,
+    // As when Head Office rejects (CHK-3) or stops (CLS-2) a case.
+    needsReason: ["REJECTED", "STOPPED"],
     decision: "CONFIRM_IMPORT",
     notify: null,
     audit: "case_import_confirmed",
@@ -141,6 +142,12 @@ export function moveRefusal(
   if (!rule.who.includes(by)) return "roleNotAllowed";
   if (!rule.from.includes(from) || !rule.to.includes(to ?? rule.to[0])) return "notAllowedNow";
   return null;
+}
+
+/** Whether making `move` to `to` needs a reason. */
+export function reasonNeeded(move: Move, to: CaseStatus): boolean {
+  const { needsReason } = MOVES[move];
+  return typeof needsReason === "boolean" ? needsReason : needsReason.includes(to);
 }
 
 /** The moves that can take a case out of this status: none for a final one (STS-2). */
@@ -182,7 +189,8 @@ export async function applyMove(
   const refusal = moveRefusal(input.by, move, current.status, to);
   if (refusal) throw new Refusal<MoveError>(refusal);
   const reason = input.reason?.trim() || null;
-  if (rule.needsReason && !reason) throw new Refusal<MoveError>("reasonRequired");
+  const needsReason = reasonNeeded(move, to);
+  if (needsReason && !reason) throw new Refusal<MoveError>("reasonRequired");
   // A decision always has a person behind it; only the system's own moves (CLS-1) have none.
   if (rule.decision && !input.actorId) throw new Refusal<MoveError>("roleNotAllowed");
 
@@ -198,7 +206,7 @@ export async function applyMove(
         id: randomUUID(),
         caseId: current.id,
         type: rule.decision,
-        reason: rule.needsReason ? reason : null,
+        reason: needsReason ? reason : null,
         byId: input.actorId,
         at: input.at,
       },
@@ -211,7 +219,7 @@ export async function applyMove(
     entityId: current.id,
     caseId: current.id,
     before: { status: current.status },
-    after: { status: to, ...(rule.needsReason ? { reason } : {}), ...input.auditAfter },
+    after: { status: to, ...(needsReason ? { reason } : {}), ...input.auditAfter },
   });
   if (rule.notify) {
     await notifyOffice(tx, { dsOfficeId: current.dsOfficeId, caseId: current.id, type: rule.notify, at: input.at });

@@ -3,9 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { CaseFormState } from "@/components/forms/case-form";
+import type { ImportedFormState } from "@/components/forms/imported-form";
 import { requireRole } from "@/server/context";
 import {
   deleteCaseDraft,
+  fillImportedForm,
   nicMatchesFor,
   removeCaseDocument,
   saveCaseForm,
@@ -22,6 +24,16 @@ export async function saveCaseAction(_previous: CaseFormState, form: FormData): 
   revalidatePath("/ds");
   const { id, status } = result.saved;
   redirect(status === "SUBMITTED" ? `/ds/cases/${id}?notice=submitted` : `/ds/cases/${id}/edit?notice=saved`);
+}
+
+/** IMP-5: the kind of help, NIC and phone numbers of a case brought in from the old sheet. */
+export async function fillImportedAction(_previous: ImportedFormState, form: FormData): Promise<ImportedFormState> {
+  const actor = await requireRole("DS_OFFICER");
+  const result = await fillImportedForm(actor, form);
+  if (!result.ok) return result.state;
+
+  revalidatePath("/ds");
+  redirect(`/ds/cases/${result.id}?notice=changed`);
 }
 
 export async function uploadDocumentAction(form: FormData) {
