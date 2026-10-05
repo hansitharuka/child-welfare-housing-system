@@ -6,7 +6,8 @@ import { createTestClient } from "../../../tests/db/client";
 import { importSheet, SHEET_IMPORT_USER_ID, type SheetNotes } from "./commands";
 
 const db = createTestClient();
-const imported = { sheetKey: { not: null } };
+/** The cases the import makes: their keys start with the tab's category (IMP-7). Other test files' cases from the sheet use keys of their own. */
+const imported = { OR: ["CARE_LEAVER:", "CHILD_AT_RISK:"].map((prefix) => ({ sheetKey: { startsWith: prefix } })) };
 
 let workbook: ExcelJS.Workbook;
 let key: SampleRow[];

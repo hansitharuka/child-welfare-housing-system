@@ -77,12 +77,16 @@ export default async function DsHomePage({
         return days === 0 ? t("home.progress.submittedToday") : t("home.progress.SUBMITTED", { days });
       }
       case "IN_PROGRESS":
+        // On the "details missing" tab, a confirmed case from the sheet says what to do next (IMP-4).
+        if (tab === "detailsMissing" && row.detailsMissing) return t("home.progress.importedMissing");
         return row.stageName ?? t("home.progress.IN_PROGRESS");
       case "IMPORTED":
         return row.detailsMissing ? t("home.progress.importedMissing") : t("home.progress.IMPORTED");
+      case "VERIFIED":
+        if (tab === "detailsMissing" && row.detailsMissing) return t("home.progress.importedMissing");
+        return t("home.progress.VERIFIED");
       case "DRAFT":
       case "RETURNED":
-      case "VERIFIED":
       case "COMPLETED":
       case "STOPPED":
         return t(`home.progress.${row.status}`);

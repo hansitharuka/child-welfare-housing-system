@@ -16,15 +16,17 @@ const EMPTY: ImportedFormState = { errors: {}, error: null };
 
 /**
  * IMP-5: what the DS office fills in on a case brought in from the old sheet, until Head Office
- * confirms it: the kind of help, the NIC and the phone numbers. Empty fields may stay empty; filled ones
- * get the case form's checks, in the browser and again on the server. The NIC is compared with other
- * cases as on the case form (CASE-6). Where the sheet's NIC or phone cell couldn't be stored, it is
- * shown as written, to copy from.
+ * confirms it: the kind of help, the NIC and the phone numbers. After the confirmation only a NIC or
+ * phone numbers it lacks are shown (`fields`); the others are sent as they are. Empty fields may stay
+ * empty; filled ones get the case form's checks, in the browser and again on the server. The NIC is
+ * compared with other cases as on the case form (CASE-6). Where the sheet's NIC or phone cell couldn't
+ * be stored, it is shown as written, to copy from.
  */
 export function ImportedForm({
   caseId,
   version,
   atRisk,
+  fields,
   initial,
   sheet,
   actions,
@@ -33,6 +35,8 @@ export function ImportedForm({
   /** The version the form was opened with (CASE-10). */
   version: number;
   atRisk: boolean;
+  /** What the office may fill in now (fillableFields). */
+  fields: readonly ImportedField[];
   initial: Record<ImportedField, string>;
   sheet: { nic?: string; phone?: string };
   actions: {
@@ -105,57 +109,67 @@ export function ImportedForm({
     >
       <p className="rounded-lg bg-[#E4EDF8] px-4 py-3 text-[15px] text-[#1E4E8C]">{t("fill.intro")}</p>
 
-      <section aria-labelledby="kind-title" className="flex flex-col gap-4 rounded-xl border bg-card px-6 py-5">
-        <h2 id="kind-title" className="text-xl font-bold">
-          {t("fill.kind")}
-        </h2>
-        <ChoiceCards
-          name="kind"
-          labelledBy="kind-title"
-          options={KINDS.map((value) => ({ value, label: t(`kind.${value}`), hint: t(`kindHint.${value}`) }))}
-          value={values.kind}
-          onChange={(value) => setValues((v) => ({ ...v, kind: value }))}
-          error={errorText("kind")}
-        />
-      </section>
+      {fields.includes("kind") && (
+        <section aria-labelledby="kind-title" className="flex flex-col gap-4 rounded-xl border bg-card px-6 py-5">
+          <h2 id="kind-title" className="text-xl font-bold">
+            {t("fill.kind")}
+          </h2>
+          <ChoiceCards
+            name="kind"
+            labelledBy="kind-title"
+            options={KINDS.map((value) => ({ value, label: t(`kind.${value}`), hint: t(`kindHint.${value}`) }))}
+            value={values.kind}
+            onChange={(value) => setValues((v) => ({ ...v, kind: value }))}
+            error={errorText("kind")}
+          />
+        </section>
+      )}
 
       <section aria-labelledby="contact-title" className="flex flex-col gap-4 rounded-xl border bg-card px-6 py-5">
         <h2 id="contact-title" className="text-xl font-bold">
           {t("form.partDetails")}
         </h2>
-        <div className="grid grid-cols-2 gap-5">
-          <FormField
-            id="nic"
-            label={atRisk ? t("fill.guardianNic") : t("fill.nic")}
-            help={t("form.nicHelp")}
-            value={values.nic}
-            onChange={set("nic")}
-            onBlur={() => void lookUp(values.nic)}
-            autoComplete="off"
-            error={errorText("nic")}
-          />
-        </div>
-        {sheet.nic && <SheetWrote text={t("fill.sheetWrote", { value: sheet.nic })} />}
-        {matches.length > 0 && <NicMatches matches={matches} />}
-        <div className="grid grid-cols-2 gap-5">
-          <FormField
-            id="mobile1"
-            type="tel"
-            label={t("fill.mobile1")}
-            value={values.mobile1}
-            onChange={set("mobile1")}
-            error={errorText("mobile1")}
-          />
-          <FormField
-            id="mobile2"
-            type="tel"
-            label={t("fill.mobile2")}
-            value={values.mobile2}
-            onChange={set("mobile2")}
-            error={errorText("mobile2")}
-          />
-        </div>
-        {sheet.phone && <SheetWrote text={t("fill.sheetWrote", { value: sheet.phone })} />}
+        {fields.includes("nic") && (
+          <>
+            <div className="grid grid-cols-2 gap-5">
+              <FormField
+                id="nic"
+                label={atRisk ? t("fill.guardianNic") : t("fill.nic")}
+                help={t("form.nicHelp")}
+                value={values.nic}
+                onChange={set("nic")}
+                onBlur={() => void lookUp(values.nic)}
+                autoComplete="off"
+                error={errorText("nic")}
+              />
+            </div>
+            {sheet.nic && <SheetWrote text={t("fill.sheetWrote", { value: sheet.nic })} />}
+            {matches.length > 0 && <NicMatches matches={matches} />}
+          </>
+        )}
+        {fields.includes("mobile1") && (
+          <>
+            <div className="grid grid-cols-2 gap-5">
+              <FormField
+                id="mobile1"
+                type="tel"
+                label={t("fill.mobile1")}
+                value={values.mobile1}
+                onChange={set("mobile1")}
+                error={errorText("mobile1")}
+              />
+              <FormField
+                id="mobile2"
+                type="tel"
+                label={t("fill.mobile2")}
+                value={values.mobile2}
+                onChange={set("mobile2")}
+                error={errorText("mobile2")}
+              />
+            </div>
+            {sheet.phone && <SheetWrote text={t("fill.sheetWrote", { value: sheet.phone })} />}
+          </>
+        )}
       </section>
 
       {errorList.length > 0 && (

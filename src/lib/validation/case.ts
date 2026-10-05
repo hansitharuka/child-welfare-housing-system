@@ -110,10 +110,14 @@ export function missingRequired(values: CaseValues): CaseErrors {
   return errors;
 }
 
-/** Reads the case form. Missing fields count as empty. */
+/**
+ * Reads the case form. Missing fields count as empty. `mayStayEmpty` names required fields a "submit"
+ * check lets stay empty: on a case from the old sheet, those the sheet left empty (CASE-9, IMP-4).
+ */
 export function parseCaseForm(
   read: (field: CaseField) => string,
   check: CaseCheck,
+  mayStayEmpty: readonly CaseField[] = [],
 ): { ok: true; value: CaseValues } | { ok: false; errors: CaseErrors } {
   const values = {} as Record<CaseField, string | null>;
   const errors: CaseErrors = {};
@@ -130,7 +134,9 @@ export function parseCaseForm(
     delete errors.childName;
   }
   if (check === "submit") {
-    for (const [field, key] of Object.entries(missingRequired(value))) errors[field as CaseField] ??= key;
+    for (const [field, key] of Object.entries(missingRequired(value))) {
+      if (!mayStayEmpty.includes(field as CaseField)) errors[field as CaseField] ??= key;
+    }
   }
   return Object.keys(errors).length === 0 ? { ok: true, value } : { ok: false, errors };
 }
@@ -145,6 +151,9 @@ export type ImportedValues = Pick<CaseValues, ImportedField>;
 
 /** IMP-4: an imported case is missing details while any of these is empty. */
 export const IMPORTED_NEEDS = ["kind", "nic", "mobile1"] as const satisfies readonly ImportedField[];
+
+/** IMP-4: once Head Office has confirmed it, the kind is set, and only these can still be missing. */
+export const CONFIRMED_NEEDS = ["nic", "mobile1"] as const satisfies readonly (typeof IMPORTED_NEEDS)[number][];
 
 /**
  * Reads the imported case's form (IMP-5). Like a draft (CASE-4), an empty field is allowed and a filled

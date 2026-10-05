@@ -4,7 +4,7 @@ import { IMPORTED_FIELDS, type ImportedValues } from "@/lib/validation/case";
 import { writeAudit } from "../audit";
 import { canSeeOffice } from "../permissions";
 import type { Actor, CaseCommandError } from "./commands";
-import { canFillImported } from "./rules";
+import { fillableFields } from "./rules";
 
 export type FillImportedInput = {
   id: string;
@@ -15,8 +15,9 @@ export type FillImportedInput = {
 
 /**
  * IMP-5: the office fills in the kind of help, NIC and phone numbers of a case brought in from the old
- * sheet, while Head Office hasn't yet confirmed it. Every changed field is logged with its old and new
- * value (HIS-1), as any change to a case is.
+ * sheet, while Head Office hasn't yet confirmed it. Once it is confirmed, the office may still fill in a
+ * NIC or phone numbers the case lacks, and nothing else (fillableFields). Every changed field is logged
+ * with its old and new value (HIS-1), as any change to a case is.
  */
 export async function fillImported(
   db: PrismaClient,
@@ -34,21 +35,24 @@ export async function fillImported(
       nic: true,
       mobile1: true,
       mobile2: true,
+      sheetKey: true,
     },
   });
   if (!current || !canSeeOffice(actor, current.dsOfficeId)) return { ok: false, error: "notFound" };
   if (actor.role !== "DS_OFFICER") return { ok: false, error: "roleNotAllowed" };
-  if (!canFillImported(actor.role, current.status)) return { ok: false, error: "notEditable" };
+  const fillable = fillableFields(actor.role, { ...current, fromSheet: current.sheetKey !== null });
+  if (fillable.length === 0) return { ok: false, error: "notEditable" };
   if (current.version !== input.version) return { ok: false, error: "conflict" };
 
   const changed = IMPORTED_FIELDS.filter((field) => current[field] !== input.values[field]);
   if (changed.length === 0) return { ok: true };
+  if (changed.some((field) => !fillable.includes(field))) return { ok: false, error: "notEditable" };
   const pick = (source: Record<string, unknown>) => Object.fromEntries(changed.map((f) => [f, source[f] ?? null]));
 
   const saved = await db.$transaction(async (tx) => {
-    // Head Office may have confirmed it, or someone else saved it, since the form was read.
+    // Head Office may have confirmed or changed it, or someone else saved it, since the form was read.
     const updated = await tx.case.updateMany({
-      where: { id: current.id, version: current.version, status: "IMPORTED" },
+      where: { id: current.id, version: current.version, status: current.status },
       data: {
         ...input.values,
         nicKey: input.values.nic ? nicKey(input.values.nic) : null,

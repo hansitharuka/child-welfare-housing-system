@@ -6,11 +6,13 @@ import {
   canDeleteDraft,
   canEditDetails,
   canFillImported,
+  fillableFields,
   isBeingEntered,
+  mayStayEmpty,
   missingImported,
   mustStayComplete,
 } from "./rules";
-import { type Move, moveRefusal, MOVES, type Mover, movesFrom } from "./transitions";
+import { type Move, moveRefusal, MOVES, type Mover, movesFrom, reasonNeeded } from "./transitions";
 
 const STATUSES: CaseStatus[] = [
   "DRAFT",
@@ -44,25 +46,66 @@ describe("case rules (SPEC sections 4 and 6)", () => {
     }
   });
 
-  it("lets only the office fill in a case from the sheet, until Head Office confirms it (IMP-5)", () => {
+  it("lets only the office fill in a case from the sheet, and after the confirmation only what it lacks (IMP-5)", () => {
+    const empty = { kind: null, nic: null, mobile1: null, mobile2: null };
+    const filled = { kind: "NEW_HOUSE", nic: "880001234V", mobile1: "0712345678", mobile2: null };
     for (const status of STATUSES) {
-      expect(canFillImported("DS_OFFICER", status), status).toBe(status === "IMPORTED");
-      expect(canFillImported("HO_OFFICER", status), status).toBe(false);
-      expect(canFillImported("ADMIN", status), status).toBe(false);
+      const running = status === "VERIFIED" || status === "IN_PROGRESS";
+      const fromSheet = { status, fromSheet: true, ...empty };
+      expect(fillableFields("DS_OFFICER", fromSheet), status).toEqual(
+        status === "IMPORTED" ? ["kind", "nic", "mobile1", "mobile2"] : running ? ["nic", "mobile1", "mobile2"] : [],
+      );
+      expect(canFillImported("DS_OFFICER", { ...fromSheet, ...filled }), status).toBe(status === "IMPORTED");
+      // A case entered in the system follows the case form instead.
+      expect(canFillImported("DS_OFFICER", { ...fromSheet, fromSheet: false }), status).toBe(status === "IMPORTED");
+      expect(canFillImported("HO_OFFICER", fromSheet), status).toBe(false);
+      expect(canFillImported("ADMIN", fromSheet), status).toBe(false);
     }
+    const confirmed = { status: "IN_PROGRESS", fromSheet: true, ...filled } as const;
+    expect(fillableFields("DS_OFFICER", { ...confirmed, nic: null })).toEqual(["nic"]);
+    expect(fillableFields("DS_OFFICER", { ...confirmed, mobile1: null })).toEqual(["mobile1", "mobile2"]);
   });
 
   it("names what a case from the sheet still lacks: the kind of help, the NIC or a phone number (IMP-4)", () => {
-    const empty = { kind: null, nic: null, mobile1: null };
+    const empty = { fromSheet: true, kind: null, nic: null, mobile1: null };
     expect(missingImported({ status: "IMPORTED", ...empty })).toEqual(["kind", "nic", "mobile1"]);
     expect(missingImported({ status: "IMPORTED", ...empty, kind: "NEW_HOUSE", mobile1: "0712345678" })).toEqual([
       "nic",
     ]);
     expect(
-      missingImported({ status: "IMPORTED", kind: "RENOVATION", nic: "880001234V", mobile1: "0712345678" }),
+      missingImported({
+        status: "IMPORTED",
+        fromSheet: true,
+        kind: "RENOVATION",
+        nic: "880001234V",
+        mobile1: "0712345678",
+      }),
     ).toEqual([]);
-    // Once Head Office has confirmed it, the case follows the case form's rules instead.
-    expect(missingImported({ status: "VERIFIED", ...empty })).toEqual([]);
+    // Once Head Office has confirmed it, the kind is set; the NIC and phone can still be missing while it runs.
+    expect(missingImported({ status: "VERIFIED", ...empty, kind: "NEW_HOUSE" })).toEqual(["nic", "mobile1"]);
+    expect(missingImported({ status: "IN_PROGRESS", ...empty, kind: "NEW_HOUSE", nic: "880001234V" })).toEqual([
+      "mobile1",
+    ]);
+    for (const status of ["REJECTED", "STOPPED", "COMPLETED"] as const) {
+      expect(missingImported({ status, ...empty }), status).toEqual([]);
+    }
+    expect(missingImported({ status: "VERIFIED", ...empty, fromSheet: false })).toEqual([]);
+  });
+
+  it("lets Head Office leave empty what the sheet left empty, but not empty what is filled in (CASE-9, IMP-4)", () => {
+    const values = {
+      category: "CHILD_AT_RISK",
+      kind: "NEW_HOUSE",
+      childName: null,
+      name: "පරීක්ෂණ",
+      nic: null,
+      address: "නො. 1",
+      mobile1: null,
+      mobile2: null,
+      remark: null,
+    } as const;
+    expect(mayStayEmpty({ ...values, fromSheet: true }).sort()).toEqual(["childName", "mobile1", "nic"]);
+    expect(mayStayEmpty({ ...values, fromSheet: false })).toEqual([]);
   });
 
   it("deletes drafts only (CASE-8)", () => {
@@ -120,8 +163,15 @@ describe("status changes (SPEC section 6)", () => {
   });
 
   it("needs a reason to send back, reject, stop or reopen (CHK-3, CLS-2, CLS-3)", () => {
-    const withReason = (Object.keys(MOVES) as Move[]).filter((move) => MOVES[move].needsReason);
+    const withReason = (Object.keys(MOVES) as Move[]).filter((move) => MOVES[move].needsReason === true);
     expect(withReason.sort()).toEqual(["reject", "reopen", "sendBack", "stop"]);
+  });
+
+  it("needs a reason to confirm a case from the sheet as rejected or stopped, but not to approve it (IMP-5)", () => {
+    const needing = MOVES.confirmImport.to.filter((to) => reasonNeeded("confirmImport", to));
+    expect(needing).toEqual(["REJECTED", "STOPPED"]);
+    expect(reasonNeeded("stop", "STOPPED")).toBe(true);
+    expect(reasonNeeded("verify", "VERIFIED")).toBe(false);
   });
 
   it("tells the DS office about every decision but the submit and an import check (NTF-1)", () => {

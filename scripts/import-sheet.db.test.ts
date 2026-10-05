@@ -10,7 +10,8 @@ import { ReportError, reportCsv, reportPath, runImport } from "./import-sheet";
 import { CARE_LEAVER_TAB, CHILD_AT_RISK_TAB, makeSampleSheet, type SampleRow } from "./make-sample-sheet";
 
 const db = createTestClient();
-const imported = { sheetKey: { not: null } };
+/** The cases the import makes: their keys start with the tab's category (IMP-7). Other test files' cases from the sheet use keys of their own. */
+const imported = { OR: ["CARE_LEAVER:", "CHILD_AT_RISK:"].map((prefix) => ({ sheetKey: { startsWith: prefix } })) };
 const now = new Date("2026-10-05T09:00:12Z");
 
 let folder: string;

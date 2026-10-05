@@ -157,7 +157,8 @@ export default async function DsCasePage({
               editHref={
                 canEditDetails(viewer.role, details.status)
                   ? `/ds/cases/${details.id}/edit`
-                  : canFillImported(viewer.role, details.status)
+                  : // Once confirmed, the note above the columns links to what the case still lacks.
+                    details.status === "IMPORTED" && canFillImported(viewer.role, details)
                     ? `/ds/cases/${details.id}/fill`
                     : null
               }

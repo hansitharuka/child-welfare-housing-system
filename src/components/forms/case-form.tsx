@@ -47,7 +47,7 @@ const DETAIL_FIELDS: CaseField[] = ["childName", "name", "nic", "address", "mobi
  * kept in state, so a refused save loses nothing (ERR-1, ERR-3). The browser runs the same checks as the
  * server before anything is sent, and submitting shows a summary to confirm first (CASE-5).
  * In "change" mode Head Office corrects a verified case (CASE-9): one save button, and every required
- * field must stay filled in.
+ * field must stay filled in, except those a case from the old sheet came without (`mayStayEmpty`).
  */
 export function CaseForm({
   caseId,
@@ -58,6 +58,7 @@ export function CaseForm({
   returnReason,
   actions,
   mode = "entry",
+  mayStayEmpty = [],
 }: {
   caseId: string;
   /** The version the form was opened with (CASE-10); null for a new case. */
@@ -68,6 +69,8 @@ export function CaseForm({
   returnReason: string | null;
   actions: CaseFormActions;
   mode?: "entry" | "change";
+  /** In "change" mode, the required fields that may stay empty (CASE-9, IMP-4). */
+  mayStayEmpty?: readonly CaseField[];
 }) {
   const t = useTranslations("cases");
   const [state, dispatch, pending] = useActionState(actions.save, EMPTY);
@@ -140,6 +143,7 @@ export function CaseForm({
     const checked = parseCaseForm(
       (field) => values[field],
       chosen === "submit" || mode === "change" ? "submit" : "draft",
+      mode === "change" ? mayStayEmpty : [],
     );
     const noOffice = office.kind === "choose" && chosenOffice === null;
     if (!checked.ok || noOffice) {
@@ -174,7 +178,7 @@ export function CaseForm({
     ...(showOfficeError ? [{ key: "office", target: "dsOfficeId", message: t("form.errors.officeRequired") }] : []),
   ];
 
-  const complete = parseCaseForm((field) => values[field], "submit");
+  const complete = parseCaseForm((field) => values[field], "submit", mode === "change" ? mayStayEmpty : []);
   const incomplete: CaseErrors = complete.ok ? {} : complete.errors;
   const officeChosen = office.kind !== "choose" || chosenOffice !== null;
   const parts = [

@@ -104,7 +104,7 @@ describe("the office fills in a case from the sheet (IMP-5)", () => {
     expect(await db.auditLog.count({ where: { caseId: found.id } })).toBe(0);
   });
 
-  it("is only for the case's own office, and only until Head Office confirms the case", async () => {
+  it("is only for the case's own office, and after Head Office confirms the case only what it lacks", async () => {
     const found = await importedCase(dsA);
     const fill = (actor: Actor, version = 1) => fillImported(db, actor, { id: found.id, version, values: FILLED });
 
@@ -120,6 +120,7 @@ describe("the office fills in a case from the sheet (IMP-5)", () => {
     // A form opened before someone else's save (CASE-10).
     expect(await fill(dsA, 0)).toEqual({ ok: false, error: "conflict" });
 
+    // Once confirmed, the kind is Head Office's (fillableFields); confirm-import.db.test.ts fills a NIC.
     await db.case.update({ where: { id: found.id }, data: { status: "VERIFIED" } });
     expect(await fill(dsA)).toEqual({ ok: false, error: "notEditable" });
     expect(await db.case.findUniqueOrThrow({ where: { id: found.id } })).toMatchObject({ kind: null, version: 1 });
@@ -150,7 +151,11 @@ describe("the details missing filter (IMP-4)", () => {
       await importedCase(ds, { ...FILLED, mobile1: null, mobile2: "0712345678" }),
     ];
     const complete = await importedCase(ds, { ...FILLED });
-    const confirmed = await importedCase(ds, { status: "VERIFIED" });
+    // Confirmed: it stays while running with no NIC or first phone number, not once those are in.
+    const confirmedLacking = await importedCase(ds, { ...FILLED, status: "IN_PROGRESS", nic: null });
+    lacking.push(confirmedLacking);
+    const confirmed = await importedCase(ds, { ...FILLED, status: "VERIFIED" });
+    const closed = await importedCase(ds, { status: "REJECTED" });
     const draft = await db.case.create({
       data: {
         id: randomUUID(),
@@ -168,7 +173,13 @@ describe("the details missing filter (IMP-4)", () => {
 
     const all = await listCases(db, ds, {});
     const flag = (id: string) => all.rows.find((row) => row.id === id)?.detailsMissing;
-    expect([flag(complete.id), flag(confirmed.id), flag(draft.id)]).toEqual([false, false, false]);
+    expect([flag(complete.id), flag(confirmed.id), flag(closed.id), flag(draft.id)]).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect(flag(confirmedLacking.id)).toBe(true);
     expect(all.rows.some((row) => row.id === elsewhere.id)).toBe(false);
 
     // Filling a case in takes it off the list.

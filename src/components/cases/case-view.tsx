@@ -50,13 +50,15 @@ function ReasonBox({ id, title, reason, tone }: { id: string; title: string; rea
 /**
  * What the reader must see first, above the case's columns: Head Office's reason when the case was sent
  * back or rejected, and the DS office's note while Head Office has the case. On a case brought in from
- * the old sheet, the DS office reads what it may fill in, and what is still missing (IMP-4, IMP-5).
+ * the old sheet, the DS office reads what it may fill in and what is still missing, and Head Office
+ * that the case waits for its confirmation (IMP-4, IMP-5).
  */
 export async function CaseNotes({ details, audience }: { details: CaseDetails; audience: "ds" | "ho" }) {
   const t = await getTranslations("cases");
   const waiting = audience === "ds" && (details.status === "SUBMITTED" || details.status === "VERIFIED");
-  const imported = audience === "ds" && details.status === "IMPORTED";
   const missing = missingImported(details);
+  const imported = details.status === "IMPORTED" || missing.length > 0;
+  const missingFields = { fields: missing.map((field) => t(`page.fields.${field}`)).join(", ") };
   if (details.returnReason === null && details.rejectReason === null && !waiting && !imported) return null;
   return (
     <div className="flex flex-col gap-3">
@@ -71,14 +73,18 @@ export async function CaseNotes({ details, audience }: { details: CaseDetails; a
           {details.status === "SUBMITTED" ? t("page.waiting") : t("page.verifiedDs")}
         </p>
       )}
-      {imported && (
+      {imported && audience === "ho" && (
         <div className="flex flex-col gap-2.5 rounded-lg bg-[#E4EDF8] px-4 py-3 text-[15px] text-[#1E4E8C]">
-          <p>{t("page.importedDs")}</p>
+          {details.status === "IMPORTED" && <p>{t("page.importedHo")}</p>}
+          {missing.length > 0 && <p className="font-semibold">{t("page.importedMissingHo", missingFields)}</p>}
+        </div>
+      )}
+      {imported && audience === "ds" && (
+        <div className="flex flex-col gap-2.5 rounded-lg bg-[#E4EDF8] px-4 py-3 text-[15px] text-[#1E4E8C]">
+          {details.status === "IMPORTED" && <p>{t("page.importedDs")}</p>}
           {missing.length > 0 && (
             <>
-              <p className="font-semibold">
-                {t("page.importedMissing", { fields: missing.map((field) => t(`page.fields.${field}`)).join(", ") })}
-              </p>
+              <p className="font-semibold">{t("page.importedMissing", missingFields)}</p>
               <Link
                 href={`/ds/cases/${details.id}/fill`}
                 className="flex h-11 items-center self-start rounded-lg bg-primary px-5 font-semibold text-primary-foreground"

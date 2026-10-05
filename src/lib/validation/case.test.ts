@@ -108,6 +108,25 @@ describe("saving a draft (CASE-4)", () => {
   });
 });
 
+describe("Head Office changing a verified case from the sheet (CASE-9, IMP-4)", () => {
+  it("lets the required fields the sheet left empty stay empty, and still checks what is typed", () => {
+    const sheet = { ...COMPLETE, nic: "", mobile1: "" };
+    expect(parseCaseForm(form(sheet), "submit").ok).toBe(false);
+    expect(parseCaseForm(form(sheet), "submit", ["nic", "mobile1"])).toMatchObject({
+      ok: true,
+      value: { nic: null, mobile1: null },
+    });
+    expect(parseCaseForm(form({ ...sheet, nic: "12345" }), "submit", ["nic", "mobile1"])).toEqual({
+      ok: false,
+      errors: { nic: "nicInvalid" },
+    });
+    expect(parseCaseForm(form({ ...sheet, address: "" }), "submit", ["nic", "mobile1"])).toEqual({
+      ok: false,
+      errors: { address: "addressRequired" },
+    });
+  });
+});
+
 describe("parseOfficeId", () => {
   it("reads a positive whole number, and nothing else", () => {
     expect(parseOfficeId("12")).toBe(12);

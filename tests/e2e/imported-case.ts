@@ -1,8 +1,9 @@
 /**
  * Makes a made-up case as the sheet import leaves it (SEC-11), at Homagama: no kind, NIC or phone
  * number, with notes from the sheet. The sheet's three phone numbers couldn't all be stored, so the cell
- * is kept. Prints the case's id, name and that cell as JSON. Its name starts with TEST_CASE_NAME, so
- * cleanup.ts removes it before the next run.
+ * is kept. `--kind NEW_HOUSE` makes it as if the office had already filled in the kind of help. Prints
+ * the case's id, name and that cell as JSON. Its name starts with TEST_CASE_NAME, so cleanup.ts removes
+ * it before the next run.
  *
  * It runs as its own process (`npx tsx`), like cleanup.ts, because Playwright can't load Prisma's
  * generated client.
@@ -25,11 +26,14 @@ async function main() {
     const name = `${TEST_CASE_NAME} පත්‍රිකාව ${Date.now()}`;
     const office = await prisma.dsOffice.findUniqueOrThrow({ where: { code: "HMG" } });
     const creator = await prisma.user.findFirstOrThrow({ where: { username: "ho0001" } });
+    const kindAt = process.argv.indexOf("--kind");
+    const kind = kindAt > 0 && process.argv[kindAt + 1] === "NEW_HOUSE" ? "NEW_HOUSE" : null;
     await prisma.case.create({
       data: {
         id,
         dsOfficeId: office.id,
         category: "CARE_LEAVER",
+        kind,
         status: "IMPORTED",
         name,
         address: "නො. 1, පරීක්ෂණ පාර",
