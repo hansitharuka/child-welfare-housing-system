@@ -2,7 +2,8 @@
 
 import { useTranslations } from "next-intl";
 import { useActionState } from "react";
-import { FormError, FormField } from "@/components/forms/form-field";
+import { FormError } from "@/components/forms/form-field";
+import { PasswordField } from "@/components/forms/password-field";
 import { Button } from "@/components/ui/button";
 import { changePassword, type ChangePasswordState } from "../actions";
 
@@ -14,20 +15,18 @@ export function ChangePasswordForm() {
 
   return (
     <form action={action} className="flex flex-col gap-5" noValidate>
-      <FormField
+      <PasswordField
         id="current"
         name="current"
-        type="password"
         label={t("current")}
         autoComplete="current-password"
         invalid={currentInvalid}
         errorId="change-password-error"
         required
       />
-      <FormField
+      <PasswordField
         id="next"
         name="next"
-        type="password"
         label={t("next")}
         help={t("nextHelp")}
         autoComplete="new-password"
@@ -36,10 +35,9 @@ export function ChangePasswordForm() {
         errorId="change-password-error"
         required
       />
-      <FormField
+      <PasswordField
         id="confirm"
         name="confirm"
-        type="password"
         label={t("confirm")}
         autoComplete="new-password"
         invalid={nextInvalid}
