@@ -39,6 +39,7 @@ export function formValues(details: CaseDetails | null): CaseFormValues {
     name: details?.name ?? "",
     nic: details?.nic ?? "",
     address: details?.address ?? "",
+    gnDivision: details?.gnDivision ?? "",
     mobile1: details?.mobile1 ?? "",
     mobile2: details?.mobile2 ?? "",
     remark: details?.remark ?? "",

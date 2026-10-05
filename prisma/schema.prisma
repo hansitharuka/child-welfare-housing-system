@@ -273,6 +273,8 @@ model Case {
   /// The NIC in its 12-digit form, so old and new numbers match (CASE-6).
   nicKey           String?        @map("nic_key")
   address          String?
+  /// The Grama Niladhari division (ග්‍රාම නිලධාරී වසම), as typed. Optional.
+  gnDivision       String?        @map("gn_division")
   mobile1          String?        @map("mobile_1")
   mobile2          String?        @map("mobile_2")
   remark           String?

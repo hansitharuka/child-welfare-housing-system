@@ -77,6 +77,7 @@ const CASE_SELECT = {
   name: true,
   nic: true,
   address: true,
+  gnDivision: true,
   mobile1: true,
   mobile2: true,
   remark: true,

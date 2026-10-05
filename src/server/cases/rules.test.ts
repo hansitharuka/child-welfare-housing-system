@@ -100,11 +100,12 @@ describe("case rules (SPEC sections 4 and 6)", () => {
       name: "පරීක්ෂණ",
       nic: null,
       address: "නො. 1",
+      gnDivision: null,
       mobile1: null,
       mobile2: null,
       remark: null,
     } as const;
-    expect(mayStayEmpty({ ...values, fromSheet: true }).sort()).toEqual(["childName", "mobile1", "nic"]);
+    expect(mayStayEmpty({ ...values, fromSheet: true }).sort()).toEqual(["childName"]);
     expect(mayStayEmpty({ ...values, fromSheet: false })).toEqual([]);
   });
 

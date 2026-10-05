@@ -18,6 +18,7 @@ export function caseFieldRows(t: CasesT, details: CaseDetails): { label: string;
     { label: atRisk ? t("page.fields.guardianName") : t("page.fields.name"), value: details.name ?? none },
     { label: t("page.fields.nic"), value: details.nic ?? none },
     { label: t("page.fields.address"), value: details.address ?? none },
+    { label: t("page.fields.gnDivision"), value: details.gnDivision ?? none },
     { label: t("page.fields.mobile1"), value: details.mobile1 ?? none },
     { label: t("page.fields.mobile2"), value: details.mobile2 ?? none },
     { label: t("page.fields.remark"), value: details.remark ?? none },

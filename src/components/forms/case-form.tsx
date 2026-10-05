@@ -40,7 +40,16 @@ export type CaseFormActions = DocumentActions & {
 type Intent = "save" | "submit";
 
 const EMPTY: CaseFormState = { errors: {}, error: null };
-const DETAIL_FIELDS: CaseField[] = ["childName", "name", "nic", "address", "mobile1", "mobile2", "remark"];
+const DETAIL_FIELDS: CaseField[] = [
+  "childName",
+  "name",
+  "nic",
+  "address",
+  "gnDivision",
+  "mobile1",
+  "mobile2",
+  "remark",
+];
 
 /**
  * CASE-1: the case form on one page, in four numbered parts, as in the prototype. Everything typed is
@@ -288,6 +297,15 @@ export function CaseForm({
           />
           <div className="grid grid-cols-2 gap-5">
             <FormField
+              id="gnDivision"
+              label={t("form.gnDivision")}
+              value={values.gnDivision}
+              onChange={set("gnDivision")}
+              error={errorText("gnDivision")}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-5">
+            <FormField
               id="mobile1"
               type="tel"
               label={t("form.mobile1")}
@@ -457,6 +475,7 @@ export function CaseForm({
             { label: atRisk ? t("form.confirm.guardianName") : t("form.confirm.name"), value: values.name },
             { label: t("form.confirm.nic"), value: normaliseNic(values.nic) },
             { label: t("form.confirm.address"), value: values.address },
+            { label: t("form.confirm.gnDivision"), value: values.gnDivision },
             {
               label: t("form.confirm.phones"),
               value: [values.mobile1, values.mobile2].filter((p) => p.trim() !== "").join(", "),

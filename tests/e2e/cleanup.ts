@@ -3,10 +3,11 @@
  * - removes the DS offices and building stages they added (everything carries TEST_MARKER), so a
  *   developer's lists don't fill up with test entries. An office with cases, or a stage a case has
  *   reached, stays: load-test cases (scripts/seed-load.ts) may use them, and they go once those are removed;
- * - disables the DS officer accounts they created, which frees those offices for the next run, since
- *   an office has only one active officer (ADM-3). The accounts stay, because the audit log refers to them;
  * - deletes the cases they created (named with TEST_CASE_NAME), with their files and photos, decisions,
- *   release, installments, stage updates and notifications.
+ *   release, installments, stage updates and notifications;
+ * - deletes the DS officer accounts they created (named TEST_OFFICER_NAME), which frees those offices for
+ *   the next run, since an office has only one active officer (ADM-3). Their audit records stay, with an
+ *   actor id that no longer exists. An account that still holds case records is disabled instead.
  * Runs only where sample accounts are allowed (development and test databases).
  */
 import "dotenv/config";
@@ -27,10 +28,6 @@ async function main() {
     const stages = await prisma.stageDefinition.deleteMany({
       where: { nameSi: { endsWith: ` ${TEST_MARKER}` }, updates: { none: {} } },
     });
-    const officers = await prisma.user.updateMany({
-      where: { name: TEST_OFFICER_NAME, role: "DS_OFFICER", banned: false },
-      data: { banned: true },
-    });
     // Cases the tests created, with everything that hangs off them. Their audit records stay (HIS-3).
     const cases = await prisma.case.findMany({ where: { name: { startsWith: TEST_CASE_NAME } }, select: { id: true } });
     const caseIds = cases.map((c) => c.id);
@@ -46,8 +43,30 @@ async function main() {
     await prisma.decision.deleteMany({ where: { caseId: { in: caseIds } } });
     await prisma.case.deleteMany({ where: { id: { in: caseIds } } });
     for (const name of files.flatMap((f) => [f.storedName, f.thumbName])) if (name) await deleteStoredFile(name);
+    // The officer accounts the tests created, now that their cases are gone. Sessions and sign-in rows go
+    // with them (cascade); their audit records stay (HIS-3). One still holding case records is only disabled.
+    const officerWhere = { name: TEST_OFFICER_NAME, role: "DS_OFFICER" };
+    const deletable = await prisma.user.findMany({
+      where: {
+        ...officerWhere,
+        casesCreated: { none: {} },
+        decisions: { none: {} },
+        filesUploaded: { none: {} },
+        releases: { none: {} },
+        stageUpdates: { none: {} },
+      },
+      select: { id: true },
+    });
+    const officerIds = deletable.map((u) => u.id);
+    await prisma.notification.deleteMany({ where: { userId: { in: officerIds } } });
+    const deleted = await prisma.user.deleteMany({ where: { id: { in: officerIds } } });
+    const disabled = await prisma.user.updateMany({
+      where: { ...officerWhere, banned: false },
+      data: { banned: true },
+    });
     console.log(
-      `Removed test entries: ${offices.count} offices, ${stages.count} stages, ${caseIds.length} cases; disabled ${officers.count} test officers.`,
+      `Removed test entries: ${offices.count} offices, ${stages.count} stages, ${caseIds.length} cases, ` +
+        `${deleted.count} test officers; disabled ${disabled.count} test officers.`,
     );
   } finally {
     await prisma.$disconnect();

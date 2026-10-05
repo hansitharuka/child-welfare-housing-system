@@ -1,7 +1,7 @@
 import { getTranslations } from "next-intl/server";
-import { signOut } from "@/app/(auth)/actions";
 import { Bell } from "./bell";
 import { NavLinks } from "./nav-links";
+import { SignOutButton } from "./sign-out-button";
 import type { Area, LiveCount, NavEntry } from "./types";
 
 /** Header, menu and page area shared by every role's screens, as in the prototype (UI-7). */
@@ -41,14 +41,7 @@ export async function AppShell({
           <span className="text-base" aria-label={`${t("shell.signedInAs")} ${userName}`}>
             {userName}
           </span>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="h-10 rounded-lg border border-header-muted/60 px-4 text-[15px] font-semibold hover:bg-white/10"
-            >
-              {t("shell.signOut")}
-            </button>
-          </form>
+          <SignOutButton />
         </div>
       </header>
       <NavLinks

@@ -24,20 +24,13 @@ test("AC-5: submitting with required fields empty saves nothing and lists every 
 
   const summary = page.locator("#case-errors");
   await expect(summary).toContainText("යැවීමට පෙර මේවා නිවැරදි කරන්න:");
-  for (const message of [
-    "කාණ්ඩය තෝරන්න.",
-    "ආධාරයේ වර්ගය තෝරන්න.",
-    "නම ඇතුළත් කරන්න.",
-    "ජාතික හැඳුනුම්පත් අංකය ඇතුළත් කරන්න.",
-    "ලිපිනය ඇතුළත් කරන්න.",
-    "දුරකතන අංකය ඇතුළත් කරන්න.",
-  ]) {
+  for (const message of ["කාණ්ඩය තෝරන්න.", "ආධාරයේ වර්ගය තෝරන්න.", "නම ඇතුළත් කරන්න."]) {
     await expect(summary.getByText(message)).toBeVisible();
   }
-  // Each error also sits next to its field.
-  await expect(page.locator("#nic-error")).toHaveText("ජාතික හැඳුනුම්පත් අංකය ඇතුළත් කරන්න.");
-  await expect(page.locator("#mobile1-error")).toHaveText("දුරකතන අංකය ඇතුළත් කරන්න.");
-  await expect(page.getByLabel("ජාතික හැඳුනුම්පත් අංකය *")).toHaveAttribute("aria-invalid", "true");
+  // Each error also sits next to its field; the NIC, address and phone numbers are optional.
+  await expect(page.locator("#name-error")).toHaveText("නම ඇතුළත් කරන්න.");
+  await expect(page.getByLabel("නම *", { exact: true })).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#nic-error")).toHaveCount(0);
   // Nothing was saved: no confirmation, and the page did not move to a saved case.
   await expect(page.getByRole("dialog")).toBeHidden();
   await expect(page).toHaveURL(/\/ds\/cases\/new$/);
@@ -52,7 +45,7 @@ test("AC-6: a wrong NIC is refused; both formats are accepted and kept as typed"
   await expect(page.getByLabel("නම *", { exact: true })).toHaveValue(`${TEST_CASE_NAME} ඒ`);
 
   const nic = nicWithOldForm();
-  await page.getByLabel("ජාතික හැඳුනුම්පත් අංකය *").fill(oldFormOf(nic).toLowerCase());
+  await page.getByLabel("ජාතික හැඳුනුම්පත් අංකය", { exact: true }).fill(oldFormOf(nic).toLowerCase());
   const { number } = await submit(page, "ds");
   expect(number).toMatch(new RegExp(`^HMG-${YEAR}-\\d{3,}$`));
   await expect(page.getByText(oldFormOf(nic), { exact: true })).toBeVisible();
@@ -92,15 +85,15 @@ test("AC-7: a duplicate NIC shows the number and name in the same DS, only the n
 
   // The same office, typing the old form of the same number.
   await page.goto("/ds/cases/new");
-  await page.getByLabel("ජාතික හැඳුනුම්පත් අංකය *").fill(oldFormOf(nic));
-  await page.getByLabel("ලිපිනය *").focus();
+  await page.getByLabel("ජාතික හැඳුනුම්පත් අංකය", { exact: true }).fill(oldFormOf(nic));
+  await page.getByLabel("ලිපිනය", { exact: true }).focus();
   await expect(page.getByTestId("nic-matches")).toContainText(`${first.number} (${TEST_CASE_NAME} සී)`);
 
   // Another office: the number and the office, never the name. Submitting still works.
   await asUser(browser, "ds0103", async (kaduwela) => {
     await kaduwela.goto("/ds/cases/new");
     await fillCase(kaduwela, { name: `${TEST_CASE_NAME} ඩී`, nic });
-    await kaduwela.getByLabel("ලිපිනය *").focus();
+    await kaduwela.getByLabel("ලිපිනය", { exact: true }).focus();
     const warning = kaduwela.getByTestId("nic-matches");
     await expect(warning).toContainText(`හෝමාගම ප්‍රා.ලේ. කාර්යාලයේ ${first.number}`);
     await expect(warning).not.toContainText(TEST_CASE_NAME);
@@ -146,12 +139,12 @@ test("a draft keeps what was typed, shows in the to-do panel, and can be deleted
   await page.goto("/ds/cases/new");
   const name = `${TEST_CASE_NAME} එෆ් ${Date.now()}`;
   await page.getByLabel("නම *", { exact: true }).fill(name);
-  await page.getByLabel("දුරකතන අංකය *", { exact: true }).fill("123");
+  await page.getByLabel("දුරකතන අංකය", { exact: true }).fill("123");
   await page.getByRole("button", { name: SAVE_DRAFT }).click();
   // Format rules still apply to a draft.
   await expect(page.locator("#mobile1-error")).toContainText("දුරකතන අංකය වැරදියි");
 
-  await page.getByLabel("දුරකතන අංකය *", { exact: true }).fill("");
+  await page.getByLabel("දුරකතන අංකය", { exact: true }).fill("");
   await page.getByRole("button", { name: SAVE_DRAFT }).click();
   await expect(page).toHaveURL(/\/ds\/cases\/[0-9a-f-]{36}\/edit\?notice=saved$/);
   await expect(page.getByLabel("නම *", { exact: true })).toHaveValue(name);

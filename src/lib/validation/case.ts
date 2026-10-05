@@ -20,6 +20,7 @@ export const CASE_FIELDS = [
   "name",
   "nic",
   "address",
+  "gnDivision",
   "mobile1",
   "mobile2",
   "remark",
@@ -32,10 +33,7 @@ export type CaseErrorKey =
   | "childNameRequired"
   | "nameRequired"
   | "guardianNameRequired"
-  | "nicRequired"
   | "nicInvalid"
-  | "addressRequired"
-  | "mobileRequired"
   | "mobileInvalid"
   | "tooShort"
   | "tooLong";
@@ -47,6 +45,7 @@ export type CaseValues = {
   name: string | null;
   nic: string | null;
   address: string | null;
+  gnDivision: string | null;
   mobile1: string | null;
   mobile2: string | null;
   remark: string | null;
@@ -83,6 +82,7 @@ const FIELD_SCHEMAS: Record<CaseField, z.ZodType<string | null, string>> = {
     .refine((value) => value === "" || isValidNic(value), { error: "nicInvalid" })
     .transform((value) => value || null),
   address: text(1, 300),
+  gnDivision: text(1, 100),
   mobile1: z
     .string()
     .transform(normalisePhone)
@@ -96,7 +96,10 @@ const FIELD_SCHEMAS: Record<CaseField, z.ZodType<string | null, string>> = {
   remark: text(1, 1000),
 };
 
-/** The required fields that are still empty (CASE-2). Submitting needs none (CASE-5). */
+/**
+ * The required fields that are still empty (CASE-2). Submitting needs none (CASE-5). The NIC, address,
+ * GN division and phone numbers are optional: some beneficiaries and guardians have none.
+ */
 export function missingRequired(values: CaseValues): CaseErrors {
   const atRisk = values.category === "CHILD_AT_RISK";
   const errors: CaseErrors = {};
@@ -104,9 +107,6 @@ export function missingRequired(values: CaseValues): CaseErrors {
   if (!values.kind) errors.kind = "kindRequired";
   if (atRisk && !values.childName) errors.childName = "childNameRequired";
   if (!values.name) errors.name = atRisk ? "guardianNameRequired" : "nameRequired";
-  if (!values.nic) errors.nic = "nicRequired";
-  if (!values.address) errors.address = "addressRequired";
-  if (!values.mobile1) errors.mobile1 = "mobileRequired";
   return errors;
 }
 
@@ -133,6 +133,8 @@ export function parseCaseForm(
     value.childName = null;
     delete errors.childName;
   }
+  // A lone phone number goes first, as on the imported case's form.
+  if (!value.mobile1 && !errors.mobile1 && value.mobile2) [value.mobile1, value.mobile2] = [value.mobile2, null];
   if (check === "submit") {
     for (const [field, key] of Object.entries(missingRequired(value))) {
       if (!mayStayEmpty.includes(field as CaseField)) errors[field as CaseField] ??= key;

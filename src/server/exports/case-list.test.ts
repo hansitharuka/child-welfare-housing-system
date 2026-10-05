@@ -17,6 +17,7 @@ const released: ExportRow = {
   childName: "සී. පරීක්ෂණ",
   nic: "880001234V",
   address: "1, පරීක්ෂණ පාර, හෝමාගම",
+  gnDivision: "හෝමාගම නැගෙනහිර",
   mobile1: "0771234567",
   mobile2: null,
   districtName: "කොළඹ",

@@ -25,6 +25,7 @@ export type ExportRow = {
   childName: string | null;
   nic: string | null;
   address: string | null;
+  gnDivision: string | null;
   mobile1: string | null;
   mobile2: string | null;
   districtName: string;
@@ -60,6 +61,7 @@ export async function caseListRows(db: PrismaClient, viewer: Viewer, filter: Lis
       childName: true,
       nic: true,
       address: true,
+      gnDivision: true,
       mobile1: true,
       mobile2: true,
       remark: true,
@@ -107,6 +109,7 @@ export function caseListColumns(t: CasesT): Column<ExportRow>[] {
     { header: t("export.columns.childName"), width: 26, value: (r) => r.childName },
     { header: t("export.columns.nic"), width: 16, value: (r) => r.nic },
     { header: t("export.columns.address"), width: 40, value: (r) => r.address },
+    { header: t("export.columns.gnDivision"), width: 22, value: (r) => r.gnDivision },
     { header: t("export.columns.mobile1"), width: 14, value: (r) => r.mobile1 },
     { header: t("export.columns.mobile2"), width: 14, value: (r) => r.mobile2 },
     { header: t("export.columns.district"), width: 16, value: (r) => r.districtName },

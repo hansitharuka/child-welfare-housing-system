@@ -91,7 +91,7 @@ Amounts are whole rupees stored as integers. Nothing listed here is ever deleted
 | District | name, province | 25 rows, seeded |
 | DsOffice | name, code, district, active | `code` is 3 capital letters, unique nationally, and used in case numbers. Name is unique within its district |
 | User | full name, designation, mobile, email, username, role, DS office, active, must change password, last sign-in, failed sign-ins, locked until | DS office is required for DS officers only, and an office has at most one active DS officer (ADM-3). Username is generated (ADM-2) and unique |
-| Case | case number, DS office, category, kind, status, name, child's name, NIC, NIC key, address, mobile 1, mobile 2, remark, sheet reference (key, row and serial number), sheet notes, created by, submitted at, verified at, completed at, status before stop, version | See CASE-2 for field rules. The sheet reference and notes are set only on a case brought in from the sheet: the key is unique (IMP-7), and a case with a key always has its row (a database check). `version` goes up by one on every save and every installment, stage or status change (CASE-10). `submitted at` is the latest submit. While the case is stopped, `status before stop` holds the status it goes back to (CLS-3); the stop's day and reason are its Decision |
+| Case | case number, DS office, category, kind, status, name, child's name, NIC, NIC key, address, GN division, mobile 1, mobile 2, remark, sheet reference (key, row and serial number), sheet notes, created by, submitted at, verified at, completed at, status before stop, version | See CASE-2 for field rules. The sheet reference and notes are set only on a case brought in from the sheet: the key is unique (IMP-7), and a case with a key always has its row (a database check). `version` goes up by one on every save and every installment, stage or status change (CASE-10). `submitted at` is the latest submit. While the case is stopped, `status before stop` holds the status it goes back to (CLS-3); the stop's day and reason are its Decision |
 | CaseNumberCounter | DS office, year, last number | One row per office and year. Taking the next number locks the row, so two submits at once never share a number (CASE-5) |
 | Decision | case, type, reason, by, at | Types: submit, verify, send back, reject, stop, reopen, confirm import |
 | Release | case (one per case), released on, amount, reference number, note, by, at | Amount is always 2,000,000 (a database check) |
@@ -202,12 +202,15 @@ Values used across the system:
   | Kind of help | Yes | `NEW_HOUSE` or `RENOVATION` |
   | Child's name | For children at risk | 2–100 characters |
   | Name (care leaver or guardian) | Yes | 2–100 characters |
-  | NIC | Yes | 9 digits and V or X (old), or 12 digits (new). Stored in capitals without spaces |
-  | Address | Yes | Up to 300 characters |
-  | Mobile 1 | Yes | `^0\d{9}$` once spaces are removed |
+  | NIC | No | 9 digits and V or X (old), or 12 digits (new). Stored in capitals without spaces |
+  | Address | No | Up to 300 characters |
+  | GN division (ග්‍රාම නිලධාරී වසම) | No | Up to 100 characters, as typed |
+  | Mobile 1 | No | `^0\d{9}$` once spaces are removed. A lone number typed as mobile 2 is stored as mobile 1 |
   | Mobile 2 | No | Same rule as mobile 1 |
   | Remark | No | Up to 1,000 characters |
   | Other documents | No | PDF, JPEG or PNG; up to 10 MB each; up to 10 files |
+
+  The NIC, address and phone numbers became optional on 5 Oct 2026: some beneficiaries and guardians have none. The GN division was added the same day, because some offices' sheets record it.
 
   Each document is uploaded as soon as it is chosen and joins the case when the form is saved. While a case can be edited, a document can be taken off it; the file itself is kept.
 

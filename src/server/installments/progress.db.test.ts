@@ -47,6 +47,7 @@ const values = (overrides: Partial<CaseValues> = {}): CaseValues => ({
   name: "ප්‍රගති පරීක්ෂණ",
   nic: nextNic(),
   address: "නො. 3, පරීක්ෂණ පාර",
+  gnDivision: null,
   mobile1: "0710000003",
   mobile2: null,
   remark: null,

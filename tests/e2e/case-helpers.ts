@@ -21,11 +21,9 @@ export async function fillCase(page: Page, input: CaseInput) {
   await page.getByRole("radio", { name: /^නව නිවසක් ඉදිකිරීම/ }).check();
   if (input.atRisk) await page.getByLabel("දරුවාගේ නම *").fill("පරීක්ෂණ දරුවා");
   await page.getByLabel(input.atRisk ? "භාරකරුගේ නම *" : "නම *", { exact: true }).fill(input.name);
-  await page
-    .getByLabel(input.atRisk ? "භාරකරුගේ ජාතික හැඳුනුම්පත් අංකය *" : "ජාතික හැඳුනුම්පත් අංකය *")
-    .fill(input.nic);
-  await page.getByLabel("ලිපිනය *").fill("නො. 1, පරීක්ෂණ පාර, නගරය");
-  await page.getByLabel("දුරකතන අංකය *", { exact: true }).fill("071 000 0401");
+  await page.getByLabel(input.atRisk ? "භාරකරුගේ ජාතික හැඳුනුම්පත් අංකය" : "ජාතික හැඳුනුම්පත් අංකය").fill(input.nic);
+  await page.getByLabel("ලිපිනය", { exact: true }).fill("නො. 1, පරීක්ෂණ පාර, නගරය");
+  await page.getByLabel("දුරකතන අංකය", { exact: true }).fill("071 000 0401");
 }
 
 /** Sends the filled form to Head Office through the confirmation, and returns the new case's page. */

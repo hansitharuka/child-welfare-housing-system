@@ -94,7 +94,7 @@ export function AddOfficeForm({ action }: { action: Action }) {
       submitLabel={t("add")}
       fields={[
         { name: "nameSi", label: t("nameSi") },
-        { name: "nameEn", label: t("nameEn"), help: t("nameEnHint") },
+        { name: "nameEn", label: t("nameEn") },
         { name: "code", label: t("code"), help: t("codeHint"), width: "w-72" },
       ]}
     />

@@ -1,5 +1,6 @@
 "use client";
 
+import { LoaderCircle } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useActionState } from "react";
 import { FormError, FormField } from "@/components/forms/form-field";
@@ -37,7 +38,13 @@ export function SignInForm({ next }: { next: string }) {
         required
       />
       {state.error && <FormError id="sign-in-error" message={t(`errors.${state.error}`)} />}
-      <Button type="submit" disabled={pending} className="h-12 rounded-lg text-[17px] font-semibold">
+      <Button
+        type="submit"
+        disabled={pending}
+        aria-busy={pending}
+        className="h-12 gap-2 rounded-lg text-[17px] font-semibold"
+      >
+        {pending && <LoaderCircle aria-hidden="true" className="size-5 animate-spin" />}
         {pending ? t("submitting") : t("submit")}
       </Button>
     </form>
