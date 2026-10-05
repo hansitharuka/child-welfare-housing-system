@@ -33,6 +33,7 @@ const FIELDS = [
   "name",
   "nic",
   "address",
+  "gnDivision",
   "mobile1",
   "mobile2",
   "remark",

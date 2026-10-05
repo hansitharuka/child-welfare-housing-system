@@ -57,7 +57,7 @@ test("AC-8, AC-9, AC-10: DS submits, Head Office sends back, DS corrects, Head O
   await expect(ds.getByRole("link", { name: /^දැනුම්දීම්, නොකියවූ \d+$/ })).toBeVisible();
   await todo.getByText(`${name}: ආපසු එවා ඇත`).click();
   await expect(ds.getByText("ලිපිනයේ ගම සඳහන් කරන්න.")).toBeVisible();
-  await ds.getByLabel("ලිපිනය *").fill("නො. 1, පරීක්ෂණ පාර, පරීක්ෂණ ගම");
+  await ds.getByLabel("ලිපිනය", { exact: true }).fill("නො. 1, පරීක්ෂණ පාර, පරීක්ෂණ ගම");
   await ds.getByRole("button", { name: SEND }).click();
   await ds.getByRole("button", { name: CONFIRM }).click();
   await expect(ds.getByTestId("case-number")).toHaveText(number);
@@ -146,7 +146,7 @@ test("Head Office corrects a verified case and its release, and both are saved (
   // CASE-9: one save button, and the change is kept.
   await ho.getByRole("link", { name: "විස්තර සංස්කරණය කරන්න" }).click();
   await expect(ho.getByRole("button", { name: SEND })).toBeHidden();
-  await ho.getByLabel("දුරකතන අංකය *", { exact: true }).fill("077 000 0909");
+  await ho.getByLabel("දුරකතන අංකය", { exact: true }).fill("077 000 0909");
   await ho.getByRole("button", { name: "වෙනස්කම් සුරකින්න" }).click();
   await expect(ho).toHaveURL(`${url}?notice=changed`);
   await expect(ho.getByText("0770000909", { exact: true })).toBeVisible();

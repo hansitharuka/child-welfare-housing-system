@@ -92,7 +92,7 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 - **Database test files share one schema per run** and run one after another. A test must not assume it sees only its own rows, and must put back anything shared that it changes. A test that adds a DS officer takes a free office from `freeOfficeId()` (`tests/db/client.ts`).
 - **End-to-end tests add data.** `tests/e2e/cleanup.ts` runs before each run:
   - It removes the offices and stages the tests added, which carry `TEST_MARKER`.
-  - It disables the officer accounts they created, named "ඊ. පරීක්ෂණ", which frees their Gampaha offices. The accounts stay, because the audit log refers to them.
+  - It deletes the officer accounts they created, named "ඊ. පරීක්ෂණ", which frees their Gampaha offices. This is the one exception to ADM-7, for test accounts only. Their audit records stay, with an actor id that no longer exists (`audit_log.actor_id` has no foreign key). An account that still holds case records is only disabled.
   - A sample-account reset disables any other active officer at a sample office.
 
 ### Cases (Phase 4)

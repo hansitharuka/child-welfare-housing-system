@@ -80,8 +80,6 @@ export function AccountForm({
 
   return (
     <form action={formAction} className="flex max-w-3xl flex-col gap-6" noValidate>
-      <p className="text-[15px] text-muted-foreground">{t("form.requiredNote")}</p>
-
       <div className="grid grid-cols-2 gap-5">
         <FormField
           id="name"

@@ -28,6 +28,7 @@ const values = (nic: string, overrides: Partial<CaseValues> = {}): CaseValues =>
   name: "පරීක්ෂණ ප්‍රතිලාභී",
   nic,
   address: "නො. 1, පරීක්ෂණ පාර",
+  gnDivision: null,
   mobile1: "0710000001",
   mobile2: null,
   remark: null,
@@ -474,7 +475,7 @@ describe("changing a verified case (CASE-9)", () => {
       saveCase(db, actor, { ...input("200200000051"), id: running.id, version: running.version, ...overrides });
 
     expect(await change(dsA, {})).toEqual({ ok: false, error: "notEditable" });
-    expect(await change(ho, { values: values("200200000051", { address: null }) })).toEqual({
+    expect(await change(ho, { values: values("200200000051", { name: null }) })).toEqual({
       ok: false,
       error: "incomplete",
     });

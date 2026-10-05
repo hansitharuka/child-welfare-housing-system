@@ -16,7 +16,7 @@ export const TEXT = {
 /** Marks the offices and stages the tests add, so tests/e2e/cleanup.ts can remove them. */
 export const TEST_MARKER = "Playwright";
 
-/** The name of every DS officer account the tests create; cleanup.ts disables them before each run. */
+/** The name of every DS officer account the tests create; cleanup.ts deletes them before each run. */
 export const TEST_OFFICER_NAME = "ඊ. පරීක්ෂණ";
 
 /** Every case the tests create has a name starting with this; cleanup.ts deletes those cases before each run. */

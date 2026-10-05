@@ -8,6 +8,7 @@ const COMPLETE: Record<CaseField, string> = {
   name: "  ප්‍රතිලාභී නම  ",
   nic: "880001234v",
   address: "නො. 1, පාර, නගරය",
+  gnDivision: "  හෝමාගම නැගෙනහිර  ",
   mobile1: "071 234 5678",
   mobile2: "",
   remark: "",
@@ -30,6 +31,7 @@ describe("submitting a case (CASE-2, CASE-5)", () => {
         name: "ප්‍රතිලාභී නම",
         nic: "880001234V",
         address: "නො. 1, පාර, නගරය",
+        gnDivision: "හෝමාගම නැගෙනහිර",
         mobile1: "0712345678",
         mobile2: null,
         remark: null,
@@ -44,10 +46,18 @@ describe("submitting a case (CASE-2, CASE-5)", () => {
         category: "categoryRequired",
         kind: "kindRequired",
         name: "nameRequired",
-        nic: "nicRequired",
-        address: "addressRequired",
-        mobile1: "mobileRequired",
       },
+    });
+  });
+
+  it("lets the NIC, address and phone numbers stay empty, and puts a lone phone number first", () => {
+    const result = parseCaseForm(
+      form({ ...COMPLETE, nic: "", address: "", mobile1: "", mobile2: "0771234567" }),
+      "submit",
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      value: { nic: null, address: null, mobile1: "0771234567", mobile2: null },
     });
   });
 
@@ -110,19 +120,19 @@ describe("saving a draft (CASE-4)", () => {
 
 describe("Head Office changing a verified case from the sheet (CASE-9, IMP-4)", () => {
   it("lets the required fields the sheet left empty stay empty, and still checks what is typed", () => {
-    const sheet = { ...COMPLETE, nic: "", mobile1: "" };
+    const sheet = { ...COMPLETE, category: "CHILD_AT_RISK", childName: "" };
     expect(parseCaseForm(form(sheet), "submit").ok).toBe(false);
-    expect(parseCaseForm(form(sheet), "submit", ["nic", "mobile1"])).toMatchObject({
+    expect(parseCaseForm(form(sheet), "submit", ["childName"])).toMatchObject({
       ok: true,
-      value: { nic: null, mobile1: null },
+      value: { childName: null },
     });
-    expect(parseCaseForm(form({ ...sheet, nic: "12345" }), "submit", ["nic", "mobile1"])).toEqual({
+    expect(parseCaseForm(form({ ...sheet, nic: "12345" }), "submit", ["childName"])).toEqual({
       ok: false,
       errors: { nic: "nicInvalid" },
     });
-    expect(parseCaseForm(form({ ...sheet, address: "" }), "submit", ["nic", "mobile1"])).toEqual({
+    expect(parseCaseForm(form({ ...sheet, name: "" }), "submit", ["childName"])).toEqual({
       ok: false,
-      errors: { address: "addressRequired" },
+      errors: { name: "guardianNameRequired" },
     });
   });
 });

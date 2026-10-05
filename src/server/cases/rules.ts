@@ -83,8 +83,8 @@ export function mustStayComplete(status: CaseStatus): boolean {
 
 /**
  * CASE-9, IMP-4: the required fields that may stay empty when Head Office changes a verified case. On a
- * case from the old sheet, those the sheet left empty may stay so, until someone knows them; a filled one
- * can't be emptied. A case entered in the system has every one filled in already.
+ * case from the old sheet, those the sheet left empty (a child's name) may stay so, until someone knows
+ * them; a filled one can't be emptied. A case entered in the system has every one filled in already.
  */
 export function mayStayEmpty(found: { fromSheet: boolean } & CaseValues): CaseField[] {
   return found.fromSheet ? (Object.keys(missingRequired(found)) as CaseField[]) : [];

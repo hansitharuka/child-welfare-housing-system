@@ -35,6 +35,7 @@ const values = (nic: string, overrides: Partial<CaseValues> = {}): CaseValues =>
   name: "පරීක්ෂණ ප්‍රතිලාභී",
   nic,
   address: "නො. 1, පරීක්ෂණ පාර",
+  gnDivision: null,
   mobile1: "0710000001",
   mobile2: null,
   remark: null,
@@ -160,7 +161,7 @@ describe("submitting (CASE-5)", () => {
   });
 
   it("refuses a case with a required field empty", async () => {
-    const result = await saveCase(db, dsA, newCase("", { submit: true }));
+    const result = await saveCase(db, dsA, newCase("", { submit: true, values: values("", { name: null }) }));
     expect(result).toEqual({ ok: false, error: "incomplete" });
   });
 

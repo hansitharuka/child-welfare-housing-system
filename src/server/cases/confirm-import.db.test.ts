@@ -325,6 +325,7 @@ describe("after the confirmation (IMP-4, CASE-9)", () => {
       name: "තහවුරු පරීක්ෂණ",
       nic: null,
       address: "නො. 3, නව පාර",
+      gnDivision: null,
       mobile1: null,
       mobile2: null,
       remark: null,
@@ -340,7 +341,7 @@ describe("after the confirmation (IMP-4, CASE-9)", () => {
       });
     expect(await save({})).toMatchObject({ ok: true });
     expect(await load(c.id)).toMatchObject({ address: "නො. 3, නව පාර" });
-    expect(await save({ address: null })).toEqual({ ok: false, error: "incomplete" });
+    expect(await save({ name: null })).toEqual({ ok: false, error: "incomplete" });
 
     // A case entered in the system still keeps every required field (CASE-9).
     await db.case.update({ where: { id: c.id }, data: { sheetKey: null, sheetRow: null } });

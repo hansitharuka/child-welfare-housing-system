@@ -17,6 +17,7 @@ export type CaseDetails = {
   childName: string | null;
   nic: string | null;
   address: string | null;
+  gnDivision: string | null;
   mobile1: string | null;
   mobile2: string | null;
   remark: string | null;
@@ -86,6 +87,7 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
       childName: true,
       nic: true,
       address: true,
+      gnDivision: true,
       mobile1: true,
       mobile2: true,
       remark: true,
