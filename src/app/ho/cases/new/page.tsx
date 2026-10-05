@@ -14,7 +14,7 @@ export default async function HoNewCasePage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader backHref="/ho/cases" backLabel={t("back.ho")} title={t("form.newTitle")} subtitle={t("form.intro")} />
+      <PageHeader backHref="/ho/cases" backLabel={t("back.ho")} title={t("form.newTitle")} />
       <CaseForm
         // The id is chosen now, so sending this form twice can only ever make one case (ERR-8).
         caseId={randomUUID()}

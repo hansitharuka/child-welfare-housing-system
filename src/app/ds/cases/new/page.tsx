@@ -17,7 +17,7 @@ export default async function NewCasePage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader backHref="/ds" backLabel={t("back.ds")} title={t("form.newTitle")} subtitle={t("form.intro")} />
+      <PageHeader backHref="/ds" backLabel={t("back.ds")} title={t("form.newTitle")} />
       {office.active ? (
         <CaseForm
           // The id is chosen now, so sending this form twice can only ever make one case (ERR-8).
