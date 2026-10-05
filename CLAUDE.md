@@ -22,7 +22,7 @@ Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists
 
 Phase 7 was built one task at a time: 7.1 (the load-test data script), 7.2 (the Head Office dashboard), 7.3 (the Excel export of the case lists), 7.4 (an export in the old sheet's layout, since removed) and 7.5 (the notifications beside the dashboard).
 
-Phase 8 (the sheet import) is being built one task at a time, on the branch `phase-8-import`. Tasks 8.1 (the made-up sample sheet) and 8.2 (the import script) are done.
+Phase 8 (the sheet import) is being built one task at a time, on the branch `phase-8-import`. Tasks 8.1 (the made-up sample sheet), 8.2 (the import script) and 8.3 (the import report) are done.
 
 The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
@@ -43,7 +43,7 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 | Put the sample accounts back to their start state | `npx tsx prisma/seed-users.ts --reset` (the end-to-end tests do this themselves) |
 | Add 5,000 made-up cases for load tests, or remove them | `npm run db:seed-load` (`-- --count 500`, `-- --seed 7`), `npm run db:seed-load -- --remove`. Remove them before running the end-to-end tests |
 | Make the made-up sample sheet for the import | `npm run sheet:sample` writes `data/sample-sheet.xlsx`, which git ignores (`-- --out <file.xlsx>`, `-- --seed 7`) |
-| Import a sheet | `npm run sheet:import -- <file.xlsx>`; `-- <file.xlsx> --dry-run` checks it and writes nothing. Try it with the sample sheet; the real sheet is imported on the production server only (Phase 9) |
+| Import a sheet | `npm run sheet:import -- <file.xlsx>`; `-- <file.xlsx> --dry-run` checks it and writes nothing to the database. Either way it writes a report next to the sheet (`-- --report <file.csv>` puts it elsewhere). Try it with the sample sheet; the real sheet is imported on the production server only (Phase 9) |
 
 ## Things to know when coding
 
@@ -182,6 +182,11 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
   - **The key (IMP-7)** is `sheet_key`, unique: `CARE_LEAVER:serial:45`, or `CHILD_AT_RISK:row:380` for a row with no serial number or one used above it in its tab (decided with the user on 5 Oct). Rows already imported are passed over, so a later run adds only rows that couldn't come in before.
   - Imported cases have no case number and no kind. They're created by the disabled account `sheet-import` ("පැරණි පත්‍රිකාව", no username, so it can't sign in). One transaction writes them, a `case_imported` audit record each (no actor, so the history says "the system"), and one `sheet_imported` record for the run.
   - The development database's DS offices differ from `data/places.json` (the user renamed some by hand), so a dry run there skips more rows than the sample's answer key expects. The tests use the seeded list.
+- **The report (IMP-6, task 8.3)** is a CSV file that `runImport` (`scripts/import-sheet.ts`) writes on every run, dry or not, next to the sheet: `<sheet>-import-report-<YYYY-MM-DD-HHmmss in Colombo>[-dry-run].csv`. Git ignores that name anywhere, so the sample sheet's reports in `data/` stay out too.
+  - One line per row and reason: tab, row, imported (no or yes), reason, and for a row that couldn't be placed, the district and DS office as written. Nothing else about the person. The rows not imported come first, then the imported rows to check, each in the sheet's order.
+  - It starts with a byte-order mark and uses CRLF, so Excel shows the Sinhala. A cell starting with `=`, `+`, `-` or `@` gets a `'` first, so a place name can't become a formula.
+  - The file is opened (`wx`) before the import, so a folder that doesn't exist or an earlier report of the same name stops the run before anything is imported (`ReportError`). Otherwise the imported rows to check would be lost: a later run passes over them. A failed import removes the empty file.
+  - The reasons are in English, like the script's other output.
 
 The system is for the Ministry of Women and Child Affairs (Sri Lanka) and tracks the **Diviyata Saviyak (දිවියට සවියක්)** housing programme. For each case it records the financial progress (four installment releases) and the physical construction progress.
 
