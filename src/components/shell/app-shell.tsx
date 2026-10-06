@@ -1,4 +1,5 @@
 import { getTranslations } from "next-intl/server";
+import { Mark } from "@/components/brand/lockup";
 import { Bell } from "./bell";
 import { NavLinks } from "./nav-links";
 import { SignOutButton } from "./sign-out-button";
@@ -28,8 +29,13 @@ export async function AppShell({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="flex h-16 shrink-0 items-center gap-5 bg-header px-8 text-header-foreground">
-        <span className="text-[22px] font-bold">{t("app.name")}</span>
+      <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-5 bg-header px-8 text-header-foreground">
+        <span className="flex items-center gap-3">
+          <span className="flex h-11 w-12 shrink-0 items-center justify-center rounded-lg bg-[#fbf5ea]">
+            <Mark className="h-8 w-[35px]" />
+          </span>
+          <span className="text-[22px] font-bold">{t("app.name")}</span>
+        </span>
         <span className="text-base text-header-muted">{areaLabel}</span>
         <div className="ms-auto flex items-center gap-4">
           {showTestBanner && (

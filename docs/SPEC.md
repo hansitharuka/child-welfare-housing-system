@@ -356,6 +356,8 @@ Only the DS office starts and pays installments (section 4). Each change is refu
   | HO officer | Imported cases | `/ho/imported` | — |
   | Admin | Users, lists | `/admin/users`, `/admin/lists` | පරිශීලකයින්, ලැයිස්තු |
 
+- **UI-8** The sign-in and set-a-new-password pages shall show the programme's logo above the card: the mark (a house with a sprout, on a gold base), දිවියට සවියක්, a short gold line and the ministry's name. They have no header bar. The logo keeps its own colours: a maroon house and name, a gold base and a green sprout (`src/components/brand/lockup.tsx`). The sign-in button is a softer maroon (`--sign-in`). Every other page's green header is fixed to the top of the screen (it stays in place when the page scrolls) and shows the mark in its own maroon, gold and green on a small cream tile, beside දිවියට සවියක්. The logo's Latin line "DIVIYATA SAWIYAK" is left out, because the screens have no English (AC-20).
+
 ## 8. Error handling
 
 - **ERR-1** A form with invalid input shall save nothing and keep what was typed. Each error appears in Sinhala next to its field, and all errors are listed above the save button.

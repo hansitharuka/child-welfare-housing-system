@@ -429,7 +429,7 @@ export function CaseForm({
 
       <aside
         aria-labelledby="checklist-title"
-        className="sticky top-4 flex w-[300px] shrink-0 flex-col gap-3.5 rounded-xl border bg-card p-5"
+        className="sticky top-20 flex w-[300px] shrink-0 flex-col gap-3.5 rounded-xl border bg-card p-5"
       >
         <h2 id="checklist-title" className="text-lg font-bold">
           {t("form.checklist.title")}
