@@ -12,6 +12,7 @@ import {
   type ReleaseErrors,
   type ReleaseField,
 } from "@/lib/validation/release";
+import type { QueuePlace } from "@/server/cases/queues";
 
 export type ReleaseFormValues = Record<ReleaseField, string>;
 
@@ -24,6 +25,7 @@ export function ReleaseForm({
   caseId,
   version,
   from,
+  place,
   limits,
   initial,
   mode,
@@ -33,6 +35,8 @@ export function ReleaseForm({
   caseId: string;
   version: number;
   from: "queue" | "case";
+  /** The queue's district or DS office, which the next page keeps (CHK-4). */
+  place?: QueuePlace;
   limits: ReleaseDateLimits;
   initial: ReleaseFormValues;
   mode: "record" | "correct";
@@ -59,6 +63,8 @@ export function ReleaseForm({
     form.set("caseId", caseId);
     form.set("version", String(version));
     form.set("from", from);
+    if (place?.districtId) form.set("districtId", String(place.districtId));
+    if (place?.dsOfficeId) form.set("dsOfficeId", String(place.dsOfficeId));
     for (const field of RELEASE_FIELDS) form.set(field, values[field]);
     startTransition(() => dispatch(form));
   }

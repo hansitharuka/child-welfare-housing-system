@@ -151,6 +151,7 @@ docker-compose.yml, docker-compose.dev.yml
 | 5.5 | Release queue and the release form; four installments created on save; release corrections; the money section on both case pages | REL-1–4 | `src/app/ho/release/*`, `src/server/releases/*`, `src/components/cases/money-section.tsx` |
 | 5.6 | Notifications table, the notices for every decision, the DS bell and its list, the waiting counts in the Head Office menu | NTF-1 | `src/server/notifications/*`, `src/app/ds/notifications/*`, `src/components/shell/*` |
 | 5.7 | Edits after verification, Head Office only, logged field by field | CASE-9 | `src/server/cases/rules.ts`, `src/server/cases/commands.ts`, `src/components/forms/case-form.tsx` |
+| 5.8 | Narrowing both queues to a district or DS office, with the count waiting at each (added 2026-10-06) | CHK-4 | `src/app/ho/check/place.ts`, `src/app/ho/check/place-picker.tsx`, `src/server/cases/queues.ts` |
 
 **Tests:** every allowed and refused status change; reasons required; release date rules; e2e for the full path DS → check → send back → resubmit → verify → release (AC-8, AC-9, AC-10), rejecting, and Head Office's corrections (CASE-9, REL-4).
 

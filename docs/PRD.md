@@ -123,6 +123,7 @@ Version 1 covers a case from first entry to completion, with dashboards, history
 ### Head Office check
 
 - A queue of submitted cases, oldest first.
+- Narrow the queue to a district or a DS division, showing how many cases wait in each.
 - Verify a case, send it back with comments, or reject it with a reason.
 - Keep every decision and comment in the case's history.
 

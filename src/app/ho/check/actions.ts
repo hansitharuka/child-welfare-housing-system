@@ -8,6 +8,7 @@ import type { Queue } from "@/server/cases/queues";
 import { requireRole } from "@/server/context";
 import { db } from "@/server/db";
 import { correctRelease, recordRelease, type ReleaseCommandError } from "@/server/releases/commands";
+import { placeQuery, readPlace } from "./place";
 
 /** Head Office's check and release actions (CHK-3, REL-2 to REL-4). Each checks the role first. */
 
@@ -30,17 +31,17 @@ function target(form: FormData): { caseId: string; version: number } | null {
 }
 
 /**
- * After a change: back to the queue it was made from, with the next case selected, or to the case's
- * own page. The notice names the case by its id, never by personal details (SEC-8).
+ * After a change: back to the queue it was made from, in the same district or DS office (CHK-4), with
+ * the next case selected, or to the case's own page. The notice names the case by its id, never by
+ * personal details (SEC-8).
  */
 function goOn(form: FormData, queue: Queue, caseId: string, notice: string): never {
   // The menu's waiting counts live in the layout (NTF-1).
   revalidatePath("/ho", "layout");
-  redirect(
-    read(form, "from") === "case"
-      ? `/ho/cases/${caseId}?notice=${notice}`
-      : `/ho/${queue}?notice=${notice}&done=${caseId}`,
-  );
+  if (read(form, "from") === "case") redirect(`/ho/cases/${caseId}?notice=${notice}`);
+  const query = new URLSearchParams({ notice, done: caseId });
+  for (const [key, value] of placeQuery(readPlace((key) => read(form, key)))) query.set(key, value);
+  redirect(`/ho/${queue}?${query}`);
 }
 
 export async function decideAction(_previous: DecisionState, form: FormData): Promise<DecisionState> {

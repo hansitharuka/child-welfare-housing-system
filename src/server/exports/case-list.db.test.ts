@@ -5,10 +5,11 @@ import messages from "../../../messages/si.json";
 import { seed } from "../../../prisma/seed-data";
 import { addLoadData, removeLoadData } from "../../../scripts/seed-load";
 import { createTestClient } from "../../../tests/db/client";
+import { dateToDay } from "@/lib/dates";
 import { CATEGORIES, KINDS } from "@/lib/validation/case";
 import { countCases, listCases, PAGE_SIZE } from "../cases/queries";
 import type { Viewer } from "../permissions";
-import { caseListRows, exportCaseList, type ListFilter } from "./case-list";
+import { caseListRows, exportCaseList, type ListFilter, progressStages } from "./case-list";
 
 const db = createTestClient();
 const t = createTranslator({ locale: "si", messages, namespace: "cases" });
@@ -62,7 +63,7 @@ describe("Excel export of a case list (EXP-1, EXP-3)", () => {
     }
   });
 
-  it("gives each released case its money and stage from the database", async () => {
+  it("gives each released case its money from the database", async () => {
     const rows = (await caseListRows(db, ho, { dsOfficeId: busiestOffice }))!;
     const cases = await db.case.findMany({
       where: { dsOfficeId: busiestOffice },
@@ -78,13 +79,52 @@ describe("Excel export of a case list (EXP-1, EXP-3)", () => {
     for (const row of released) {
       const found = byNumber.get(row.caseNumber)!;
       expect(row.release!.amount).toBe(found.release!.amount);
-      expect(row.release!.paidCount).toBe(found.installments.length);
       expect(row.release!.paidOut).toBe(found.installments.reduce((sum, i) => sum + i.amount, 0));
     }
     expect(rows.filter((r) => !r.release).every((r) => r.status !== "IN_PROGRESS" && r.status !== "COMPLETED")).toBe(
       true,
     );
-    expect(rows.some((r) => r.stageName)).toBe(true);
+  });
+
+  it("gives each case its installments and the days its new-house stages were reached", async () => {
+    const rows = (await caseListRows(db, ho, { dsOfficeId: busiestOffice, kind: "NEW_HOUSE" }))!;
+    const stages = await db.stageDefinition.findMany({
+      where: { kind: "NEW_HOUSE", active: true },
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+      select: { id: true },
+    });
+    const cases = await db.case.findMany({
+      where: { dsOfficeId: busiestOffice, kind: "NEW_HOUSE", caseNumber: { not: null } },
+      select: {
+        caseNumber: true,
+        installments: { select: { number: true, status: true, expectedOn: true, releasedOn: true } },
+        stageUpdates: { where: { stageId: { not: null } }, select: { stageId: true, visitedOn: true } },
+      },
+    });
+    const byNumber = new Map(cases.map((c) => [c.caseNumber, c]));
+    for (const row of rows.filter((r) => r.caseNumber)) {
+      const found = byNumber.get(row.caseNumber)!;
+      const installments = [1, 2, 3, 4].map((n) => {
+        const item = found.installments.find((i) => i.number === n);
+        return item
+          ? {
+              status: item.status,
+              expectedOn: item.expectedOn && dateToDay(item.expectedOn),
+              releasedOn: item.releasedOn && dateToDay(item.releasedOn),
+            }
+          : null;
+      });
+      expect(row.installments, row.caseNumber!).toEqual(installments);
+      // Other test files may have added stages to the shared schema, so the columns' stages are worked out.
+      const reached = progressStages(stages).map((stage) => {
+        const update = stage && found.stageUpdates.find((u) => u.stageId === stage.id);
+        return update ? dateToDay(update.visitedOn) : null;
+      });
+      expect(row.progress, row.caseNumber!).toEqual(reached);
+    }
+    expect(rows.some((r) => r.installments[0]?.status === "RELEASED")).toBe(true);
+    expect(rows.some((r) => r.installments.some((i) => i?.status === "PROCESSING"))).toBe(true);
+    expect(rows.some((r) => r.progress[0] !== null)).toBe(true);
   });
 
   it("keeps a DS officer to their own office, and gives an admin nothing (PRM-1, PRM-2)", async () => {
@@ -139,6 +179,6 @@ describe("Excel export of a case list (EXP-1, EXP-3)", () => {
     const sheet = workbook.worksheets[0];
     expect(sheet.name).toBe(t("export.sheet"));
     expect(sheet.getRow(1).getCell(1).value).toBe(t("export.columns.number"));
-    expect(sheet.rowCount).toBe(total + 1);
+    expect(sheet.rowCount).toBe(total + 2);
   }, 120_000);
 });

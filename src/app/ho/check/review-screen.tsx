@@ -13,14 +13,19 @@ import { requireRole } from "@/server/context";
 import { db } from "@/server/db";
 import { duplicatesInFull } from "@/server/cases/duplicates";
 import { getCase, PAGE_SIZE } from "@/server/cases/queries";
-import { listQueue, type Queue, queueCounts } from "@/server/cases/queues";
+import { listQueue, type Queue, queueByOffice, type QueuePlace, queueCounts } from "@/server/cases/queues";
+import { districtsWithOffices } from "@/server/lists/queries";
 import { decideAction, releaseAction } from "./actions";
+import { placeChoices, placeQuery, readPlace } from "./place";
+import { PlacePicker } from "./place-picker";
 
 export type ReviewSearchParams = Promise<{
   case?: string | string[];
   page?: string | string[];
   notice?: string | string[];
   done?: string | string[];
+  districtId?: string | string[];
+  dsOfficeId?: string | string[];
 }>;
 
 const QUEUES: Queue[] = ["check", "release"];
@@ -29,20 +34,26 @@ const QUEUES: Queue[] = ["check", "release"];
  * "පරීක්ෂා කිරීම සහ මුදල් නිදහස් කිරීම" as in the prototype (UI-7): two tabs, /ho/check (CHK-1) and
  * /ho/release (REL-1). The queue is on the left, longest waiting first; the chosen case is on the
  * right, with every field, its documents and NIC matches (CHK-2), and the decision (CHK-3) or the
- * release form (REL-2).
+ * release form (REL-2). Above them, the queue can be narrowed to a district or one DS office (CHK-4);
+ * the place stays through paging, the tabs and every decision.
  */
 export async function ReviewScreen({ queue, searchParams }: { queue: Queue; searchParams: ReviewSearchParams }) {
   const viewer = await requireRole("HO_OFFICER");
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
   const one = (value: string | string[] | undefined) => (typeof value === "string" ? value : null);
+  const asked = readPlace((key) => one(params[key as "districtId" | "dsOfficeId"]) ?? "");
 
-  const [t, tc, counts, list] = await Promise.all([
+  const [t, tc, counts, districts, waiting] = await Promise.all([
     getTranslations("review"),
     getTranslations("cases"),
     queueCounts(db, viewer),
-    listQueue(db, viewer, queue, page),
+    districtsWithOffices(db),
+    queueByOffice(db, viewer, queue),
   ]);
+  const places = placeChoices(districts, waiting, asked);
+  const { place } = places;
+  const list = await listQueue(db, viewer, queue, page, place);
   const wanted = one(params.case);
   const selectedId = list.rows.find((row) => row.id === wanted)?.id ?? list.rows[0]?.id ?? null;
   const done = one(params.done);
@@ -56,13 +67,33 @@ export async function ReviewScreen({ queue, searchParams }: { queue: Queue; sear
       : [];
 
   const now = new Date();
+  const queueHref = (path: string, query: URLSearchParams) => (query.size > 0 ? `${path}?${query}` : path);
+  const placeHref = (at: QueuePlace, tab: Queue = queue) => queueHref(`/ho/${tab}`, placeQuery(at));
   const href = (changes: { case?: string; page?: number }) => {
-    const query = new URLSearchParams();
+    const query = placeQuery(place);
     const nextPage = changes.page ?? page;
     if (nextPage > 1) query.set("page", String(nextPage));
     if (changes.case) query.set("case", changes.case);
-    const text = query.toString();
-    return text ? `/ho/${queue}?${text}` : `/ho/${queue}`;
+    return queueHref(`/ho/${queue}`, query);
+  };
+
+  const district = places.districts.find((d) => d.id === place.districtId);
+  const option = (name: string, count: number, active = true) =>
+    t(active ? "place.option" : "place.inactive", { name, count });
+  const picker = {
+    districts: [
+      { href: placeHref({}), label: t("place.allDistricts", { count: counts[queue] }) },
+      ...places.districts.map((d) => ({ href: placeHref({ districtId: d.id }), label: option(d.name, d.count) })),
+    ],
+    offices: district
+      ? [
+          { href: placeHref({ districtId: district.id }), label: t("place.allOffices", { count: district.count }) },
+          ...district.offices.map((o) => ({
+            href: placeHref({ districtId: district.id, dsOfficeId: o.id }),
+            label: option(o.name, o.count, o.active),
+          })),
+        ]
+      : [],
   };
 
   return (
@@ -78,7 +109,7 @@ export async function ReviewScreen({ queue, searchParams }: { queue: Queue; sear
         {QUEUES.map((key) => (
           <Link
             key={key}
-            href={`/ho/${key}`}
+            href={placeHref(place, key)}
             aria-current={key === queue ? "page" : undefined}
             className={`flex h-12.5 items-center rounded-lg border-2 px-5.5 text-[17px] font-bold ${
               key === queue ? "border-primary bg-primary text-primary-foreground" : "border-input bg-card"
@@ -89,13 +120,25 @@ export async function ReviewScreen({ queue, searchParams }: { queue: Queue; sear
         ))}
       </nav>
 
+      <PlacePicker
+        // A new place from the address shows its own choices.
+        key={placeHref(place)}
+        districts={picker.districts}
+        offices={picker.offices}
+        district={placeHref({ districtId: place.districtId })}
+        office={placeHref(place)}
+        clear={place.districtId ? placeHref({}) : null}
+      />
+
       <div className="flex items-start gap-6">
         <section aria-labelledby="queue-title" className="flex w-[400px] shrink-0 flex-col gap-2.5">
           <h2 id="queue-title" className="sr-only">
             {t(`listLabel.${queue}`)}
           </h2>
           {list.rows.length === 0 ? (
-            <p className="rounded-xl border bg-card p-6 text-center text-muted-foreground">{t(`empty.${queue}`)}</p>
+            <p className="rounded-xl border bg-card p-6 text-center text-muted-foreground">
+              {t(place.districtId ? `emptyHere.${queue}` : `empty.${queue}`)}
+            </p>
           ) : (
             <ul className="flex flex-col gap-2.5">
               {list.rows.map((row) => {
@@ -184,6 +227,7 @@ export async function ReviewScreen({ queue, searchParams }: { queue: Queue; sear
                 caseId={details.id}
                 version={details.version}
                 from="queue"
+                place={place}
                 caseLabel={{
                   name: caseName(tc, details.name, details.childName),
                   number: details.caseNumber ?? tc("noNumber"),
@@ -200,6 +244,7 @@ export async function ReviewScreen({ queue, searchParams }: { queue: Queue; sear
                   caseId={details.id}
                   version={details.version}
                   from="queue"
+                  place={place}
                   limits={{
                     earliest: details.verifiedAt && colomboDay(details.verifiedAt),
                     today: colomboDay(now),

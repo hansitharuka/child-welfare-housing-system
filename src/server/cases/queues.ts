@@ -18,21 +18,33 @@ export type QueueRow = {
   duplicate: boolean;
 };
 
+/** The part of the country a queue is narrowed to (CHK-4): a district, or one DS office in it. */
+export type QueuePlace = { districtId?: number; dsOfficeId?: number };
+
 const STATUS = { check: "SUBMITTED", release: "VERIFIED" } as const;
 
 /**
  * One page of a queue, the longest waiting first: by submission for the check (CHK-1) and by
- * verification for the release (REL-1). Only Head Office has queues; anyone else gets none.
+ * verification for the release (REL-1), in the chosen place only (CHK-4). Only Head Office has
+ * queues; anyone else gets none.
  */
 export async function listQueue(
   db: PrismaClient,
   viewer: Viewer,
   queue: Queue,
   page: number,
+  place: QueuePlace = {},
 ): Promise<{ rows: QueueRow[]; total: number }> {
   const scope = officeFilter(viewer);
   if (viewer.role !== "HO_OFFICER" || !scope) return { rows: [], total: 0 };
-  const where = { ...scope, status: STATUS[queue] };
+  const where = {
+    AND: [
+      scope,
+      place.districtId ? { dsOffice: { districtId: place.districtId } } : {},
+      place.dsOfficeId ? { dsOfficeId: place.dsOfficeId } : {},
+    ],
+    status: STATUS[queue],
+  };
   const since = queue === "check" ? "submittedAt" : "verifiedAt";
 
   const [found, total] = await Promise.all([
@@ -69,6 +81,18 @@ export async function listQueue(
     })),
     total,
   };
+}
+
+/** How many cases wait in a queue at each DS office, by its id, for choosing a place (CHK-4). */
+export async function queueByOffice(db: PrismaClient, viewer: Viewer, queue: Queue): Promise<Map<number, number>> {
+  const scope = officeFilter(viewer);
+  if (viewer.role !== "HO_OFFICER" || !scope) return new Map();
+  const groups = await db.case.groupBy({
+    by: ["dsOfficeId"],
+    where: { ...scope, status: STATUS[queue] },
+    _count: { _all: true },
+  });
+  return new Map(groups.map((group) => [group.dsOfficeId, group._count._all]));
 }
 
 /** How many cases wait in each queue, for the tabs and the menu (NTF-1). */

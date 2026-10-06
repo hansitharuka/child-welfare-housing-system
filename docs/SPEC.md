@@ -242,6 +242,7 @@ Values used across the system:
   - **Reject:** a reason is required (5–1,000 characters).
 
   Verifying asks once to confirm. Each writes a Decision and notifies every active officer of the case's DS. A decision is refused if the case changed after the check view showed it (CASE-10), for example when it was sent back and submitted again in the meantime.
+- **CHK-4** (added 2026-10-06) Head Office shall be able to narrow both queues (CHK-1, REL-1) to a district, then to one DS office in it. Each choice shows how many cases wait there. Only places with cases waiting are offered, plus the chosen one even once none are left. The place stays in the address (`districtId`, `dsOfficeId`) through paging, both tabs and every decision, so after a decision the next case shown is the next one waiting in the same place. The tab counts and the menu's count stay for the whole country. Cases are still checked and released one at a time (§13, question 9).
 
 ### 7.8 The Rs. 2,000,000 release (REL)
 
@@ -293,8 +294,10 @@ Only the DS office starts and pays installments (section 4). Each change is refu
 - **DSH-2** Dashboard figures shall come from the database when the page loads, and never be more than 1 minute old.
 - **EXP-1** Any list shall be exportable to `.xlsx` with Sinhala headers, limited to what the user may see.
   - The lists are Head Office's case list (FND-1), with its filters, and the DS officer's list (HOME-2), with its tab and search. The check and release queues are the case list filtered by status.
-  - The file holds every case the list matches, not only the page shown, in the list's order, one row per case: case number, category, kind, status, names, NIC, address, phones, district, DS, the days it was sent, verified, released and completed, the amount released, the installments and amount paid out, the balance left with the DS, the stage reached, the last change and the remark.
+  - The file holds every case the list matches, not only the page shown, in the list's order, one row per case: case number, category, kind, status, names, NIC, address, phones, district, DS, the days it was sent, verified, released and completed, the amount released, the amount paid out, the balance left with the DS, the last change and the remark.
   - Days are real Excel dates shown as `YYYY.MM.DD` (UI-3), amounts are numbers, and NICs and phone numbers stay text.
+  - The file also has the two groups of Head Office's monthly progress report (added 2026-10-06), with its headers: මූල්‍ය ප්‍රගතිය (රු) over පළමු, දෙවන, තුන්වන and සිව්වන වාරිකය, right after the amount released (it took the place of the number of installments paid, which was dropped at the user's request), and, right after the balance left with the DS, භෞතික ප්‍රගතිය (in place of the stage reached, also dropped at the user's request) over අත්තිවාරම යෙදීම, බිත්ති ගොඩනැංවීම, වහළය සකස් කිරීම and අත්‍යවශ්‍ය අංග සමඟ නිවස සම්පූර්ණ කිරීම. The header takes two rows: each group over its four columns, and every other column's header over both rows. It stays in view, and the filter buttons are on its second row.
+  - Each of those cells holds a short dated note, as the old sheet's cells did. An installment reads "<date> දින ගෙවා ඇත" once paid, "<date> දින ගෙවීමට අපේක්ෂිතයි" while processing (its expected day), and is empty before that. A building cell reads "<date> දින නිම කර ඇත" once the case reached that stage. The notes wrap within their columns. The last building column is the kind's last active stage, which finishes the house (CLS-1); the three before it take the kind's first stages, as many as fit, so the four new-house stages fill one column each. A renovation case's building cells stay empty while its stage list is (STG-4).
 - **EXP-2** Removed on 2026-10-04: the Ministry no longer needs a copy in the old sheet's layout. EXP-1's export is the only one. The number stays unused.
 - **EXP-3** Every export shall be logged with who made it, which filters were used and how many rows it held. It is an audit record of the list, not part of any case's history.
 
@@ -420,6 +423,7 @@ Version 1 is accepted when every check below passes on staging with made-up data
 | AC-22 | Restoring last night's backup on staging brings back the cases and their files. | SEC-10 |
 | AC-23 | The admin can't give a DS office a second active DS officer. Once the old account is disabled, an account for the new officer can be created. | ADM-3 |
 | AC-24 | Removed with IMP-1 to IMP-7 (2026-10-06). | — |
+| AC-25 | On the check screen, choosing a district and then a DS office lists only that office's cases. After a case is verified, the screen stays on that office, and the release tab and the release keep it too. | CHK-4 |
 
 ## 13. Deferred questions and the defaults used
 

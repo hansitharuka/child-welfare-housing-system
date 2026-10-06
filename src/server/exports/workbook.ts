@@ -7,10 +7,18 @@ export type CellValue = string | number | { day: string } | null;
 /** One column of an exported sheet: its Sinhala header, its width in characters, and how to read a row. */
 export type Column<Row> = {
   header: string;
+  /**
+   * A header over this column and its neighbours with the same group, as the Head Office progress
+   * report's "financial progress" stands over its four installments. The column's own header goes
+   * in a second row.
+   */
+  group?: string;
   width: number;
   value: (row: Row) => CellValue;
   /** Amounts are whole rupees and show with thousands separators. */
   amount?: boolean;
+  /** Long text wraps within the column instead of running under the next one. */
+  wrap?: boolean;
 };
 
 /** Days show the way offices write them (UI-3), and stay real dates, so Excel can sort and filter them. */
@@ -20,27 +28,50 @@ const AMOUNT_FORMAT = "#,##0";
 export const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 /**
- * Adds one sheet: a bold header row that stays in view and has Excel's filter buttons, then one
- * row per item. Text stays text, so NICs and phone numbers keep their leading zeros.
+ * Adds one sheet: a bold header that stays in view and has Excel's filter buttons on its last row,
+ * then one row per item. Text stays text, so NICs and phone numbers keep their leading zeros. When
+ * some columns have a group, the header takes two rows: the group over its columns, and each column
+ * without one spanning both rows.
  */
 export function addSheet<Row>(workbook: ExcelJS.Workbook, name: string, columns: Column<Row>[], rows: Row[]) {
-  const sheet = workbook.addWorksheet(name, { views: [{ state: "frozen", ySplit: 1 }] });
-  sheet.columns = columns.map((column) => ({ header: column.header, width: column.width }));
+  const headerRows = columns.some((column) => column.group) ? 2 : 1;
+  const sheet = workbook.addWorksheet(name, { views: [{ state: "frozen", ySplit: headerRows }] });
+  sheet.columns = columns.map((column) => ({ width: column.width }));
 
-  const header = sheet.getRow(1);
-  header.font = { bold: true };
-  header.alignment = { vertical: "top", wrapText: true };
-  header.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8EFEA" } };
+  if (headerRows === 1) sheet.addRow(columns.map((column) => column.header));
+  else {
+    sheet.addRow(columns.map((column) => column.group ?? column.header));
+    sheet.addRow(columns.map((column) => column.header));
+    columns.forEach((column, index) => {
+      if (!column.group) sheet.mergeCells(1, index + 1, 2, index + 1);
+      else if (columns[index - 1]?.group !== column.group) {
+        let last = index;
+        while (columns[last + 1]?.group === column.group) last++;
+        if (last > index) sheet.mergeCells(1, index + 1, 1, last + 1);
+      }
+    });
+  }
+  for (let number = 1; number <= headerRows; number++) {
+    const header = sheet.getRow(number);
+    header.font = { bold: true };
+    header.alignment = { vertical: "top", wrapText: true };
+    header.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8EFEA" } };
+  }
+  columns.forEach((column, index) => {
+    if (column.group) sheet.getCell(1, index + 1).alignment = { vertical: "top", horizontal: "center", wrapText: true };
+  });
 
   for (const row of rows) {
     const values = columns.map((column) => column.value(row));
     const added = sheet.addRow(values.map((value) => (isDay(value) ? dayToDate(value.day) : value)));
     values.forEach((value, index) => {
-      if (isDay(value)) added.getCell(index + 1).numFmt = DAY_FORMAT;
-      else if (columns[index].amount && value !== null) added.getCell(index + 1).numFmt = AMOUNT_FORMAT;
+      const cell = added.getCell(index + 1);
+      if (isDay(value)) cell.numFmt = DAY_FORMAT;
+      else if (columns[index].amount && value !== null) cell.numFmt = AMOUNT_FORMAT;
+      if (columns[index].wrap) cell.alignment = { vertical: "top", wrapText: true };
     });
   }
-  sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: columns.length } };
+  sheet.autoFilter = { from: { row: headerRows, column: 1 }, to: { row: headerRows, column: columns.length } };
   return sheet;
 }
 

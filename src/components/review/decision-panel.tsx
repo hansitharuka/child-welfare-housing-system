@@ -7,6 +7,7 @@ import { FormError, FormTextArea } from "@/components/forms/form-field";
 import { Modal } from "@/components/modal";
 import { parseReason, type ReasonErrorKey } from "@/lib/validation/decision";
 import type { Decision } from "@/server/cases/decide";
+import type { QueuePlace } from "@/server/cases/queues";
 
 const REASON_ERRORS: readonly string[] = ["reasonRequired", "reasonTooShort", "reasonTooLong"];
 const isReasonError = (error: string | null): error is ReasonErrorKey =>
@@ -20,6 +21,7 @@ export function DecisionPanel({
   caseId,
   version,
   from,
+  place,
   caseLabel,
   action,
 }: {
@@ -27,6 +29,8 @@ export function DecisionPanel({
   version: number;
   /** Where the officer is deciding, so the next page is the right one. */
   from: "queue" | "case";
+  /** The queue's district or DS office, which the next page keeps (CHK-4). */
+  place?: QueuePlace;
   /** The case's name and number, for the confirmation. */
   caseLabel: { name: string; number: string };
   action: (state: DecisionState, form: FormData) => Promise<DecisionState>;
@@ -48,6 +52,8 @@ export function DecisionPanel({
     form.set("caseId", caseId);
     form.set("version", String(version));
     form.set("from", from);
+    if (place?.districtId) form.set("districtId", String(place.districtId));
+    if (place?.dsOfficeId) form.set("dsOfficeId", String(place.dsOfficeId));
     form.set("decision", decision);
     form.set("reason", decision === "verify" ? "" : reason);
     startTransition(() => dispatch(form));

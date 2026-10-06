@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { CONFIRM, fillCase, newSubmittedCase, openAs, randomNic, SEND, submit } from "./case-helpers";
 import { signInAs, TEST_CASE_NAME } from "./helpers";
 
@@ -11,6 +11,12 @@ const SEND_BACK_REASON = "ප්‍රා.ලේ. කාර්යාලය න�
 const REJECT_REASON = "ප්‍රතික්ෂේප කිරීමට හේතුව *";
 const RELEASE = "රු. 2,000,000 නිදහස් කළ බව සටහන් කරන්න";
 const NOT_STARTED = "තවම ආරම්භ කර නැත";
+
+/** Chooses a district or DS office by its name; each option reads "<name> (<cases waiting>)" (CHK-4). */
+async function choosePlace(select: Locator, name: string) {
+  const option = select.locator("option").filter({ hasText: new RegExp(`^${name} \\(\\d+\\)$`) });
+  await select.selectOption((await option.getAttribute("value")) ?? "");
+}
 
 /** Opens a case from one of Head Office's two queues and waits for its details on the right. */
 async function openFromQueue(ho: Page, queue: "check" | "release", number: string, name: string) {
@@ -96,6 +102,61 @@ test("AC-8, AC-9, AC-10: DS submits, Head Office sends back, DS corrects, Head O
   await ds.goto("/ds/notifications");
   await expect(ds.getByRole("button", { name: new RegExp(`^${name} සඳහා`) })).not.toContainText("අලුත්");
 
+  await ho.context().close();
+});
+
+test("Head Office narrows the queues to a district and a DS office, and stays there after each decision (CHK-4)", async ({
+  page: ds,
+  browser,
+}) => {
+  test.slow();
+  await signInAs(ds, "ds0101", /\/ds$/);
+  const name = `${TEST_CASE_NAME} ප්‍රදේශය ${Date.now()}`;
+  const { url, number } = await newSubmittedCase(ds, { name, nic: randomNic() });
+  const caseId = url.split("/").at(-1) ?? "";
+
+  const ho = await openAs(browser, "ho0001");
+  await ho.goto("/ho/check");
+  const district = ho.getByRole("combobox", { name: "දිස්ත්‍රික්කය" });
+  const office = ho.getByRole("combobox", { name: "ප්‍රා.ලේ. කොට්ඨාසය" });
+  await expect(office).toBeDisabled();
+  await choosePlace(district, "කොළඹ");
+  await expect(ho).toHaveURL(/\/ho\/check\?districtId=\d+$/);
+  await choosePlace(office, "හෝමාගම");
+  await expect(ho).toHaveURL(/\/ho\/check\?districtId=\d+&dsOfficeId=\d+$/);
+  const place = new URL(ho.url()).search.slice(1);
+
+  // Only Homagama's cases are listed.
+  const list = ho.getByRole("region", { name: "පරීක්ෂා කිරීමට ඇති ප්‍රතිලාභීන්" });
+  const rows = list.getByRole("listitem");
+  await expect(rows.first()).toBeVisible();
+  for (const row of await rows.all()) await expect(row).toContainText("හෝමාගම ප්‍රා.ලේ.");
+  await list.getByRole("link", { name: new RegExp(number) }).click();
+  await expect(ho.getByRole("heading", { level: 2, name })).toBeVisible();
+  expect(ho.url()).toContain(place);
+
+  // Verified; back in Homagama's queue.
+  await ho.getByRole("button", { name: VERIFY, exact: true }).click();
+  await ho.getByRole("dialog").getByRole("button", { name: "ඔව්, අනුමත කරන්න" }).click();
+  await expect(ho).toHaveURL(new RegExp(`/ho/check\\?notice=verified&done=${caseId}&${place}$`));
+  await expect(office.locator("option:checked")).toHaveText(/^හෝමාගම \(\d+\)$/);
+
+  // The release tab keeps the place, and so does the release.
+  await ho.getByRole("link", { name: /^2\. මුදල් නිදහස් කිරීමට/ }).click();
+  await expect(ho).toHaveURL(new RegExp(`/ho/release\\?${place}$`));
+  await ho
+    .getByRole("region", { name: "මුදල් නිදහස් කිරීමට ඇති ප්‍රතිලාභීන්" })
+    .getByRole("link", { name: new RegExp(number) })
+    .click();
+  await expect(ho.getByRole("heading", { level: 2, name })).toBeVisible();
+  await ho.getByLabel("යොමු අංකය *").fill("HO/2026/PLACE");
+  await ho.getByRole("button", { name: RELEASE }).click();
+  await expect(ho).toHaveURL(new RegExp(`/ho/release\\?notice=released&done=${caseId}&${place}$`));
+
+  await ho.getByRole("link", { name: "සියලු ප්‍රදේශ පෙන්වන්න" }).click();
+  await expect(ho).toHaveURL(/\/ho\/release$/);
+  await expect(district.locator("option:checked")).toHaveText(/^සියලු දිස්ත්‍රික්ක \(\d+\)$/);
+  await expect(office).toBeDisabled();
   await ho.context().close();
 });
 

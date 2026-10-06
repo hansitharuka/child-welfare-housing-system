@@ -11,7 +11,7 @@ import { correctRelease, recordRelease } from "../releases/commands";
 import { type Actor, saveCase, type SaveCaseInput } from "./commands";
 import { decideCase } from "./decide";
 import { getCase, todoItems } from "./queries";
-import { listQueue, queueCounts, waitingNow } from "./queues";
+import { listQueue, queueByOffice, queueCounts, waitingNow } from "./queues";
 
 const db = createTestClient();
 
@@ -282,6 +282,37 @@ describe("the queues (CHK-1, REL-1)", () => {
     const second = await verified("200200000023");
     const ids = (await listQueue(db, ho, "release", 1)).rows.map((row) => row.id);
     expect(ids.indexOf(first.id)).toBeLessThan(ids.indexOf(second.id));
+  });
+
+  it("narrows a queue to a district or one DS office, and counts each office's cases (CHK-4)", async () => {
+    const atA = await submitted("200200000024");
+    const atB = await submitted("200200000025", dsB);
+    const officeA = dsA.dsOfficeId ?? 0;
+    const { districtId } = await db.dsOffice.findUniqueOrThrow({
+      where: { id: officeA },
+      select: { districtId: true },
+    });
+
+    const office = await listQueue(db, ho, "check", 1, { districtId, dsOfficeId: officeA });
+    expect(office.rows.map((row) => row.id)).toContain(atA.id);
+    expect(office.rows.map((row) => row.id)).not.toContain(atB.id);
+    expect(office.total).toBe(await db.case.count({ where: { status: "SUBMITTED", dsOfficeId: officeA } }));
+
+    const district = await listQueue(db, ho, "check", 1, { districtId });
+    expect(district.total).toBe(await db.case.count({ where: { status: "SUBMITTED", dsOffice: { districtId } } }));
+    expect(district.rows.map((row) => row.id)).toContain(atA.id);
+
+    // An office in another district finds nothing there.
+    const elsewhere = await db.dsOffice.findFirstOrThrow({ where: { districtId: { not: districtId } } });
+    expect((await listQueue(db, ho, "check", 1, { districtId, dsOfficeId: elsewhere.id })).total).toBe(0);
+
+    const counts = await queueByOffice(db, ho, "check");
+    expect(counts.get(officeA)).toBe(office.total);
+    expect([...counts.values()].reduce((sum, n) => sum + n, 0)).toBe((await queueCounts(db, ho)).check);
+    for (const actor of [dsA, admin]) {
+      expect((await queueByOffice(db, actor, "check")).size).toBe(0);
+      expect((await listQueue(db, actor, "check", 1, { districtId })).total).toBe(0);
+    }
   });
 
   it("counts both queues for Head Office only", async () => {
