@@ -11,7 +11,6 @@ const STYLE: Record<CaseStatus, string> = {
   COMPLETED: "bg-primary text-primary-foreground",
   REJECTED: "bg-[#FDF0EE] text-[#8F1B12]",
   STOPPED: "bg-muted text-[#3F4843]",
-  IMPORTED: "bg-[#F3EFE3] text-[#5C4A1A]",
 };
 
 export function StatusChip({ status }: { status: CaseStatus }) {

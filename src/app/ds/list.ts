@@ -1,15 +1,12 @@
 import type { CaseFilter } from "@/server/cases/queries";
 
 /** HOME-2: the home page's tabs, in order. */
-export const TABS = ["all", "inProgress", "completed", "detailsMissing"] as const;
+export const TABS = ["all", "inProgress", "completed"] as const;
 export type Tab = (typeof TABS)[number];
 
 const isTab = (value: unknown): value is Tab => TABS.includes(value as Tab);
 
-/**
- * The cases a tab shows. "Details missing" lists the cases brought in from the old sheet that still
- * lack what the office fills in (IMP-4).
- */
+/** The cases a tab shows. */
 export function tabFilter(tab: Tab): Omit<CaseFilter, "q" | "page"> {
   switch (tab) {
     case "all":
@@ -18,8 +15,6 @@ export function tabFilter(tab: Tab): Omit<CaseFilter, "q" | "page"> {
       return { statuses: ["IN_PROGRESS"] };
     case "completed":
       return { statuses: ["COMPLETED"] };
-    case "detailsMissing":
-      return { detailsMissing: true };
   }
 }
 

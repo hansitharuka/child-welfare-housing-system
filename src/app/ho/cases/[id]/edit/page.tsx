@@ -6,7 +6,7 @@ import { StatusChip } from "@/components/cases/status-chip";
 import { CaseForm, type OfficeSetting } from "@/components/forms/case-form";
 import { FormNotice } from "@/components/forms/form-field";
 import { getCase } from "@/server/cases/queries";
-import { canChangeOffice, canDeleteDraft, canEditDetails, isBeingEntered, mayStayEmpty } from "@/server/cases/rules";
+import { canChangeOffice, canDeleteDraft, canEditDetails, isBeingEntered } from "@/server/cases/rules";
 import { requireRole } from "@/server/context";
 import { db } from "@/server/db";
 import { districtsWithOffices } from "@/server/lists/queries";
@@ -70,7 +70,6 @@ export default async function HoEditCasePage({
         documents={details.documents}
         returnReason={details.returnReason}
         mode={isBeingEntered(details.status) ? "entry" : "change"}
-        mayStayEmpty={mayStayEmpty(details)}
         actions={{
           save: saveCaseAction,
           upload: uploadDocumentAction,

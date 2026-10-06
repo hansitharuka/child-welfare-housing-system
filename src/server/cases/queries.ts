@@ -2,10 +2,7 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { CaseStatus, Category, InstallmentStatus, Kind } from "@/generated/prisma/enums";
 import { addDays, colomboDay, colomboStartOf, dateToDay, dayToDate, daysBetween } from "@/lib/dates";
 import { nicKey, normaliseNic } from "@/lib/nic";
-import { CONFIRMED_NEEDS, IMPORTED_NEEDS } from "@/lib/validation/case";
-import type { SheetNotes } from "../import/commands";
 import { canSeeOffice, officeFilter, type Viewer } from "../permissions";
-import { missingImported } from "./rules";
 
 export type CaseDetails = {
   id: string;
@@ -43,12 +40,6 @@ export type CaseDetails = {
   release: ReleaseDetails | null;
   /** The four installments, made with the release (INS-1), in order. */
   installments: InstallmentDetails[];
-  /** Brought in from the old sheet (IMP-1). */
-  fromSheet: boolean;
-  /** Where it was on the sheet: its row on its category's tab, and its serial number there, if any (IMP-7). */
-  sheetRef: { row: number; serial: number | null } | null;
-  /** What the old sheet said, on a case brought in from it (IMP-5); read-only. */
-  sheetNotes: SheetNotes | null;
 };
 
 export type ReleaseDetails = {
@@ -98,10 +89,6 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
       completedAt: true,
       statusBeforeStop: true,
       updatedAt: true,
-      sheetKey: true,
-      sheetRow: true,
-      sheetSerial: true,
-      sheetNotes: true,
       dsOffice: { select: { nameSi: true, active: true, district: { select: { id: true, nameSi: true } } } },
       files: {
         where: { kind: "DOCUMENT", removedAt: null },
@@ -109,8 +96,7 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
         select: { id: true, originalName: true },
       },
       decisions: {
-        // A case from the sheet confirmed as rejected or stopped has its reason on that confirmation (IMP-5).
-        where: { type: { in: ["SEND_BACK", "REJECT", "STOP", "CONFIRM_IMPORT"] } },
+        where: { type: { in: ["SEND_BACK", "REJECT", "STOP"] } },
         orderBy: { at: "desc" },
         take: 1,
         select: { type: true, reason: true, at: true },
@@ -140,22 +126,9 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
     },
   });
   if (!found || !canSeeOffice(viewer, found.dsOfficeId)) return null;
-  const {
-    dsOffice,
-    files,
-    decisions,
-    release,
-    installments,
-    statusBeforeStop,
-    sheetKey,
-    sheetRow,
-    sheetSerial,
-    sheetNotes,
-    ...fields
-  } = found;
+  const { dsOffice, files, decisions, release, installments, statusBeforeStop, ...fields } = found;
   const latest = decisions[0];
-  const confirmed = latest?.type === "CONFIRM_IMPORT";
-  const stopped = found.status === "STOPPED" && (latest?.type === "STOP" || confirmed);
+  const stopped = found.status === "STOPPED" && latest?.type === "STOP";
   return {
     ...fields,
     officeName: dsOffice.nameSi,
@@ -163,7 +136,7 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
     districtId: dsOffice.district.id,
     districtName: dsOffice.district.nameSi,
     returnReason: found.status === "RETURNED" && latest?.type === "SEND_BACK" ? latest.reason : null,
-    rejectReason: found.status === "REJECTED" && (latest?.type === "REJECT" || confirmed) ? latest.reason : null,
+    rejectReason: found.status === "REJECTED" && latest?.type === "REJECT" ? latest.reason : null,
     stop:
       found.status === "STOPPED"
         ? {
@@ -186,10 +159,6 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
       expectedOn: i.expectedOn && dateToDay(i.expectedOn),
       releasedOn: i.releasedOn && dateToDay(i.releasedOn),
     })),
-    fromSheet: sheetKey !== null,
-    sheetRef: sheetRow === null ? null : { row: sheetRow, serial: sheetSerial },
-    // Only the import writes it (src/server/import/commands.ts).
-    sheetNotes: sheetNotes as SheetNotes | null,
   };
 }
 
@@ -201,8 +170,6 @@ export type CaseFilter = {
   kind?: Kind;
   districtId?: number;
   dsOfficeId?: number;
-  /** Only cases brought in from the sheet that still lack what their office fills in (IMP-4). */
-  detailsMissing?: boolean;
   /** 1 is the first page. */
   page?: number;
 };
@@ -225,25 +192,7 @@ export type CaseRow = {
   paid: number | null;
   /** The highest stage reached (HOME-1), if any. */
   stageName: string | null;
-  /** Brought in from the sheet and still missing details its office fills in (IMP-4). */
-  detailsMissing: boolean;
 };
-
-/**
- * IMP-4: a case brought in from the sheet that still lacks the kind of help, the NIC or a phone number,
- * which its office fills in (IMP-5). Once Head Office has confirmed it, the kind is set, and the case
- * stays here while it is verified or in progress with no NIC or first phone number (missingImported).
- */
-const DETAILS_MISSING = {
-  OR: [
-    { status: "IMPORTED", OR: IMPORTED_NEEDS.map((field) => ({ [field]: null })) },
-    {
-      sheetKey: { not: null },
-      status: { in: ["VERIFIED", "IN_PROGRESS"] },
-      OR: CONFIRMED_NEEDS.map((field) => ({ [field]: null })),
-    },
-  ],
-} satisfies Prisma.CaseWhereInput;
 
 /** A case in progress with no update for this many days is shown as waiting for one (HOME-1, HOME-3, DSH-1). */
 export const STALE_DAYS = 30;
@@ -267,7 +216,6 @@ export function caseWhere(viewer: Viewer, filter: CaseFilter): Prisma.CaseWhereI
   if (filter.kind) and.push({ kind: filter.kind });
   if (filter.districtId) and.push({ dsOffice: { districtId: filter.districtId } });
   if (filter.dsOfficeId) and.push({ dsOfficeId: filter.dsOfficeId });
-  if (filter.detailsMissing) and.push(DETAILS_MISSING);
 
   const q = filter.q?.trim();
   if (q) {
@@ -310,9 +258,6 @@ export async function listCases(
         kind: true,
         name: true,
         childName: true,
-        nic: true,
-        mobile1: true,
-        sheetKey: true,
         submittedAt: true,
         updatedAt: true,
         dsOffice: { select: { nameSi: true, district: { select: { nameSi: true } } } },
@@ -329,9 +274,8 @@ export async function listCases(
     db.case.count({ where }),
   ]);
   return {
-    rows: found.map(({ dsOffice, release, _count, stageUpdates, nic, mobile1, sheetKey, ...row }) => ({
+    rows: found.map(({ dsOffice, release, _count, stageUpdates, ...row }) => ({
       ...row,
-      detailsMissing: missingImported({ ...row, nic, mobile1, fromSheet: sheetKey !== null }).length > 0,
       officeName: dsOffice.nameSi,
       districtName: dsOffice.district.nameSi,
       paid: release ? _count.installments : null,

@@ -25,7 +25,7 @@ export type ReleaseValues = {
 
 /**
  * The days a release date must fall between (REL-2): from the verification to today, in Colombo.
- * A case with no verification date (one brought in from the sheet) has no earliest day.
+ * A case with no verification date has no earliest day.
  */
 export type ReleaseDateLimits = { earliest: string | null; today: string };
 

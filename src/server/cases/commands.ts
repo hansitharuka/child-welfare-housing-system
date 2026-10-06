@@ -3,21 +3,14 @@ import type { CaseStatus } from "@/generated/prisma/enums";
 import { colomboYear } from "@/lib/dates";
 import { MAX_DOCUMENTS } from "@/lib/file-types";
 import { nicKey } from "@/lib/nic";
-import { CASE_FIELDS, type CaseField, type CaseValues, missingRequired } from "@/lib/validation/case";
+import { CASE_FIELDS, type CaseValues, missingRequired } from "@/lib/validation/case";
 import { writeAudit } from "../audit";
 import { deleteStoredFile } from "../files/storage";
 import { logError } from "../log";
 import { canSeeOffice, caseScope, type Viewer } from "../permissions";
 import { nextCaseNumber } from "./numbers";
 import { isUniqueViolation, Refusal } from "./refusal";
-import {
-  canChangeOffice,
-  canDeleteDraft,
-  canEditDetails,
-  editableStatuses,
-  mayStayEmpty,
-  mustStayComplete,
-} from "./rules";
+import { canChangeOffice, canDeleteDraft, canEditDetails, editableStatuses, mustStayComplete } from "./rules";
 import { applyMove, moveRefusal } from "./transitions";
 
 /** The signed-in user making a change. */
@@ -81,7 +74,6 @@ const CASE_SELECT = {
   mobile1: true,
   mobile2: true,
   remark: true,
-  sheetKey: true,
 } as const satisfies Prisma.CaseSelect & Record<(typeof CASE_FIELDS)[number], true>;
 
 type StoredCase = Prisma.CaseGetPayload<{ select: typeof CASE_SELECT }>;
@@ -133,13 +125,8 @@ async function checkSave(
     if (!canEditDetails(actor.role, current.status)) return "notEditable";
     if (current.version !== input.version) return "conflict";
     if (office !== current.dsOfficeId && !canChangeOffice(actor.role, current.status)) return "notEditable";
-    // CASE-9: a verified case keeps every required field, whichever button sent the form; on a case
-    // from the old sheet, those the sheet left empty may stay empty (IMP-4).
-    if (mustStayComplete(current.status)) {
-      const allowed = mayStayEmpty({ ...current, fromSheet: current.sheetKey !== null });
-      const missing = Object.keys(missingRequired(input.values)) as CaseField[];
-      if (missing.some((field) => !allowed.includes(field))) return "incomplete";
-    }
+    // CASE-9: a verified case keeps every required field, whichever button sent the form.
+    if (mustStayComplete(current.status) && Object.keys(missingRequired(input.values)).length > 0) return "incomplete";
     // The stages come from the kind of help (LST-4), so a case that has reached one keeps its kind.
     if (input.values.kind !== current.kind) {
       const reached = await db.stageUpdate.count({ where: { caseId: current.id, stageId: { not: null } } });

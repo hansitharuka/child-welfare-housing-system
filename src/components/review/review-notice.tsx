@@ -3,11 +3,8 @@ import { caseName } from "@/components/cases/page-header";
 import { FormNotice } from "@/components/forms/form-field";
 import type { CaseDetails } from "@/server/cases/queries";
 
-/**
- * What a check, release or confirmation leaves on the next page, by its key under "review.notices".
- * A confirmation of a case from the old sheet (IMP-5) names the status it was given.
- */
-const NOTICES = ["verified", "sentBack", "rejected", "released", "corrected", "confirmed"] as const;
+/** What a check or release action leaves on the next page, by its key under "review.notices". */
+const NOTICES = ["verified", "sentBack", "rejected", "released", "corrected"] as const;
 type ReviewNoticeKey = (typeof NOTICES)[number];
 
 export const isReviewNotice = (value: unknown): value is ReviewNoticeKey =>
@@ -23,7 +20,6 @@ export async function ReviewNotice({ notice, details }: { notice: unknown; detai
         name: caseName(tc, details.name, details.childName),
         number: details.caseNumber ?? tc("noNumber"),
         office: details.officeName,
-        status: tc(`status.${details.status}`),
       })}
     />
   );

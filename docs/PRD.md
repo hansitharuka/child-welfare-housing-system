@@ -60,7 +60,6 @@ The targets below are proposals for the Ministry to confirm.
 | Time from submission to a Head Office decision | Median under 7 days |
 | In-progress cases updated in the last 30 days | 90% or more |
 | New cases with a valid NIC and phone number | 100% |
-| Imported cases with a missing NIC or phone filled in | 90% within 3 months |
 | Time to get a national progress report | Under 1 minute |
 
 ## Users
@@ -163,7 +162,7 @@ Version 1 covers a case from first entry to completion, with dashboards, history
 
 ### Moving off the sheet
 
-- Import the 729 sheet cases once, with a report of the rows that need fixing.
+- Bring the 729 sheet cases into the system. How is open: a one-time import was built, then removed on 6 Oct 2026, because the sheet is still being updated.
 
 ## Programme rules
 
@@ -221,7 +220,7 @@ Version 1 replaces the sheet end to end for all three roles. Paying out money an
 
 - Every item under Main features, for all DS offices and Head Office.
 - Screens in Sinhala, designed for office PCs.
-- A one-time import of the 729 sheet cases.
+- Bringing the 729 sheet cases into the system (how is open; see Moving off the sheet).
 
 ### Later
 

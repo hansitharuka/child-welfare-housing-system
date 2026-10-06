@@ -1,5 +1,5 @@
 /**
- * Made-up people for the load-test data and the sample sheet (SEC-11): names, NICs and phone numbers
+ * Made-up people for the load-test data (SEC-11): names, NICs and phone numbers
  * that belong to nobody. They come from a small seeded random number generator, so the same seed
  * always gives the same people.
  */
