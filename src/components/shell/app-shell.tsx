@@ -25,7 +25,6 @@ export async function AppShell({
   children: React.ReactNode;
 }) {
   const t = await getTranslations();
-  const showTestBanner = process.env.APP_ENV !== "production";
   const areaLabel = officeName ? t("areas.dsOffice", { office: officeName }) : t(`areas.${area}`);
 
   return (
@@ -39,15 +38,6 @@ export async function AppShell({
         </span>
         <span className="shrink-0 text-base whitespace-nowrap text-header-muted">{areaLabel}</span>
         <div className="ms-auto flex min-w-0 items-center gap-4">
-          {/* In a long language the test banner gives way first; production has none. */}
-          {showTestBanner && (
-            <span
-              title={t("app.testBanner")}
-              className="min-w-0 truncate rounded-full bg-notice px-3 py-1 text-sm font-semibold text-notice-foreground"
-            >
-              {t("app.testBanner")}
-            </span>
-          )}
           <LanguagePicker tone="header" />
           {bell && <Bell href={bell.href} unread={bell.unread} />}
           <span className="shrink-0 text-base whitespace-nowrap" aria-label={`${t("shell.signedInAs")} ${userName}`}>

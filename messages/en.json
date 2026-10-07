@@ -2,7 +2,6 @@
   "app": {
     "name": "Diviyata Sawiyak",
     "description": "The system for recording the progress of the Diviyata Sawiyak housing assistance programme",
-    "testBanner": "Test environment · do not enter real data",
     "ministry": "Ministry of Women and Child Affairs"
   },
   "language": {

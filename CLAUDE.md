@@ -196,7 +196,7 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 - **Exports** take the screen's translator and `locale`, so the headers, statuses, place names and file name come in that language.
 - **The root error page** (`global-error.tsx`) shows Sinhala at once and loads the chosen language's messages from the cookie.
 - **End-to-end tests:** `screenText` leaves out text marked with another `lang`, such as the picker's names. `chooseLanguage(page, "தமிழ்")` in `tests/e2e/helpers.ts` switches a page's language; `tests/e2e/languages.spec.ts` covers AC-27.
-- **Lengths:** Tamil labels run longer than Sinhala ones. The header keeps the name, office and buttons on one line and lets the test banner shorten; the dashboard's table scrolls rather than being cut off.
+- **Lengths:** Tamil labels run longer than Sinhala ones. The header keeps the name, office and buttons on one line; the dashboard's table scrolls rather than being cut off.
 
 ### Sheet import (removed)
 
