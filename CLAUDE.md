@@ -42,6 +42,7 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 | Change the database schema | edit `prisma/schema.prisma`, then `npx prisma migrate dev --name <change>` and `npx prisma generate` (Prisma 7's `migrate dev` no longer regenerates the client). When `migrate dev` stops to ask about a change (for example a new unique column), write the SQL with `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` into a new `prisma/migrations/<timestamp>_<change>/migration.sql` and apply it with `npx prisma migrate deploy` |
 | Put the sample accounts back to their start state | `npx tsx prisma/seed-users.ts --reset` (the end-to-end tests do this themselves) |
 | Add 5,000 made-up cases for load tests, or remove them | `npm run db:seed-load` (`-- --count 500`, `-- --seed 7`), `npm run db:seed-load -- --remove`. Remove them before running the end-to-end tests |
+| Add demo cases (15 per DS office with an officer, with their history), or remove them | `npm run db:seed-demo` (`-- --per-office 30`, `-- --seed 7`), `npm run db:seed-demo -- --remove`. Remove them before running the end-to-end tests |
 
 ## Things to know when coding
 
@@ -155,6 +156,11 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
   - `addLoadData(db, { count, seed, now })` and `removeLoadData(db)` are exported for the database tests.
   - `addLoadData` ends with a plain `ANALYZE`. Until autoanalyze notices 5,000 new cases, the planner may still think the tables are as small as before, which made the dashboard's reads about 20 times slower and the database tests time out now and then.
   - **Remove it before the end-to-end tests.** The check queue lists 50 per page, oldest first (CHK-1), and the release test expects its new case on the first page. While load-test cases use a test office or stage that an end-to-end run left behind, `cleanup.ts` leaves that office or stage in place. It is removed on the first run after the load-test cases are gone.
+- **Demo data** (`scripts/seed-demo.ts`, 7 Oct 2026, asked for by the user to fill the screens) reuses the load-test planner: `planCase`, `writePlanned` and `removeMadeUp` in `scripts/seed-load.ts`, which differ by a `Cast` (id prefix, who acts, the made-up person, case ages, release days).
+  - It adds 15 cases (every status) to each active DS office that has an active officer and no demo cases yet, so running it again only fills offices whose officer was added since. Ids start with `demo-`.
+  - Each step is credited to the office's own officer or a random active Head Office officer, and written to the audit log as the commands write it, so the case pages' history reads normally; the officer gets the notices, read except the last 7 days'. Each district's letter goes out every 14 days, so letters hold several cases.
+  - People look like hand-entered cases: a mother (or father) and child, or a young care leaver, with an address "අංක N, <road>, <village>, <district>" and a GN division. No documents or photos.
+  - `--remove` deletes the cases, their notices and letters and puts the counters back, but their audit records stay (HIS-3); nothing shows them once the case is gone. Its database test is `scripts/seed-demo.db.test.ts`.
 - **The dashboard** (`/ho`, DSH-1) is built from `dashboard()` in `src/server/dashboard/queries.ts`: the totals, each DS office's figures and the stale cases.
   - `tableRows()` is pure. It groups the office figures by district, or lists a chosen district's offices.
   - The figures are read on every load (DSH-2); the page renders per request anyway.

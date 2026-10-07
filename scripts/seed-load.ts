@@ -17,12 +17,15 @@
  *   the admin's users screen.
  * - No audit records are written, because the audit log can never be cleaned up (HIS-3). So a
  *   load-test case's history is empty. No notifications, files or photos are made either.
+ *
+ * The planning, writing and removing here are shared with the demo data (scripts/seed-demo.ts), which
+ * differs only in its `Cast` and in writing each case's history.
  */
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import type { Prisma, PrismaClient } from "../src/generated/prisma/client";
-import type { CaseStatus, Category, DecisionType, Kind } from "../src/generated/prisma/enums";
+import type { CaseStatus, Category, DecisionType, Kind, NotificationType } from "../src/generated/prisma/enums";
 import { addDays, colomboDay, colomboStartOf, colomboYear, dayToDate } from "../src/lib/dates";
 import { INSTALLMENT_AMOUNT, INSTALLMENT_COUNT, RELEASE_AMOUNT } from "../src/lib/money";
 import { nicKey } from "../src/lib/nic";
@@ -43,10 +46,13 @@ const MAX_AGE_DAYS = 720;
 /** Share of the cases being built whose last update was 30 or more days ago (DSH-1, HOME-3). */
 const STALE_SHARE = 0.25;
 const MINUTE = 60_000;
+const DAY = 24 * 60 * MINUTE;
+/** A notice older than this many days has been read. */
+const UNREAD_DAYS = 7;
 /** Rows per insert, well under PostgreSQL's limit on parameters in one statement. */
 const CHUNK = 1_000;
 
-/** Load-test cases are made-up data, so never in production. */
+/** Made-up cases are never added to, or removed from, a production database. */
 export function loadDataAllowed(appEnv = process.env.APP_ENV ?? "development"): boolean {
   return ["development", "ci", "test", "staging"].includes(appEnv);
 }
@@ -99,26 +105,79 @@ const NOTE_SHARES: Share<number> = [
 
 // --- Planning the cases -------------------------------------------------------------------------
 
-type Office = { id: number; code: string; nameSi: string; districtId: number };
+/** A DS office that gets made-up cases. */
+export type Office = { id: number; code: string; nameSi: string; districtId: number; districtSi: string };
 
-type Context = {
+/** The made-up person on a case (SEC-11). A draft may lose some of these (CASE-4). */
+export type Person = {
+  name: string;
+  /** Only used for a child at risk. */
+  childName: string | null;
+  nic: string;
+  address: string;
+  gnDivision: string | null;
+  mobile1: string;
+  mobile2: string | null;
+  remark: string | null;
+};
+
+/**
+ * Who the made-up cases belong to and what they look like. The load-test data and the demo data
+ * (scripts/seed-demo.ts) differ only here.
+ */
+export type Cast = {
+  /** Every case's id starts with this, which is how they are removed again. */
+  idPrefix: string;
+  /** Who enters a case and takes the DS office's steps on it. */
+  officer: (office: Office) => string;
+  /** Who takes Head Office's steps on a case: checking, releasing and stopping. */
+  headOffice: (r: Random) => string;
+  person: (r: Random, office: Office, category: Category | null) => Person;
+  /** How many days ago a case on its way to `path` was entered; at least `minAge`. */
+  age: (r: Random, path: CaseStatus, minAge: number) => number;
+  /** The day a case verified on `verifiedDay` is released: after it, but never after `today` (REL-2). */
+  releaseDay: (r: Random, verifiedDay: string, office: Office, today: string) => string;
+};
+
+export type Context = {
   r: Random;
   now: Date;
   /** "YYYY-MM-DD" in Colombo */
   today: string;
-  /** The active stages of each kind, in order (LST-4). */
-  stages: Record<Kind, number[]>;
+  /** The active stages of each kind, in order (LST-4), with their Sinhala name and all three (UI-9). */
+  stages: Record<Kind, { id: number; name: string }[]>;
+  cast: Cast;
+};
+
+type Json = Prisma.InputJsonValue | null;
+
+/**
+ * One step of a case's history, as the screens would have written it to the audit log (HIS-1). The
+ * writer fills in what is known only then: the case number of a submit, the letter of a release.
+ */
+type Step = {
+  at: Date;
+  actorId: string | null;
+  action: string;
+  entityType: string;
+  entityId: string;
+  before?: Record<string, Json>;
+  after: Record<string, Json>;
 };
 
 /** A release before its allocation letter is known: the cases released on the same day in a district share one. */
 type PlannedRelease = Omit<Prisma.ReleaseCreateManyInput, "letterId"> & { districtId: number; day: string };
 
-type Planned = {
+export type Planned = {
+  office: Office;
   case: Prisma.CaseCreateManyInput;
   decisions: Prisma.DecisionCreateManyInput[];
   release: PlannedRelease | null;
   installments: Prisma.InstallmentCreateManyInput[];
   stageUpdates: Prisma.StageUpdateCreateManyInput[];
+  history: Step[];
+  /** The notices the steps send the office's officer (NTF-1); the older ones have been read. */
+  notifications: Prisma.NotificationCreateManyInput[];
 };
 
 type Event = "pay" | "start" | "stage" | "note";
@@ -126,7 +185,7 @@ type Event = "pay" | "start" | "stage" | "note";
 const latestDay = (a: string, b: string) => (a > b ? a : b);
 
 function dayDiff(from: string, to: string): number {
-  return Math.round((Date.parse(to) - Date.parse(from)) / (24 * 60 * MINUTE));
+  return Math.round((Date.parse(to) - Date.parse(from)) / DAY);
 }
 
 /** Interleaves the chains at random, keeping each chain's own order. */
@@ -142,8 +201,8 @@ function interleave<T>(r: Random, chains: T[][]): T[] {
 }
 
 /** One case and everything that hangs off it, with a story that follows the rules of SPEC section 6. */
-function planCase(ctx: Context, office: Office, status: CaseStatus): Planned {
-  const { r, today } = ctx;
+export function planCase(ctx: Context, office: Office, status: CaseStatus): Planned {
+  const { r, today, cast } = ctx;
   const upToToday = (day: string) => (day > today ? today : day);
   // A moment during office hours on `day`, after `after`, and never after now.
   const moment = (day: string, after: Date | null) => {
@@ -152,14 +211,29 @@ function planCase(ctx: Context, office: Office, status: CaseStatus): Planned {
     return at > ctx.now ? ctx.now : at;
   };
 
-  const id = `${LOAD_ID_PREFIX}${randomUUID()}`;
+  const id = `${cast.idPrefix}${randomUUID()}`;
+  const officer = cast.officer(office);
+  const headOffice = cast.headOffice(r);
   const draft = status === "DRAFT";
   // A draft may still have empty fields (CASE-4).
   const maybe = <T>(value: T) => (draft && r.chance(0.2) ? null : value);
   const category = maybe<Category>(r.chance(1 / 3) ? "CARE_LEAVER" : "CHILD_AT_RISK");
   const kind: Kind = r.chance(0.8) ? "NEW_HOUSE" : "RENOVATION";
-  const surname = r.pick(SURNAMES);
-  const nic = maybe(madeUpNic(r));
+  const person = cast.person(r, office, category);
+  const nic = maybe(person.nic);
+  const fields = {
+    dsOfficeId: office.id,
+    category,
+    kind: maybe(kind),
+    name: person.name,
+    childName: category === "CHILD_AT_RISK" ? person.childName : null,
+    nic,
+    address: maybe(person.address),
+    gnDivision: person.gnDivision,
+    mobile1: maybe(person.mobile1),
+    mobile2: person.mobile2,
+    remark: person.remark,
+  };
 
   // A stopped case was verified or being built when it stopped (CLS-3).
   const stoppedFrom: CaseStatus | null = status === "STOPPED" ? (r.chance(0.6) ? "IN_PROGRESS" : "VERIFIED") : null;
@@ -167,12 +241,46 @@ function planCase(ctx: Context, office: Office, status: CaseStatus): Planned {
   const released = path === "IN_PROGRESS" || path === "COMPLETED";
   const minAge = path === "COMPLETED" ? 150 : released ? 45 : path === "VERIFIED" ? 10 : 0;
 
-  const createdDay = addDays(today, -r.int(minAge, MAX_AGE_DAYS));
+  const createdDay = addDays(today, -cast.age(r, path, minAge));
   const createdAt = moment(createdDay, null);
   let last = createdAt;
+
+  const history: Step[] = [];
+  const notifications: Prisma.NotificationCreateManyInput[] = [];
+  const record = (step: Omit<Step, "entityType" | "entityId"> & Partial<Step>, notice?: NotificationType) => {
+    history.push({ entityType: "case", entityId: id, ...step });
+    if (notice) {
+      const read = ctx.now.getTime() - step.at.getTime() > UNREAD_DAYS * DAY;
+      notifications.push({
+        id: randomUUID(),
+        userId: officer,
+        caseId: id,
+        type: notice,
+        createdAt: step.at,
+        readAt: read ? new Date(step.at.getTime() + 60 * MINUTE) : null,
+      });
+    }
+  };
+  // A status change, as applyMove records it (src/server/cases/transitions.ts).
+  const move = (
+    at: Date,
+    actorId: string | null,
+    action: string,
+    from: CaseStatus,
+    to: CaseStatus,
+    extra: Record<string, Json> = {},
+  ) => ({ at, actorId, action, before: { status: from }, after: { status: to, ...extra } });
+
   const decisions: Prisma.DecisionCreateManyInput[] = [];
   const decide = (type: DecisionType, at: Date, reason: string | null = null) =>
-    decisions.push({ id: randomUUID(), caseId: id, type, reason, byId: LOAD_USER_ID, at });
+    decisions.push({ id: randomUUID(), caseId: id, type, reason, byId: type === "SUBMIT" ? officer : headOffice, at });
+
+  record({
+    at: createdAt,
+    actorId: officer,
+    action: "case_created",
+    after: { ...Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== null)), documentsAdded: [] },
+  });
 
   let submittedAt: Date | null = null;
   let verifiedAt: Date | null = null;
@@ -188,32 +296,46 @@ function planCase(ctx: Context, office: Office, status: CaseStatus): Planned {
     const submittedDay = upToToday(addDays(createdDay, r.int(0, 7)));
     submittedAt = last = moment(submittedDay, last);
     decide("SUBMIT", submittedAt);
+    record(move(submittedAt, officer, "case_submitted", "DRAFT", "SUBMITTED"));
 
     if (path === "RETURNED" || path === "REJECTED") {
       last = moment(upToToday(addDays(submittedDay, r.int(1, 20))), last);
-      if (path === "RETURNED") decide("SEND_BACK", last, r.pick(SEND_BACK_REASONS));
-      else decide("REJECT", last, r.pick(REJECT_REASONS));
+      if (path === "RETURNED") {
+        const reason = r.pick(SEND_BACK_REASONS);
+        decide("SEND_BACK", last, reason);
+        record(move(last, headOffice, "case_sent_back", "SUBMITTED", "RETURNED", { reason }), "SENT_BACK");
+      } else {
+        const reason = r.pick(REJECT_REASONS);
+        decide("REJECT", last, reason);
+        record(move(last, headOffice, "case_rejected", "SUBMITTED", "REJECTED", { reason }), "REJECTED");
+      }
     }
 
     if (path === "VERIFIED" || released) {
       const verifiedDay = upToToday(addDays(submittedDay, r.int(2, 30)));
       verifiedAt = last = moment(verifiedDay, last);
       decide("VERIFY", verifiedAt);
+      record(move(verifiedAt, headOffice, "case_verified", "SUBMITTED", "VERIFIED"), "VERIFIED");
 
       if (released) {
         // REL-2: on or after the verification day, never in the future.
-        const releasedDay = upToToday(addDays(verifiedDay, r.int(1, 30)));
+        const releasedDay = cast.releaseDay(r, verifiedDay, office, today);
         const releaseAt = (last = moment(releasedDay, last));
         release = {
           id: randomUUID(),
           caseId: id,
           releasedOn: dayToDate(releasedDay),
           amount: RELEASE_AMOUNT,
-          byId: LOAD_USER_ID,
+          byId: headOffice,
           at: releaseAt,
           districtId: office.districtId,
           day: releasedDay,
         };
+        // The writer adds the allocation letter's details.
+        record(
+          move(releaseAt, headOffice, "case_released", "VERIFIED", "IN_PROGRESS", { amount: RELEASE_AMOUNT }),
+          "RELEASED",
+        );
 
         const stages = ctx.stages[kind];
         let paid: number;
@@ -257,80 +379,127 @@ function planCase(ctx: Context, office: Office, status: CaseStatus): Planned {
         const payments: { day: string; at: Date }[] = [];
         let start: { day: string; at: Date } | null = null;
         let stagesReached = 0;
+        let current: { id: number } | null = null;
         for (const [index, event] of events.entries()) {
           const day = days[index];
           last = moment(day, last);
           if (event === "pay") payments.push({ day, at: last });
           else if (event === "start") start = { day, at: last };
           else {
-            const stageId = event === "stage" ? stages[stagesReached++] : null;
+            const stage = event === "stage" ? stages[stagesReached++] : null;
             const note = event === "note" || r.chance(0.4) ? r.pick(VISIT_NOTES) : null;
-            stageUpdates.push({
+            const update = {
               id: randomUUID(),
               caseId: id,
-              stageId,
+              stageId: stage?.id ?? null,
               visitedOn: dayToDate(day),
               note,
-              byId: LOAD_USER_ID,
+              byId: officer,
               at: last,
+            };
+            stageUpdates.push(update);
+            // As src/server/stages/commands.ts records it.
+            record({
+              at: last,
+              actorId: officer,
+              action: "stage_updated",
+              entityType: "stage_update",
+              entityId: update.id,
+              before: { stageId: current?.id ?? null },
+              after: {
+                stageIds: stage ? [stage.id] : [],
+                stages: stage ? [stage.name] : [],
+                visitedOn: day,
+                note,
+                photos: [],
+              },
             });
+            if (stage) current = stage;
           }
         }
         steps = events.length;
 
+        // As src/server/installments/commands.ts records them.
+        const recordStart = (at: Date, installmentId: string, number: number, expectedOn: string, purpose: Json) =>
+          record({
+            at,
+            actorId: officer,
+            action: "installment_started",
+            entityType: "installment",
+            entityId: installmentId,
+            before: { number, status: "NOT_STARTED" },
+            after: { number, status: "PROCESSING", expectedOn, purpose, note: null },
+          });
         for (let number = 1; number <= INSTALLMENT_COUNT; number++) {
           const payment = payments[number - 1];
           const base = { id: randomUUID(), caseId: id, number, amount: INSTALLMENT_AMOUNT };
+          const purpose = r.chance(0.3) ? r.pick(PURPOSES) : null;
           if (payment) {
+            // Started a few days before it was paid, and after the one before was paid (INS-2).
+            const after = number === 1 ? releaseAt : payments[number - 2].at;
+            const startedAt = new Date(
+              Math.max((after.getTime() + payment.at.getTime()) / 2, payment.at.getTime() - r.int(2, 14) * DAY),
+            );
+            // INS-3: expected on or after the release.
+            const expectedOn = latestDay(colomboDay(startedAt), addDays(payment.day, -r.int(0, 7)));
             installments.push({
               ...base,
               status: "RELEASED",
-              // INS-3: expected on or after the release.
-              expectedOn: dayToDate(latestDay(releasedDay, addDays(payment.day, -r.int(0, 14)))),
+              expectedOn: dayToDate(expectedOn),
               releasedOn: dayToDate(payment.day),
-              purpose: r.chance(0.3) ? r.pick(PURPOSES) : null,
+              purpose,
               updatedAt: payment.at,
             });
+            recordStart(startedAt, base.id, number, expectedOn, purpose);
+            record({
+              at: payment.at,
+              actorId: officer,
+              action: "installment_paid",
+              entityType: "installment",
+              entityId: base.id,
+              before: { number, status: "PROCESSING", note: null },
+              after: { number, status: "RELEASED", releasedOn: payment.day, note: null },
+            });
           } else if (start && number === paid + 1) {
+            // Some have passed already, so the to-do panel has overdue payments (HOME-3).
+            const expectedOn = addDays(start.day, r.int(3, 45));
             installments.push({
               ...base,
               status: "PROCESSING",
-              // Some have passed already, so the to-do panel has overdue payments (HOME-3).
-              expectedOn: dayToDate(addDays(start.day, r.int(3, 45))),
-              purpose: r.chance(0.3) ? r.pick(PURPOSES) : null,
+              expectedOn: dayToDate(expectedOn),
+              purpose,
               updatedAt: start.at,
             });
+            recordStart(start.at, base.id, number, expectedOn, purpose);
           } else {
             installments.push({ ...base, status: "NOT_STARTED", updatedAt: releaseAt });
           }
         }
-        if (path === "COMPLETED") completedAt = last;
+        if (path === "COMPLETED") {
+          completedAt = last;
+          // The system finishes it in the same step (CLS-1), so the history names no one.
+          record(move(last, null, "case_completed", "IN_PROGRESS", "COMPLETED"), "COMPLETED");
+        }
       }
     }
 
     if (stoppedFrom) {
       last = moment(upToToday(addDays(colomboDay(last), r.int(1, 60))), last);
-      decide("STOP", last, r.pick(STOP_REASONS));
+      const reason = r.pick(STOP_REASONS);
+      decide("STOP", last, reason);
+      record(move(last, headOffice, "case_stopped", stoppedFrom, "STOPPED", { reason }), "STOPPED");
     }
   }
 
   return {
+    office,
     case: {
       id,
-      dsOfficeId: office.id,
-      category,
-      kind: maybe(kind),
-      status,
-      name: `${r.pick(GIVEN_NAMES)} ${surname}`,
-      childName: category === "CHILD_AT_RISK" ? `${r.pick(GIVEN_NAMES)} ${surname}` : null,
-      nic,
+      ...fields,
       // The 12-digit form, so old and new numbers match (CASE-6).
       nicKey: nic && nicKey(nic),
-      address: maybe(`${r.int(1, 250)}, ${r.pick(ROADS)}, ${office.nameSi}`),
-      mobile1: maybe(madeUpPhone(r)),
-      mobile2: r.chance(0.3) ? madeUpPhone(r) : null,
-      remark: r.chance(0.1) ? r.pick(REMARKS) : null,
-      createdById: LOAD_USER_ID,
+      status,
+      createdById: officer,
       createdAt,
       updatedAt: last,
       submittedAt,
@@ -343,10 +512,36 @@ function planCase(ctx: Context, office: Office, status: CaseStatus): Planned {
     release,
     installments,
     stageUpdates,
+    history,
+    notifications,
   };
 }
 
-// --- Writing and removing -----------------------------------------------------------------------
+// --- Reading, writing and removing --------------------------------------------------------------
+
+/** The active DS offices that match `where`, with their district's name. */
+export async function readOffices(db: PrismaClient, where: Prisma.DsOfficeWhereInput = {}): Promise<Office[]> {
+  const rows = await db.dsOffice.findMany({
+    where: { active: true, ...where },
+    orderBy: { id: "asc" },
+    select: { id: true, code: true, nameSi: true, districtId: true, district: { select: { nameSi: true } } },
+  });
+  return rows.map(({ district, ...office }) => ({ ...office, districtSi: district.nameSi }));
+}
+
+/** The active stages of each kind, in order (LST-4). */
+export async function readStages(db: PrismaClient): Promise<Context["stages"]> {
+  const stages: Context["stages"] = { NEW_HOUSE: [], RENOVATION: [] };
+  for (const stage of await db.stageDefinition.findMany({
+    where: { active: true },
+    orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+    select: { id: true, nameSi: true, kind: true },
+  })) {
+    const { id, kind, nameSi } = stage;
+    stages[kind].push({ id, name: nameSi });
+  }
+  return stages;
+}
 
 function chunks<T>(rows: readonly T[]): T[][] {
   const out: T[][] = [];
@@ -354,93 +549,77 @@ function chunks<T>(rows: readonly T[]): T[][] {
   return out;
 }
 
-export type LoadOptions = {
-  /** How many cases to add; 5,000 when left out. */
-  count?: number;
-  /** The same seed gives the same cases. */
-  seed?: number;
-  now?: Date;
+export type WriteOptions = {
+  /** Their allocation letters' ids start with this too. */
+  idPrefix: string;
+  /** Also write each case's history to the audit log, and its notices. The load-test data writes neither. */
+  history: boolean;
+  /** Runs first, in the same transaction. */
+  prepare?: (tx: Prisma.TransactionClient) => Promise<void>;
 };
 
-/** Adds made-up cases, spread over every active DS office. Returns how many offices they went to. */
-export async function addLoadData(db: PrismaClient, options: LoadOptions = {}): Promise<{ offices: number }> {
-  if (!loadDataAllowed()) throw new Error(`Load-test data is not allowed when APP_ENV is "${process.env.APP_ENV}".`);
-  const count = options.count ?? DEFAULT_COUNT;
-  if (!Number.isSafeInteger(count) || count < 1) throw new Error(`Not a number of cases: ${count}`);
-  const now = options.now ?? new Date();
-  const r = generator(options.seed ?? 1);
-
-  const offices: Office[] = await db.dsOffice.findMany({
-    where: { active: true },
-    orderBy: { id: "asc" },
-    select: { id: true, code: true, nameSi: true, districtId: true },
-  });
-  if (offices.length === 0) throw new Error("There are no active DS offices: run the seed first.");
-  const stages: Record<Kind, number[]> = { NEW_HOUSE: [], RENOVATION: [] };
-  for (const stage of await db.stageDefinition.findMany({
-    where: { active: true },
-    orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
-    select: { id: true, kind: true },
-  })) {
-    stages[stage.kind].push(stage.id);
-  }
-
-  const ctx: Context = { r, now, today: colomboDay(now), stages };
-  // Every office gets at least one case, then the rest go to offices of different sizes.
-  const officeShares: Share<Office> = offices.map((office) => [office, r.int(5, 15)]);
-  const planned = Array.from({ length: count }, (_, index) =>
-    planCase(ctx, index < offices.length ? offices[index] : r.weighted(officeShares), r.weighted(STATUS_SHARES)),
-  );
-
+/** Writes the planned cases in one transaction, with their case numbers and allocation letters. */
+export async function writePlanned(
+  db: PrismaClient,
+  r: Random,
+  planned: Planned[],
+  { idPrefix, history, prepare }: WriteOptions,
+): Promise<void> {
   // REL-2: one allocation letter for the cases of a district released on the same day.
   const letters = new Map<string, Prisma.ReleaseLetterCreateManyInput>();
+  const onLetter = new Map<string, Planned[]>();
   const releases: Prisma.ReleaseCreateManyInput[] = [];
-  for (const { release } of planned) {
-    if (!release) continue;
-    const { districtId, day, ...row } = release;
+  for (const p of planned) {
+    if (!p.release) continue;
+    const { districtId, day, ...row } = p.release;
     const key = `${districtId}:${day}`;
     let letter = letters.get(key);
     if (!letter) {
       letter = {
-        id: `${LOAD_ID_PREFIX}${randomUUID()}`,
+        id: `${idPrefix}${randomUUID()}`,
         districtId,
         letterNumber: `LT/${day.slice(0, 4)}/${r.int(10_000, 99_999)}`,
         letterDate: dayToDate(day),
         validUntil: dayToDate(`${day.slice(0, 4)}-12-31`),
-        byId: LOAD_USER_ID,
+        byId: row.byId,
         at: row.at,
       };
       letters.set(key, letter);
+      onLetter.set(key, []);
     }
+    onLetter.get(key)!.push(p);
     releases.push({ ...row, letterId: letter.id });
+  }
+  // The release's history names its letter, as recordLetter writes it (src/server/releases/commands.ts).
+  for (const [key, cases] of onLetter) {
+    const letter = letters.get(key)!;
+    for (const p of cases) {
+      const step = p.history.find((s) => s.action === "case_released")!;
+      Object.assign(step.after, {
+        letterId: letter.id,
+        letterNumber: letter.letterNumber,
+        letterDate: p.release!.day,
+        validUntil: `${p.release!.day.slice(0, 4)}-12-31`,
+        district: p.office.districtSi,
+        cases: cases.length,
+      });
+    }
   }
 
   // CASE-5: numbers in the order of submitting, within each office and year.
   const groups = new Map<string, { office: Office; year: number; cases: Prisma.CaseCreateManyInput[] }>();
-  const officeById = new Map(offices.map((o) => [o.id, o]));
-  for (const { case: c } of planned) {
+  for (const { office, case: c } of planned) {
     if (!c.submittedAt) continue;
     const year = colomboYear(new Date(c.submittedAt));
-    const key = `${c.dsOfficeId}:${year}`;
-    const group = groups.get(key) ?? { office: officeById.get(c.dsOfficeId)!, year, cases: [] };
+    const key = `${office.id}:${year}`;
+    const group = groups.get(key) ?? { office, year, cases: [] };
     group.cases.push(c);
     groups.set(key, group);
   }
 
   await db.$transaction(
     async (tx) => {
-      await tx.user.upsert({
-        where: { id: LOAD_USER_ID },
-        update: {},
-        create: {
-          id: LOAD_USER_ID,
-          name: "බර පරීක්ෂණ දත්ත",
-          email: placeholderEmail(LOAD_USER_ID),
-          role: "HO_OFFICER",
-          banned: true,
-          banReason: "load-test data",
-        },
-      });
+      await prepare?.(tx);
       for (const { office, year, cases } of groups.values()) {
         cases.sort((a, b) => new Date(a.submittedAt!).getTime() - new Date(b.submittedAt!).getTime());
         // Takes a block of numbers in one statement, so a real submit at the same moment can't take one of them.
@@ -461,6 +640,20 @@ export async function addLoadData(db: PrismaClient, options: LoadOptions = {}): 
         await tx.installment.createMany({ data: rows });
       for (const rows of chunks(planned.flatMap((p) => p.stageUpdates)))
         await tx.stageUpdate.createMany({ data: rows });
+
+      if (!history) return;
+      // In the order things happened, so steps at the same moment keep their order in the history.
+      const audit = planned
+        .flatMap((p) =>
+          p.history.map((step) => {
+            if (step.action === "case_submitted") step.after.caseNumber = p.case.caseNumber ?? null;
+            return { ...step, caseId: p.case.id };
+          }),
+        )
+        .sort((a, b) => a.at.getTime() - b.at.getTime());
+      for (const rows of chunks(audit)) await tx.auditLog.createMany({ data: rows });
+      for (const rows of chunks(planned.flatMap((p) => p.notifications)))
+        await tx.notification.createMany({ data: rows });
     },
     { maxWait: 10_000, timeout: 10 * 60_000 },
   );
@@ -468,27 +661,30 @@ export async function addLoadData(db: PrismaClient, options: LoadOptions = {}): 
   // before, and its plans make the dashboard about 20 times slower. Refresh the statistics now. With no
   // table named, ANALYZE covers the whole database, so it also reaches the database tests' own schema.
   await db.$executeRawUnsafe("ANALYZE");
-  return { offices: new Set(planned.map((p) => p.case.dsOfficeId)).size };
 }
 
 /**
- * Removes every load-test case with everything that hangs off it, including anything people added
- * to one while trying the system, and the load-test account. Each case-number counter the cases took
+ * Removes every case whose id starts with `idPrefix`, with everything that hangs off it, including
+ * anything people added to one while trying the system. Each case-number counter the cases took
  * numbers from goes back to where it stood before them, unless a later case holds a higher number.
- * Returns how many cases were removed.
+ * Audit records stay, because the audit log can never be cleaned up (HIS-3). Returns how many cases
+ * were removed.
  */
-export async function removeLoadData(db: PrismaClient): Promise<number> {
-  if (!loadDataAllowed()) throw new Error(`Load-test data is not allowed when APP_ENV is "${process.env.APP_ENV}".`);
-  const loadCase = { caseId: { startsWith: LOAD_ID_PREFIX } };
-  const files = await db.storedFile.findMany({ where: loadCase, select: { storedName: true, thumbName: true } });
+export async function removeMadeUp(
+  db: PrismaClient,
+  idPrefix: string,
+  finish?: (tx: Prisma.TransactionClient) => Promise<void>,
+): Promise<number> {
+  const theirs = { caseId: { startsWith: idPrefix } };
+  const files = await db.storedFile.findMany({ where: theirs, select: { storedName: true, thumbName: true } });
   const letterScans: { storedName: string; thumbName: string | null }[] = [];
 
   const removed = await db.$transaction(
     async (tx) => {
-      // The counters the load-test cases took numbers from, with the lowest number each one gave them.
+      // The counters the cases took numbers from, with the lowest number each one gave them.
       const used = new Map<string, { dsOfficeId: number; year: number; prefix: string; lowest: number }>();
       for (const { dsOfficeId, caseNumber } of await tx.case.findMany({
-        where: { id: { startsWith: LOAD_ID_PREFIX }, caseNumber: { not: null } },
+        where: { id: { startsWith: idPrefix }, caseNumber: { not: null } },
         select: { dsOfficeId: true, caseNumber: true },
       })) {
         const prefix = caseNumber!.slice(0, caseNumber!.lastIndexOf("-") + 1);
@@ -499,33 +695,33 @@ export async function removeLoadData(db: PrismaClient): Promise<number> {
           used.set(key, { dsOfficeId, year, prefix, lowest: sequence });
       }
 
-      await tx.storedFile.deleteMany({ where: loadCase });
-      await tx.notification.deleteMany({ where: loadCase });
-      await tx.installment.deleteMany({ where: loadCase });
-      await tx.release.deleteMany({ where: loadCase });
-      // The load-test letters, and any letter someone recorded only for load-test cases, with its scan.
+      await tx.storedFile.deleteMany({ where: theirs });
+      await tx.notification.deleteMany({ where: theirs });
+      await tx.installment.deleteMany({ where: theirs });
+      await tx.release.deleteMany({ where: theirs });
+      // Their letters, and any letter someone recorded only for these cases, with its scan.
       const emptyLetter = { letter: { releases: { none: {} } } };
       letterScans.push(
         ...(await tx.storedFile.findMany({ where: emptyLetter, select: { storedName: true, thumbName: true } })),
       );
       await tx.storedFile.deleteMany({ where: emptyLetter });
       await tx.releaseLetter.deleteMany({ where: { releases: { none: {} } } });
-      await tx.stageUpdate.deleteMany({ where: loadCase });
-      await tx.decision.deleteMany({ where: loadCase });
-      const cases = await tx.case.deleteMany({ where: { id: { startsWith: LOAD_ID_PREFIX } } });
+      await tx.stageUpdate.deleteMany({ where: theirs });
+      await tx.decision.deleteMany({ where: theirs });
+      const cases = await tx.case.deleteMany({ where: { id: { startsWith: idPrefix } } });
 
       for (const { dsOfficeId, year, prefix, lowest } of used.values()) {
         const left = await tx.case.findMany({
           where: { dsOfficeId, caseNumber: { startsWith: prefix } },
           select: { caseNumber: true },
         });
-        // Numbers below the load-test cases' were real ones, so they are never given out again (CASE-5).
+        // Numbers below theirs were real ones, so they are never given out again (CASE-5).
         const last = Math.max(lowest - 1, ...left.map((c) => Number(c.caseNumber!.slice(prefix.length))));
         const where = { dsOfficeId_year: { dsOfficeId, year } };
         if (last > 0) await tx.caseNumberCounter.update({ where, data: { last } });
         else await tx.caseNumberCounter.delete({ where });
       }
-      await tx.user.deleteMany({ where: { id: LOAD_USER_ID } });
+      await finish?.(tx);
       return cases.count;
     },
     { maxWait: 10_000, timeout: 10 * 60_000 },
@@ -534,6 +730,89 @@ export async function removeLoadData(db: PrismaClient): Promise<number> {
   for (const name of [...files, ...letterScans].flatMap((f) => [f.storedName, f.thumbName]))
     if (name) await deleteStoredFile(name);
   return removed;
+}
+
+// --- The load-test data -------------------------------------------------------------------------
+
+const LOAD_CAST: Cast = {
+  idPrefix: LOAD_ID_PREFIX,
+  officer: () => LOAD_USER_ID,
+  headOffice: () => LOAD_USER_ID,
+  person: (r, office, category) => {
+    const surname = r.pick(SURNAMES);
+    return {
+      name: `${r.pick(GIVEN_NAMES)} ${surname}`,
+      childName: category === "CHILD_AT_RISK" ? `${r.pick(GIVEN_NAMES)} ${surname}` : null,
+      nic: madeUpNic(r),
+      address: `${r.int(1, 250)}, ${r.pick(ROADS)}, ${office.nameSi}`,
+      gnDivision: null,
+      mobile1: madeUpPhone(r),
+      mobile2: r.chance(0.3) ? madeUpPhone(r) : null,
+      remark: r.chance(0.1) ? r.pick(REMARKS) : null,
+    };
+  },
+  age: (r, _path, minAge) => r.int(minAge, MAX_AGE_DAYS),
+  releaseDay: (r, verifiedDay, _office, today) => {
+    const day = addDays(verifiedDay, r.int(1, 30));
+    return day > today ? today : day;
+  },
+};
+
+export type LoadOptions = {
+  /** How many cases to add; 5,000 when left out. */
+  count?: number;
+  /** The same seed gives the same cases. */
+  seed?: number;
+  now?: Date;
+};
+
+/** Adds made-up cases, spread over every active DS office. Returns how many offices they went to. */
+export async function addLoadData(db: PrismaClient, options: LoadOptions = {}): Promise<{ offices: number }> {
+  if (!loadDataAllowed()) throw new Error(`Load-test data is not allowed when APP_ENV is "${process.env.APP_ENV}".`);
+  const count = options.count ?? DEFAULT_COUNT;
+  if (!Number.isSafeInteger(count) || count < 1) throw new Error(`Not a number of cases: ${count}`);
+  const now = options.now ?? new Date();
+  const r = generator(options.seed ?? 1);
+
+  const offices = await readOffices(db);
+  if (offices.length === 0) throw new Error("There are no active DS offices: run the seed first.");
+  const ctx: Context = { r, now, today: colomboDay(now), stages: await readStages(db), cast: LOAD_CAST };
+  // Every office gets at least one case, then the rest go to offices of different sizes.
+  const officeShares: Share<Office> = offices.map((office) => [office, r.int(5, 15)]);
+  const planned = Array.from({ length: count }, (_, index) =>
+    planCase(ctx, index < offices.length ? offices[index] : r.weighted(officeShares), r.weighted(STATUS_SHARES)),
+  );
+
+  await writePlanned(db, r, planned, {
+    idPrefix: LOAD_ID_PREFIX,
+    history: false,
+    prepare: async (tx) => {
+      await tx.user.upsert({
+        where: { id: LOAD_USER_ID },
+        update: {},
+        create: {
+          id: LOAD_USER_ID,
+          name: "බර පරීක්ෂණ දත්ත",
+          email: placeholderEmail(LOAD_USER_ID),
+          role: "HO_OFFICER",
+          banned: true,
+          banReason: "load-test data",
+        },
+      });
+    },
+  });
+  return { offices: new Set(planned.map((p) => p.case.dsOfficeId)).size };
+}
+
+/**
+ * Removes every load-test case with everything that hangs off it (see `removeMadeUp`), and the
+ * load-test account. Returns how many cases were removed.
+ */
+export async function removeLoadData(db: PrismaClient): Promise<number> {
+  if (!loadDataAllowed()) throw new Error(`Load-test data is not allowed when APP_ENV is "${process.env.APP_ENV}".`);
+  return removeMadeUp(db, LOAD_ID_PREFIX, async (tx) => {
+    await tx.user.deleteMany({ where: { id: LOAD_USER_ID } });
+  });
 }
 
 // Run directly: npx tsx scripts/seed-load.ts [--count N] [--seed N] [--remove]
