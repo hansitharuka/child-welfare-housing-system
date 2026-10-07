@@ -1,25 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { parseReason } from "./decision";
-import { parseReleaseForm, type ReleaseField } from "./release";
+import { defaultValidUntil, latestDay, parseReleaseForm, type ReleaseField } from "./release";
 
 const limits = { earliest: "2026-09-10", today: "2026-09-28" };
-const form = (values: Partial<Record<ReleaseField, string>>) => (field: ReleaseField) =>
-  values[field] ?? { releasedOn: "2026-09-20", referenceNumber: "HO/2026/0141", note: "" }[field];
+const form =
+  (values: Partial<Record<ReleaseField, string>>) =>
+  (field: ReleaseField): string =>
+    values[field] ??
+    { letterNumber: "MWCA/3/8/16/04-2026", letterDate: "2026-09-20", validUntil: "2026-12-31", note: "" }[field];
 
-describe("the release form (REL-2)", () => {
-  it("accepts a day from the verification to today, and trims the text", () => {
-    expect(parseReleaseForm(form({ referenceNumber: "  HO/1  " }), limits)).toEqual({
+describe("the allocation letter form (REL-2)", () => {
+  it("accepts a date from the latest verification to today, and trims the text", () => {
+    expect(parseReleaseForm(form({ letterNumber: "  MWCA/1  " }), limits)).toEqual({
       ok: true,
-      value: { releasedOn: "2026-09-20", referenceNumber: "HO/1", note: null },
+      value: { letterNumber: "MWCA/1", letterDate: "2026-09-20", validUntil: "2026-12-31", note: null },
     });
-    expect(parseReleaseForm(form({ releasedOn: "2026-09-10" }), limits).ok).toBe(true);
-    expect(parseReleaseForm(form({ releasedOn: "2026-09-28" }), limits).ok).toBe(true);
+    expect(parseReleaseForm(form({ letterDate: "2026-09-10" }), limits).ok).toBe(true);
+    expect(parseReleaseForm(form({ letterDate: "2026-09-28" }), limits).ok).toBe(true);
+    expect(parseReleaseForm(form({ letterDate: "2026-01-01" }), { earliest: null, today: "2026-09-28" }).ok).toBe(true);
   });
 
   it("refuses a missing, impossible, future or too early date", () => {
-    const error = (releasedOn: string) => {
-      const result = parseReleaseForm(form({ releasedOn }), limits);
-      return result.ok ? null : result.errors.releasedOn;
+    const error = (letterDate: string) => {
+      const result = parseReleaseForm(form({ letterDate }), limits);
+      return result.ok ? null : result.errors.letterDate;
     };
     expect(error("")).toBe("dateRequired");
     expect(error("2026-02-30")).toBe("dateInvalid");
@@ -27,15 +31,34 @@ describe("the release form (REL-2)", () => {
     expect(error("2026-09-09")).toBe("dateBeforeVerified");
   });
 
-  it("needs a reference number of at most 50 characters, and a note of at most 500", () => {
-    expect(parseReleaseForm(form({ referenceNumber: "   " }), limits)).toEqual({
+  it("needs a last valid day on or after the letter's date, which may be in the future", () => {
+    const error = (validUntil: string) => {
+      const result = parseReleaseForm(form({ validUntil }), limits);
+      return result.ok ? null : result.errors.validUntil;
+    };
+    expect(error("")).toBe("untilRequired");
+    expect(error("2026-13-01")).toBe("untilInvalid");
+    expect(error("2026-09-19")).toBe("untilBeforeDate");
+    expect(error("2026-09-20")).toBeNull();
+    expect(error("2027-06-30")).toBeNull();
+  });
+
+  it("needs a letter number of at most 50 characters, and a note of at most 500", () => {
+    expect(parseReleaseForm(form({ letterNumber: "   " }), limits)).toEqual({
       ok: false,
-      errors: { referenceNumber: "referenceRequired" },
+      errors: { letterNumber: "numberRequired" },
     });
-    expect(parseReleaseForm(form({ referenceNumber: "x".repeat(51), note: "x".repeat(501) }), limits)).toEqual({
+    expect(parseReleaseForm(form({ letterNumber: "x".repeat(51), note: "x".repeat(501) }), limits)).toEqual({
       ok: false,
-      errors: { referenceNumber: "referenceTooLong", note: "noteTooLong" },
+      errors: { letterNumber: "numberTooLong", note: "noteTooLong" },
     });
+  });
+
+  it("is valid until the end of the year by default, and can't be dated before any of its cases' verification", () => {
+    expect(defaultValidUntil("2026-10-06")).toBe("2026-12-31");
+    expect(latestDay(["2026-09-10", null, "2026-09-22", "2026-09-15"])).toBe("2026-09-22");
+    expect(latestDay([null])).toBeNull();
+    expect(latestDay([])).toBeNull();
   });
 });
 

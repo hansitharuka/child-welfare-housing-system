@@ -1,6 +1,6 @@
 # Diviyata Sawiyak — Software Specification
 
-2026-09-28, updated 2026-10-03 · Janindu Pramod
+2026-09-28, updated 2026-10-07 · Janindu Pramod
 
 > **Status:** draft. This SPEC turns the [PRD](PRD.md) into requirements precise enough to build and test against. The [clickable prototype](https://claude.ai/artifact/DQarnsyMfCao1y6SmpMDbT) shows the screens. The PRD's open questions are deferred: [section 13](#13-deferred-questions-and-the-defaults-used) gives the default this SPEC uses for each until the Ministry answers.
 
@@ -15,7 +15,6 @@ This SPEC covers version 1 as the PRD defines it:
 - the four installments and the building stages
 - dashboards and Excel exports
 - accounts and lists
-- a one-time import of the sheet
 
 It does not cover anything under "Later" or "Out of scope" in the PRD.
 
@@ -27,8 +26,8 @@ It does not cover anything under "Later" or "Out of scope" in the PRD.
 | Database | PostgreSQL, accessed through Prisma; schema changes through Prisma Migrate |
 | Sign-in and sessions | Better Auth: username and password, sessions stored in the database, admin plugin |
 | Forms and validation | React Hook Form in the browser; the same Zod schemas checked again in every Server Action |
-| Screens | Tailwind CSS and shadcn/ui components; Noto Sans Sinhala served from our own server through `next/font/local` |
-| Language | next-intl; one locale, `si`, in version 1; every string in `messages/si.json` |
+| Screens | Tailwind CSS and shadcn/ui components; Noto Sans Sinhala and Noto Sans Tamil served from our own server through `next/font/local` |
+| Language | next-intl; three locales, `si` (the default), `ta` and `en` (UI-9), chosen by a cookie, with no language in the address; every string in `messages/si.json`, `ta.json` and `en.json` |
 | Excel | ExcelJS |
 | Images | sharp |
 | Tests | Vitest for unit and database tests, Playwright for end-to-end tests |
@@ -87,18 +86,19 @@ Amounts are whole rupees stored as integers. Nothing listed here is ever deleted
 
 | Entity | Main fields | Rules |
 | --- | --- | --- |
-| Province | name (Sinhala) | 9 rows, seeded |
-| District | name, province | 25 rows, seeded |
-| DsOffice | name, code, district, active | `code` is 3 capital letters, unique nationally, and used in case numbers. Name is unique within its district |
+| Province | name in Sinhala, Tamil and English | 9 rows, seeded |
+| District | name in Sinhala, Tamil and English, province | 25 rows, seeded |
+| DsOffice | name in Sinhala, Tamil and English, code, district, active | `code` is 3 capital letters, unique nationally, and used in case numbers. The Sinhala name is unique within its district |
 | User | full name, designation, mobile, email, username, role, DS office, active, must change password, last sign-in, failed sign-ins, locked until | DS office is required for DS officers only, and an office has at most one active DS officer (ADM-3). Username is generated (ADM-2) and unique |
-| Case | case number, DS office, category, kind, status, name, child's name, NIC, NIC key, address, GN division, mobile 1, mobile 2, remark, sheet reference (key, row and serial number), sheet notes, created by, submitted at, verified at, completed at, status before stop, version | See CASE-2 for field rules. The sheet reference and notes are set only on a case brought in from the sheet: the key is unique (IMP-7), and a case with a key always has its row (a database check). `version` goes up by one on every save and every installment, stage or status change (CASE-10). `submitted at` is the latest submit. While the case is stopped, `status before stop` holds the status it goes back to (CLS-3); the stop's day and reason are its Decision |
+| Case | case number, DS office, category, kind, status, name, child's name, NIC, NIC key, address, GN division, mobile 1, mobile 2, remark, created by, submitted at, verified at, completed at, status before stop, version | See CASE-2 for field rules. `version` goes up by one on every save and every installment, stage or status change (CASE-10). `submitted at` is the latest submit. While the case is stopped, `status before stop` holds the status it goes back to (CLS-3); the stop's day and reason are its Decision |
 | CaseNumberCounter | DS office, year, last number | One row per office and year. Taking the next number locks the row, so two submits at once never share a number (CASE-5) |
-| Decision | case, type, reason, by, at | Types: submit, verify, send back, reject, stop, reopen, confirm import |
-| Release | case (one per case), released on, amount, reference number, note, by, at | Amount is always 2,000,000 (a database check) |
+| Decision | case, type, reason, by, at | Types: submit, verify, send back, reject, stop, reopen |
+| ReleaseLetter | district, letter number, letter date, valid until, note, by, at | One allocation letter (ප්‍රතිපාදන ලිපිය) to a District Secretary for several verified cases of that district (REL-2, 6 Oct 2026). Valid until is never before the letter date (a database check). Its scan, if any, is a File |
+| Release | case (one per case), letter, released on, amount, by, at | Amount is always 2,000,000 (a database check). Released on is the letter's date, kept on each release for the installment and stage date rules; correcting the letter's date changes it on every release of the letter (REL-4). Before 6 Oct 2026 each release had its own reference number and note; the migration made each such release a letter of its own |
 | Installment | case, number 1–4, amount, status, purpose, expected on, released on, note | Amount is always 500,000 and the number 1 to 4 (database checks). Case plus number is unique. All four are created when the release is recorded |
-| StageDefinition | kind, order, name, active | New-house stages are seeded (LST-4) |
+| StageDefinition | kind, order, name in Sinhala, Tamil and English, active | New-house stages are seeded (LST-4) |
 | StageUpdate | case, stage (empty means a note-only visit), visited on, note, by, at | A case's current stage is the highest stage it has reached. Each stage is reached once per case; a stage skipped by a later choice gets its own row on the same day (STG-2). A stage that has been used can't be removed (a database rule, LST-4) |
-| File | kind (document or photo), case, stage update, stored name, thumbnail name, original name, type, size, SHA-256, uploaded by, removed at | Linked to a case as a document, or also to a stage update as a photo (a database check). A photo has a small copy for thumbnails (STG-6). Until the case form or the stage update is saved with it, only the person who uploaded it can open it, and an upload never saved is removed after a day. A document taken off a case is kept but no longer shown |
+| File | kind (document, photo or letter scan), case, stage update, letter, stored name, thumbnail name, original name, type, size, SHA-256, uploaded by, removed at | Linked to a case as a document, or also to a stage update as a photo, or to an allocation letter as its scan, never to a case (database checks). Anyone who may see one of a letter's cases may open its scan. A photo has a small copy for thumbnails (STG-6). Until the case form or the stage update is saved with it, only the person who uploaded it can open it, and an upload never saved is removed after a day. A document taken off a case is kept but no longer shown |
 | AuditLog | at, actor, action, entity, entity id, case, before, after | Can only be added to, never changed (HIS-3) |
 | Notification | user, case, type, created at, read at | See NTF-1 |
 
@@ -120,7 +120,6 @@ Values used across the system:
 | `COMPLETED` | නිමයි | Finished (CLS-1) |
 | `REJECTED` | ප්‍රතික්ෂේප කළා | Refused by Head Office, with a reason |
 | `STOPPED` | නවතා ඇත | Cannot go ahead, with a reason |
-| `IMPORTED` | පැරණි පත්‍රිකාවෙන් | Brought in from the sheet, waiting for Head Office to confirm it (IMP-5) |
 
 | From | To | Who | Needs | Then |
 | --- | --- | --- | --- | --- |
@@ -129,11 +128,10 @@ Values used across the system:
 | `SUBMITTED` | `VERIFIED` | HO officer | — | DS notified |
 | `SUBMITTED` | `RETURNED` | HO officer | Reason | DS notified |
 | `SUBMITTED` | `REJECTED` | HO officer | Reason | DS notified |
-| `VERIFIED` | `IN_PROGRESS` | HO officer | Release details (REL-2) | Four installments created; DS notified |
+| `VERIFIED` | `IN_PROGRESS` | HO officer | Its district's allocation letter (REL-2) | Four installments created; DS notified |
 | `IN_PROGRESS` | `COMPLETED` | The system | CLS-1 is met | DS notified |
 | `VERIFIED`, `IN_PROGRESS` | `STOPPED` | HO officer | Reason | DS notified |
 | `STOPPED` | The status it had before | HO officer | Reason | DS notified |
-| `IMPORTED` | `VERIFIED`, `IN_PROGRESS`, `REJECTED`, `STOPPED` | HO officer | IMP-5: the kind of help to verify or start it; a reason to reject or stop it | A case number is given (CASE-5); the DS isn't notified |
 
 - **STS-1** Any change not listed in this table shall be refused on the server with a message explaining why, even when the screen hides the button.
 - **STS-2** `COMPLETED` and `REJECTED` are final.
@@ -167,11 +165,11 @@ Values used across the system:
 
 ### 7.3 Admin: lists (LST)
 
-- **LST-1** The system shall be seeded with the 9 provinces, the 25 districts and every DS office, with Sinhala names and codes.
-- **LST-2** The admin shall be able to add a DS office to a district. The name must be unique within the district, and the code unique nationally.
+- **LST-1** The system shall be seeded with the 9 provinces, the 25 districts and every DS office, with their names in Sinhala, Tamil and English (UI-9) and codes. The Tamil names are to be checked with the Ministry before go-live (task 9.7).
+- **LST-2** The admin shall be able to add a DS office to a district, with its name in all three languages. The Tamil name must be in Tamil letters and the English one in English letters. The Sinhala name must be unique within the district, and the code unique nationally.
 - **LST-3** The admin shall be able to rename a DS office or make it inactive. An inactive office gets no new accounts or cases but keeps its existing ones.
-- **LST-4** For each kind of help, the admin shall be able to add, rename, reorder and deactivate stages:
-  - New-house stages are seeded as අත්තිවාරම් මට්ටම, බිත්ති මට්ටම, වහල මට්ටම, නිමයි.
+- **LST-4** For each kind of help, the admin shall be able to add, rename, reorder and deactivate stages, each named in Sinhala, Tamil and English:
+  - New-house stages are seeded as අත්තිවාරම් මට්ටම, බිත්ති මට්ටම, වහල මට්ටම, නිමයි (in Tamil அத்திவார மட்டம், சுவர் மட்டம், கூரை மட்டம், நிறைவு; in English Foundation level, Wall level, Roof level, Completed).
   - Renovation stages start empty.
   - A stage that has been used can be deactivated but not removed.
 
@@ -183,7 +181,7 @@ Values used across the system:
   - installments released (for example `2 / 4`)
   - current stage or next step
   - for a case in progress, days since the last update, when that is 30 or more (the same rule as HOME-3 and DSH-1)
-- **HOME-2** Tabs shall filter the list to all cases, cases in progress or completed cases, and, while the office has any, the cases from the old sheet whose details are missing (IMP-4). Search shall match name, child's name, case number or NIC.
+- **HOME-2** Tabs shall filter the list to all cases, cases in progress or completed cases. Search shall match name, child's name, case number or NIC.
 - **HOME-3** A "to do" panel shall list:
   - returned cases, with the Head Office reason
   - drafts
@@ -219,7 +217,7 @@ Values used across the system:
 - **CASE-5** Submitting shall:
   1. Check every rule. If any fail, save nothing and show the errors (ERR-1).
   2. Show a summary to confirm.
-  3. On confirmation, set the status to `SUBMITTED` and, on the first submit only, give a case number `{DS code}-{year}-{NNN}` (for example `HMG-2026-011`). `NNN` counts up per DS per year, uses at least 3 digits, and cannot be changed. A case from the old sheet is never submitted; it gets its number, in the same way, when Head Office confirms it (IMP-5).
+  3. On confirmation, set the status to `SUBMITTED` and, on the first submit only, give a case number `{DS code}-{year}-{NNN}` (for example `HMG-2026-011`). `NNN` counts up per DS per year, uses at least 3 digits, and cannot be changed.
 - **CASE-6** Duplicate NIC check:
   - For matching, an old NIC is turned into its 12-digit form: `19` + its first 5 digits + `0` + its next 4 digits. So `880001234V` becomes `198800001234`.
   - When the NIC is entered, and again at submit, it shall be compared with every other case.
@@ -228,7 +226,7 @@ Values used across the system:
   - The warning shall never block saving or submitting.
 - **CASE-7** A returned case shall show the Head Office reason at the top of the form. The DS corrects it and submits it again.
 - **CASE-8** The owning DS, or Head Office (which may also start drafts), may delete a draft with its documents. The deletion is logged without personal details.
-- **CASE-9** After a case is verified, only a Head Office officer can change its details, and every changed field is logged with its old and new value. This is possible while the case is `VERIFIED` or `IN_PROGRESS`; a completed, rejected or stopped case can't be changed. Every required field must stay filled in, and the form has one save button and no submit. On a case from the old sheet, a required field the sheet left empty may stay empty until someone knows it (IMP-4); one that is filled in can't be emptied. The kind of help can't change once the case has reached a stage, because the kind decides the stage list (LST-4).
+- **CASE-9** After a case is verified, only a Head Office officer can change its details, and every changed field is logged with its old and new value. This is possible while the case is `VERIFIED` or `IN_PROGRESS`; a completed, rejected or stopped case can't be changed. Every required field must stay filled in, and the form has one save button and no submit. The kind of help can't change once the case has reached a stage, because the kind decides the stage list (LST-4).
 - **CASE-10** Saving a case that someone else changed after it was opened shall fail with ERR-3. It shall never overwrite their change silently.
 
 ### 7.6 Finding cases (FND)
@@ -245,18 +243,24 @@ Values used across the system:
   - **Reject:** a reason is required (5–1,000 characters).
 
   Verifying asks once to confirm. Each writes a Decision and notifies every active officer of the case's DS. A decision is refused if the case changed after the check view showed it (CASE-10), for example when it was sent back and submitted again in the meantime.
+- **CHK-4** (added 2026-10-06) Head Office shall be able to narrow both queues (CHK-1, REL-1) to a district, then to one DS office in it. Each choice shows how many cases wait there. Only places with cases waiting are offered, plus the chosen one even once none are left. The place stays in the address (`districtId`, `dsOfficeId`) through paging, both tabs and every decision, so after a decision the next case shown is the next one waiting in the same place. The tab counts and the menu's count stay for the whole country. Cases are still checked one at a time. The release tab doesn't use the two selects: it lists the districts waiting for a letter instead (REL-1), and it opens on the district in the address. Once the chosen district, or the district of the case just verified, has nothing left to check but has verified cases waiting, a banner above the check queue says so and leads to that district's letter (as in the prototype).
 
 ### 7.8 The Rs. 2,000,000 release (REL)
 
-- **REL-1** The "මුදල් නිදහස් කිරීමට" (to release) queue shall list `VERIFIED` cases, oldest verification first.
-- **REL-2** Recording a release shall take:
-  - released on: required; not in the future and not before the verification date
-  - reference number: required, 1–50 characters
+Changed on 6 Oct 2026 (§13, question 9): Head Office no longer releases money case by case. It sends one allocation letter (ප්‍රතිපාදන ලිපිය) to a District Secretary, with one total for several verified cases of that district, and the District gives the money out through each case's DS office. The screens follow the prototype's option A (two tabs).
+
+- **REL-1** The "ප්‍රතිපාදන මුදා හැරීමට" (to release) tab shall list the districts whose `VERIFIED` cases wait for a letter, the most cases first, then the longest waiting. Each shows how many cases wait and their total (Rs. 2,000,000 each), their DS offices, and how long the oldest verification has waited. Below them are the 10 letters recorded last (district, number, date, cases, total, valid until). The tab's count, and the menu's, is the number of `VERIFIED` cases.
+- **REL-2** Recording a district's letter shall take:
+  - the cases on the letter: the district's `VERIFIED` cases, grouped by DS office, all ticked to start with; at least one. The officer unticks any case the letter doesn't name, and it keeps waiting
+  - letter number: required, 1–50 characters
+  - letter date: required; not in the future and not before the verification of any ticked case
+  - valid until: required; not before the letter date; the end of the year to start with
+  - the scanned letter: optional; one PDF, JPEG or PNG of up to 10 MB, uploaded as soon as it is chosen (as CASE-2's documents)
   - note: optional, up to 500 characters
 
-  The amount is fixed at Rs. 2,000,000 and cannot be edited.
-- **REL-3** Saving the release shall set the case to `IN_PROGRESS`, create four `NOT_STARTED` installments and notify the DS.
-- **REL-4** Head Office shall be able to correct a release's date, reference number and note. Every correction is logged with the old and new values. The REL-2 date rules apply, and the date can't move past an installment date already recorded (INS-3, INS-4).
+  The amount is Rs. 2,000,000 for each ticked case and can't be edited; the form shows the total. A case of another district, or one that is no longer `VERIFIED` or changed after the form was shown (CASE-10), refuses the whole letter, and nothing is released.
+- **REL-3** Saving the letter shall, in one transaction, save the letter and its scan and, for each ticked case, record its Rs. 2,000,000 release on the letter's date, set it to `IN_PROGRESS`, create its four `NOT_STARTED` installments and notify its DS. The Head Office case page of a `VERIFIED` case leads to its district's letter; the case pages show the letter (number, date, district, valid until; for Head Office also how many cases it released and its total) and a link to its scan.
+- **REL-4** Head Office shall be able to correct a release's letter from the case page: its number, date, valid until and note. The change is for every case on the letter, and the pop-up says how many that is. The REL-2 date rules apply to all of them, and the date can't move past an installment date already recorded on any of them (INS-3, INS-4); a new date moves each of their releases too. Every correction is logged on each of the letter's cases with the old and new value. A case on the letter changed after the page was shown refuses the correction (CASE-10).
 
 ### 7.9 Installments (INS)
 
@@ -294,17 +298,19 @@ Only the DS office starts and pays installments (section 4). Each change is refu
 
   An "update" is any installment change, stage update or case edit. The amount released is the Rs. 2,000,000 releases, stopped cases included; the amount paid out is the installments marked paid. The filters narrow every figure except the waiting counts, which are the whole queues, as the menu shows them. The table lists every district, and a district's active DS offices plus any inactive one that has cases. The stale list shows the 10 cases waiting longest and how many there are in all.
 - **DSH-2** Dashboard figures shall come from the database when the page loads, and never be more than 1 minute old.
-- **EXP-1** Any list shall be exportable to `.xlsx` with Sinhala headers, limited to what the user may see.
+- **EXP-1** Any list shall be exportable to `.xlsx` with headers, statuses and place names in the language of the screen it was downloaded from (UI-9), limited to what the user may see. The file name is in that language too.
   - The lists are Head Office's case list (FND-1), with its filters, and the DS officer's list (HOME-2), with its tab and search. The check and release queues are the case list filtered by status.
-  - The file holds every case the list matches, not only the page shown, in the list's order, one row per case: case number, category, kind, status, names, NIC, address, phones, district, DS, the days it was sent, verified, released and completed, the amount released, the installments and amount paid out, the balance left with the DS, the stage reached, the last change and the remark.
+  - The file holds every case the list matches, not only the page shown, in the list's order, one row per case: case number, category, kind, status, names, NIC, address, phones, district, DS, the days it was sent, verified, released and completed, the amount released, the amount paid out, the balance left with the DS, the last change and the remark.
   - Days are real Excel dates shown as `YYYY.MM.DD` (UI-3), amounts are numbers, and NICs and phone numbers stay text.
+  - The file also has the two groups of Head Office's monthly progress report (added 2026-10-06), with its headers: මූල්‍ය ප්‍රගතිය (රු) over පළමු, දෙවන, තුන්වන and සිව්වන වාරිකය, right after the amount released (it took the place of the number of installments paid, which was dropped at the user's request), and, right after the balance left with the DS, භෞතික ප්‍රගතිය (in place of the stage reached, also dropped at the user's request) over අත්තිවාරම යෙදීම, බිත්ති ගොඩනැංවීම, වහළය සකස් කිරීම and අත්‍යවශ්‍ය අංග සමඟ නිවස සම්පූර්ණ කිරීම. The header takes two rows: each group over its four columns, and every other column's header over both rows. It stays in view, and the filter buttons are on its second row.
+  - Each of those cells holds a short dated note, as the old sheet's cells did. An installment reads "<date> දින ගෙවා ඇත" once paid, "<date> දින ගෙවීමට අපේක්ෂිතයි" while processing (its expected day), and is empty before that. A building cell reads "<date> දින නිම කර ඇත" once the case reached that stage. The notes wrap within their columns. The last building column is the kind's last active stage, which finishes the house (CLS-1); the three before it take the kind's first stages, as many as fit, so the four new-house stages fill one column each. A renovation case's building cells stay empty while its stage list is (STG-4).
 - **EXP-2** Removed on 2026-10-04: the Ministry no longer needs a copy in the old sheet's layout. EXP-1's export is the only one. The number stays unused.
 - **EXP-3** Every export shall be logged with who made it, which filters were used and how many rows it held. It is an audit record of the list, not part of any case's history.
 
 ### 7.13 History and notifications (HIS, NTF)
 
 - **HIS-1** Every create, edit and status change shall write an audit record: who did it, when, the action, and the old and new values of each changed field.
-- **HIS-2** The case page shall show the case history, newest first, as plain Sinhala sentences, as in the prototype: the day, what happened, and who did it with their role (or "the system" for a completion). Reasons and notes appear under the sentence. A changed detail is named there; its old and new values stay in the audit record.
+- **HIS-2** The case page shall show the case history, newest first, as plain sentences in the screen's language (UI-9), as in the prototype: the day, what happened, and who did it with their role (or "the system" for a completion). Reasons and notes appear under the sentence. A changed detail is named there; its old and new values stay in the audit record.
 - **HIS-3** Audit records cannot be edited or deleted. The database shall refuse any update, delete or truncation of the audit table, whichever database account asks.
 - **NTF-1** Notifications appear inside the system:
   - A DS's officers get one when a case is sent back, verified, rejected, released, completed, stopped or reopened.
@@ -315,30 +321,14 @@ Only the DS office starts and pays installments (section 4). Each change is refu
 
 ### 7.14 Importing the sheet (IMP)
 
-- **IMP-1** A command-line script (not a screen) shall import the `.xlsx` file from a path given when it runs. The file shall never be stored in the repository. A dry run (`--dry-run`) reads and checks the file and writes nothing. The whole import is one transaction, so a run that fails adds nothing.
-- **IMP-2** Rows from the නිවාසගත tab become `CARE_LEAVER` cases, and rows from අවදානම් දරුවන් become `CHILD_AT_RISK` cases. Headers are matched after removing zero-width joiners (U+200D) and spaces, using both header rows.
-- **IMP-3** District names shall be mapped to the 25 official names, with English and Sinhala spellings both accepted. DS offices are matched by their Sinhala or English name within the district. Names compare without spaces, capitals or zero-width characters. Anything that doesn't match goes in the report and is not imported: no district, an unknown district, no DS office, an unknown DS office, an office of another district, or an inactive office.
-- **IMP-4** A missing NIC or phone number is allowed on imported cases. They appear under a "details missing" filter, so offices can fill them in. It is a tab on the DS home (HOME-2), shown only while the office has such cases: `IMPORTED` cases with no kind of help, no NIC or no first phone number, and cases from the sheet that Head Office has confirmed and that are `VERIFIED` or `IN_PROGRESS` with no NIC or no first phone number. The row says what to do next, and the tab's Excel export (EXP-1) holds the same cases.
-- **IMP-5** Imported cases start as `IMPORTED`:
-  - The sheet's installment, stage and remark notes are kept as read-only text. A NIC or phone cell that couldn't be stored in full (not a valid NIC, a bad phone number, or more than two numbers) is kept there as written, and the report names the row.
-  - The owning DS may fill in the NIC, phone numbers and kind of help, and nothing else, while the case is `IMPORTED`. It does so on a page of its own, reached from the case page, which names what is still missing and shows the sheet's notes. A field may stay empty; a filled one follows CASE-2's rules. A lone phone number is stored as the first. The NIC is compared with other cases as in CASE-6. Each changed field is logged with its old and new value (HIS-1). Head Office doesn't fill these in; it confirms the case.
-  - After the confirmation, while the case is `VERIFIED` or `IN_PROGRESS`, the DS may still fill in a NIC or phone numbers it lacks, on the same page, and nothing else: the kind stays as confirmed, and a filled field is Head Office's to change (CASE-9). (Decided on 5 Oct, so the offices can go on filling them in after Head Office confirms the cases, which it will do soon so the DS can pay installments.)
-  - A Head Office officer confirms each case, one at a time, on a screen of its own (`/ho/imported`, listed in the sheet's order and narrowed by district, with the sheet's notes) or on the case page. The case may be confirmed as:
-    - **verified:** it waits in the release queue (REL-1) from that day, which becomes its verification date.
-    - **in progress:** with the Rs. 2,000,000 release as REL-2 has it, but with no earliest day, since the sheet has no verification date; and each installment's status, in order (the paid ones, then at most one under way, INS-2), with the day it was paid (INS-4) or is expected (INS-3). A kind with no active stages whose installment 4 is paid is completed at once (CLS-1); otherwise the DS records the stages as usual.
-    - **rejected** or **stopped:** with a reason of 5 to 1,000 characters, as CHK-3 and CLS-2 have, shown on the case page. A case stopped here has no release and reopens as verified (CLS-3); one whose money was released before it stopped is confirmed as in progress, then stopped.
-  - Verifying or starting a case needs its kind of help, because the kind decides its stages (LST-4). Until the DS fills it in, only rejecting and stopping are offered.
-  - Confirming asks once, because it can't be undone. It gives the case its number (CASE-5), writes a `confirm import` Decision with any reason, and logs the status, the release and the installments recorded (HIS-1). It is refused if the case changed after the screen showed it (CASE-10). The DS isn't notified.
-  - Imported cases are left out of the money totals until confirmed.
-- **IMP-6** The script shall write a report of rows skipped or needing attention: tab, row number and reason, with no other personal details. The report is saved outside the repository.
-- **IMP-7** Running the import again shall not create duplicates. The key is the tab plus the sheet serial number. A row with no serial number, or with one already used above it in its tab, is keyed on the tab plus its row number instead, and the report says so. (Decided on 5 Oct: the real children's tab has 38 rows without a serial number, and the care leavers' tab uses one number twice.) A later run brings in only the rows not imported before, such as those of a DS office added to the list since.
+- **IMP-1 to IMP-7** Removed on 2026-10-06: the sheet is still being updated, so its import was taken out of the code, with the `IMPORTED` status, the confirmation of imported cases and the DS office's "details missing" tab. How the sheet's cases come into the system is open. The numbers stay unused. The import as it was built (task 8.1 to 8.5) is in the git history, up to commit `9a5ce1b`.
 
 ### 7.15 Screens and language (UI)
 
-- **UI-1** Every label, message, status and date shall be in Sinhala, taken from `messages/si.json`. No screen text is hard-coded.
+- **UI-1** Every label, message, status and date shall be in the screen's language (UI-9), taken from `messages/si.json`, `ta.json` or `en.json`. No screen text is hard-coded. The three files have the same keys and the same placeholders in every message (a unit test checks it).
 - **UI-2** Screens shall be designed for desktop widths of 1,280–1,920 px and stay usable at 1,024 px.
-- **UI-3** Dates shall be shown as `YYYY.MM.DD`, and money as `රු. 2,000,000` (Western digits, comma separators).
-- **UI-4** Text shall use Noto Sans Sinhala at a 16 px base size and a line height of at least 1.5.
+- **UI-3** Dates shall be shown as `YYYY.MM.DD` in every language, and money as `රු. 2,000,000`, `ரூ. 2,000,000` or `Rs. 2,000,000` (Western digits, comma separators).
+- **UI-4** Text shall use Noto Sans Sinhala (Noto Sans Tamil for Tamil) at a 16 px base size and a line height of at least 1.5.
 - **UI-5** Screens shall use the sheet's own terms, such as නිවාසගත, අවදානම් දරුවන් and පළමු වාරිකය. Each screen does one main task.
 - **UI-6** Every form control shall have a visible label, every screen shall work with the keyboard, and text contrast shall meet WCAG 2.1 AA.
 - **UI-7** Screens shall follow the prototype:
@@ -351,10 +341,17 @@ Only the DS office starts and pays installments (section 4). Each change is refu
   | DS officer | Case page | `/ds/cases/[id]` | ප්‍රතිලාභියාගේ පිටුව |
   | HO officer | Dashboard | `/ho` | සාරාංශය |
   | DS officer | Notifications | `/ds/notifications` | — |
-  | HO officer | Check and release | `/ho/check`, `/ho/release` | පරීක්ෂාව සහ මුදල් නිදහස් කිරීම |
+  | HO officer | Check and release | `/ho/check`, `/ho/release` | පරීක්ෂාව සහ ප්‍රතිපාදන මුදා හැරීම |
   | HO officer | Case list, case page, new case | `/ho/cases`, `/ho/cases/[id]`, `/ho/cases/new` | ප්‍රතිලාභියාගේ පිටුව |
-  | HO officer | Imported cases | `/ho/imported` | — |
   | Admin | Users, lists | `/admin/users`, `/admin/lists` | පරිශීලකයින්, ලැයිස්තු |
+
+- **UI-8** The sign-in and set-a-new-password pages shall show the programme's logo above the card: the mark (a house with a sprout, on a gold base), දිවියට සවියක්, a short gold line and the ministry's name. They have no header bar. The logo keeps its own colours: a maroon house and name, a gold base and a green sprout (`src/components/brand/lockup.tsx`). The sign-in button is a softer maroon (`--sign-in`). Every other page's green header is fixed to the top of the screen (it stays in place when the page scrolls) and shows the mark in its own maroon, gold and green on a small cream tile, beside the programme's name. The name is in the screen's language: දිවියට සවියක්, திவியட சவியக் or Diviyata Sawiyak (UI-9). The logo's Latin line "DIVIYATA SAWIYAK" is left out.
+- **UI-9** The screens shall come in Sinhala, Tamil and English (7 Oct 2026; PRD question 8). Sinhala is the default.
+  - Every page shows a language picker: on the sign-in and password pages above the logo, and in the header elsewhere. It names each language in its own script (සිංහල · தமிழ் · English), marked with its own `lang`.
+  - The choice is kept in the browser (a cookie, `lang`, for a year), not in the account or the address, so links and bookmarks work in every language. Choosing shows the same page again in the new language.
+  - Province, district, DS office and stage names are shown in the screen's language (LST-1, LST-4). What officers type (names, addresses, notes, reasons) is shown as typed, in whatever script it was typed.
+  - The case history names districts and stages in the screen's language. Records kept before 7 Oct 2026 hold the Sinhala stage names of the day: the Sinhala screen keeps them, and the others show the stages' current names.
+  - The Tamil and English texts need checking by the Ministry before go-live (task 9.7).
 
 ## 8. Error handling
 
@@ -423,7 +420,7 @@ Version 1 is accepted when every check below passes on staging with made-up data
 | AC-7 | A duplicate NIC in the same DS shows the case number and name. One in another DS shows only the case number and DS. Submitting is still possible. | CASE-6 |
 | AC-8 | Submitting gives a number like `HMG-2026-001`, and the case appears in the check queue, oldest first. | CASE-5, CHK-1 |
 | AC-9 | "Send back" without a reason is refused. With a reason, the DS sees the case and the reason in its to-do panel. Submitting again returns it to the queue. | CHK-3, CASE-7, HOME-3 |
-| AC-10 | After verifying, the case is in the release queue. A release without a reference number is refused. After a valid release, the case has four `NOT_STARTED` installments and the DS is notified. | REL-1–3 |
+| AC-10 | After verifying, the case waits under its district on the release tab. A letter with no case ticked, or without a number, is refused. After a valid letter, each ticked case has four `NOT_STARTED` installments, its DS is notified, and the case page shows the letter. | REL-1–3 |
 | AC-11 | Installment 3 cannot change while installment 2 is not `RELEASED`, including through a direct request to the server. | INS-2, ERR-7 |
 | AC-12 | A stage update that skips ahead marks the skipped stages with the same date. An installment can be released at any stage. | STG-2, INS-5 |
 | AC-13 | Releasing installment 4 after the last stage is reached sets the case to `COMPLETED`. | CLS-1 |
@@ -432,12 +429,15 @@ Version 1 is accepted when every check below passes on staging with made-up data
 | AC-16 | A photo uploaded with GPS data is stored without it. Its file link works only for permitted users. | STG-3, SEC-7 |
 | AC-17 | Dashboard totals equal the sums in the database for each filter, tested with seeded data. | DSH-1 |
 | AC-18 | Removed with EXP-2 (2026-10-04). | — |
-| AC-19 | Importing a made-up sample sheet creates `IMPORTED` cases and maps English district spellings. It reports unknown DS offices, and a second run creates no duplicates. | IMP-1–7 |
-| AC-20 | No screen shows English interface text. A check in CI finds no hard-coded strings in components. | UI-1 |
+| AC-19 | Removed with IMP-1 to IMP-7 (2026-10-06). | — |
+| AC-20 | No Sinhala or Tamil screen shows English interface text, and no English screen shows Sinhala or Tamil interface text; only the language picker names all three. A check in CI finds no hard-coded strings in components. | UI-1, UI-9 |
 | AC-21 | With 5,000 seeded cases, the dashboard loads in under 2 seconds. | PRF-3 |
 | AC-22 | Restoring last night's backup on staging brings back the cases and their files. | SEC-10 |
 | AC-23 | The admin can't give a DS office a second active DS officer. Once the old account is disabled, an account for the new officer can be created. | ADM-3 |
-| AC-24 | Head Office confirms an imported case as in progress with one installment paid and the next under way: it gets a case number, its release and installments, and the DS can pay the next one and fill in the missing NIC. A case with no kind of help can only be rejected or stopped, with a reason. | IMP-4, IMP-5 |
+| AC-24 | Removed with IMP-1 to IMP-7 (2026-10-06). | — |
+| AC-25 | On the check screen, choosing a district and then a DS office lists only that office's cases. After a case is verified, the screen stays on that office, and the release tab opens on that district's letter. | CHK-4 |
+| AC-26 | A letter for two cases releases both, with one letter row and each case's own release and installments; one case not `VERIFIED`, or of another district, releases neither. Correcting the letter from one case's page changes it for both. | REL-2–4 |
+| AC-27 | On the sign-in page, choosing தமிழ் or English shows the page in that language and keeps it after a reload. A DS officer working in Tamil sees the menu, their office and district names and the money in Tamil; Head Office working in English downloads an Excel file with English headers and file name. | UI-9, EXP-1 |
 
 ## 13. Deferred questions and the defaults used
 
@@ -451,8 +451,8 @@ On 28 Sep the open questions were set aside for later. Until the Ministry answer
 | 5. How long records are kept | Everything is kept; nothing is deleted automatically. | Section 5 |
 | 6. Money on a stopped case | The balance left with the DS is shown. The system has no refund process. | CLS-2 |
 | 7. Replacing a beneficiary | The new person is a new case. The old case is rejected or stopped with a reason that names the new case number. | CHK-3, CLS-2 |
-| 8. Tamil | Not in version 1. Every string is in a message file, so `ta` can be added later. | UI-1 |
-| 9. How the Rs. 2M is released | Case by case. | REL-2 |
+| 8. Tamil | Answered 7 Oct 2026: the screens come in Sinhala, Tamil and English. | UI-9 |
+| 9. How the Rs. 2M is released | Answered on 6 Oct 2026: by one allocation letter to a District Secretary for several verified cases of the district. No longer a default. | REL-1–4 |
 | 12. First password | The admin sees it once and passes it on in person or by phone. | ADM-2 |
 
 The six rules marked Proposed in the PRD are built as written there: send back (CHK-3), Head Office-only edits after verification (CASE-9), nothing deleted (ADM-7, LST-3), the completion rule (CLS-1), one account per person (ADM-2), and the duplicate NIC in another DS (CASE-6).

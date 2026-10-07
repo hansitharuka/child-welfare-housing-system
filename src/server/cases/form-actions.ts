@@ -1,11 +1,10 @@
+import { getLocale } from "next-intl/server";
 import type { CaseFormState } from "@/components/forms/case-form";
-import type { ImportedFormState } from "@/components/forms/imported-form";
 import { db } from "../db";
 import { type UploadedFile, type UploadError, uploadDocument } from "../files/uploads";
 import { type Actor, type CaseCommandError, deleteDraft, removeDocument, type SavedCase, saveCase } from "./commands";
 import { findNicMatches, type NicMatch } from "./duplicates";
-import { readCaseForm, readImportedForm } from "./form-data";
-import { fillImported } from "./imported";
+import { readCaseForm } from "./form-data";
 
 /**
  * What the DS and Head Office case actions share. Each role's actions.ts checks the role first
@@ -29,23 +28,6 @@ export async function saveCaseForm(
   return { ok: true, saved: result.value };
 }
 
-/** Reads and saves what the office fills in on a case brought in from the old sheet (IMP-5). */
-export async function fillImportedForm(
-  actor: Actor,
-  form: FormData,
-): Promise<{ ok: true; id: string } | { ok: false; state: ImportedFormState }> {
-  const read = readImportedForm(form);
-  if (!read.ok) {
-    return {
-      ok: false,
-      state: "errors" in read ? { errors: read.errors, error: null } : { errors: {}, error: "notFound" },
-    };
-  }
-  const result = await fillImported(db, actor, read.input);
-  if (!result.ok) return { ok: false, state: { errors: {}, error: result.error } };
-  return { ok: true, id: read.input.id };
-}
-
 /** Stores one uploaded document (CASE-2, ERR-5). */
 export async function uploadFromForm(
   actor: Actor,
@@ -64,11 +46,16 @@ export async function nicMatchesFor(
   dsOfficeId: unknown,
 ): Promise<NicMatch[]> {
   if (typeof nic !== "string" || nic.length > 20) return [];
-  return findNicMatches(db, actor, {
-    nic,
-    exceptCaseId: typeof caseId === "string" && caseId.length <= 36 ? caseId : null,
-    dsOfficeId: typeof dsOfficeId === "number" && Number.isInteger(dsOfficeId) ? dsOfficeId : null,
-  });
+  return findNicMatches(
+    db,
+    actor,
+    {
+      nic,
+      exceptCaseId: typeof caseId === "string" && caseId.length <= 36 ? caseId : null,
+      dsOfficeId: typeof dsOfficeId === "number" && Number.isInteger(dsOfficeId) ? dsOfficeId : null,
+    },
+    await getLocale(),
+  );
 }
 
 export async function removeCaseDocument(

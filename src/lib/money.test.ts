@@ -16,18 +16,23 @@ describe("formatNumber", () => {
 
 describe("formatRupees", () => {
   it("adds the rupee label and thousand separators", () => {
-    expect(formatRupees(2_000_000)).toBe("රු. 2,000,000");
-    expect(formatRupees(500_000)).toBe("රු. 500,000");
-    expect(formatRupees(0)).toBe("රු. 0");
+    expect(formatRupees(2_000_000, "si")).toBe("රු. 2,000,000");
+    expect(formatRupees(500_000, "si")).toBe("රු. 500,000");
+    expect(formatRupees(0, "si")).toBe("රු. 0");
+  });
+
+  it("writes the rupee label in the screen's language", () => {
+    expect(formatRupees(2_000_000, "ta")).toBe("ரூ. 2,000,000");
+    expect(formatRupees(2_000_000, "en")).toBe("Rs. 2,000,000");
   });
 
   it("shows a negative balance with a minus sign", () => {
-    expect(formatRupees(-500_000)).toBe("රු. -500,000");
+    expect(formatRupees(-500_000, "si")).toBe("රු. -500,000");
   });
 
   it("refuses amounts that are not whole rupees", () => {
-    expect(() => formatRupees(10.5)).toThrow(RangeError);
-    expect(() => formatRupees(Number.NaN)).toThrow(RangeError);
+    expect(() => formatRupees(10.5, "si")).toThrow(RangeError);
+    expect(() => formatRupees(Number.NaN, "en")).toThrow(RangeError);
   });
 });
 

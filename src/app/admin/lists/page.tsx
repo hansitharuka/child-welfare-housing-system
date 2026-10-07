@@ -1,6 +1,8 @@
 import Link from "next/link";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { Kind } from "@/generated/prisma/enums";
+import { LOCALES, type Locale } from "@/i18n/locales";
+import { localName, type Names } from "@/lib/names";
 import { requireRole } from "@/server/context";
 import { db } from "@/server/db";
 import { listDistricts, officesOfDistrict, stagesByKind } from "@/server/lists/queries";
@@ -16,6 +18,32 @@ import {
 import { AddOfficeForm, AddStageForm, RenameInPlace } from "./list-forms";
 
 const smallButton = "h-10 rounded-lg border px-3 text-[15px] font-semibold";
+
+/** An office's or stage's name in the screen's language, with its other two names below (UI-9). */
+function AllNames({ names, locale, strike }: { names: Names; locale: Locale; strike?: boolean }) {
+  return (
+    <span className={`flex flex-col ${strike ? "text-muted-foreground line-through" : ""}`}>
+      <span lang={locale} className="font-semibold">
+        {localName(names, locale)}
+      </span>
+      {LOCALES.filter((other) => other !== locale).map((other) => (
+        <span key={other} lang={other} className="text-sm text-muted-foreground">
+          {localName(names, other)}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** The rename form's three name fields, filled with the current names. */
+function nameFields(t: (key: "nameSi" | "nameTa" | "nameEn") => string, names: Names, width?: string) {
+  return (["nameSi", "nameTa", "nameEn"] as const).map((name) => ({
+    name,
+    label: t(name),
+    initial: names[name],
+    width,
+  }));
+}
 
 export default async function AdminListsPage({
   searchParams,
@@ -58,10 +86,10 @@ export default async function AdminListsPage({
 }
 
 async function Places({ districtParam }: { districtParam?: string | string[] }) {
-  const t = await getTranslations("lists");
-  const districts = await listDistricts(db);
+  const [t, locale] = await Promise.all([getTranslations("lists"), getLocale()]);
+  const districts = await listDistricts(db, locale);
   const selectedId = Number(typeof districtParam === "string" ? districtParam : districts[0]?.id);
-  const selected = Number.isInteger(selectedId) ? await officesOfDistrict(db, selectedId) : null;
+  const selected = Number.isInteger(selectedId) ? await officesOfDistrict(db, selectedId, locale) : null;
 
   return (
     <div className="flex items-start gap-6">
@@ -138,10 +166,7 @@ async function Places({ districtParam }: { districtParam?: string | string[] }) 
               {selected.offices.map((o) => (
                 <tr key={o.id} className="border-t align-top">
                   <td className="px-4 py-2.5">
-                    <span className="flex flex-col">
-                      <span className="font-semibold">{o.nameSi}</span>
-                      <span className="text-sm text-muted-foreground">{o.nameEn}</span>
-                    </span>
+                    <AllNames names={o} locale={locale} />
                   </td>
                   <td className="px-3 py-2.5 font-mono">{o.code}</td>
                   <td
@@ -160,18 +185,17 @@ async function Places({ districtParam }: { districtParam?: string | string[] }) 
                     <div className="flex flex-wrap justify-end gap-2">
                       <RenameInPlace
                         id={`rename-office-${o.id}`}
-                        label={t("renameLabel", { name: o.nameSi })}
+                        label={t("renameLabel", { name: localName(o, locale) })}
                         action={renameOfficeAction.bind(null, o.id)}
-                        fields={[
-                          { name: "nameSi", label: t("nameSi"), initial: o.nameSi },
-                          { name: "nameEn", label: t("nameEn"), initial: o.nameEn },
-                        ]}
+                        fields={nameFields(t, o)}
                       />
                       <form action={setOfficeActiveAction.bind(null, o.id, !o.active)}>
                         <button
                           type="submit"
                           aria-label={
-                            o.active ? t("deactivateLabel", { name: o.nameSi }) : t("activateLabel", { name: o.nameSi })
+                            o.active
+                              ? t("deactivateLabel", { name: localName(o, locale) })
+                              : t("activateLabel", { name: localName(o, locale) })
                           }
                           className={`${smallButton} ${o.active ? "border-destructive text-destructive" : "border-primary text-primary"}`}
                         >
@@ -197,7 +221,7 @@ async function Places({ districtParam }: { districtParam?: string | string[] }) 
 }
 
 async function Stages() {
-  const t = await getTranslations("lists");
+  const [t, locale] = await Promise.all([getTranslations("lists"), getLocale()]);
   const stages = await stagesByKind(db);
 
   return (
@@ -229,15 +253,15 @@ async function Stages() {
                   >
                     {index + 1}
                   </span>
-                  <span className={`flex-1 font-semibold ${stage.active ? "" : "text-muted-foreground line-through"}`}>
-                    {stage.nameSi}
+                  <span className="flex-1">
+                    <AllNames names={stage} locale={locale} strike={!stage.active} />
                   </span>
                   {!stage.active && <span className="text-sm text-muted-foreground">{t("inactive")}</span>}
                   <form action={moveStageAction.bind(null, stage.id, "up")}>
                     <button
                       type="submit"
                       disabled={index === 0}
-                      aria-label={t("moveUp", { name: stage.nameSi })}
+                      aria-label={t("moveUp", { name: localName(stage, locale) })}
                       className={`${smallButton} border-input disabled:opacity-40`}
                     >
                       ↑
@@ -247,7 +271,7 @@ async function Stages() {
                     <button
                       type="submit"
                       disabled={index === all.length - 1}
-                      aria-label={t("moveDown", { name: stage.nameSi })}
+                      aria-label={t("moveDown", { name: localName(stage, locale) })}
                       className={`${smallButton} border-input disabled:opacity-40`}
                     >
                       ↓
@@ -255,17 +279,17 @@ async function Stages() {
                   </form>
                   <RenameInPlace
                     id={`rename-stage-${stage.id}`}
-                    label={t("renameLabel", { name: stage.nameSi })}
+                    label={t("renameLabel", { name: localName(stage, locale) })}
                     action={renameStageAction.bind(null, stage.id)}
-                    fields={[{ name: "nameSi", label: t("stageName"), initial: stage.nameSi, width: "w-72" }]}
+                    fields={nameFields(t, stage, "w-72")}
                   />
                   <form action={setStageActiveAction.bind(null, stage.id, !stage.active)}>
                     <button
                       type="submit"
                       aria-label={
                         stage.active
-                          ? t("deactivateLabel", { name: stage.nameSi })
-                          : t("activateLabel", { name: stage.nameSi })
+                          ? t("deactivateLabel", { name: localName(stage, locale) })
+                          : t("activateLabel", { name: localName(stage, locale) })
                       }
                       className={`${smallButton} ${stage.active ? "border-destructive text-destructive" : "border-primary text-primary"}`}
                     >

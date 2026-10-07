@@ -5,10 +5,11 @@ import messages from "../../../messages/si.json";
 import { seed } from "../../../prisma/seed-data";
 import { addLoadData, removeLoadData } from "../../../scripts/seed-load";
 import { createTestClient } from "../../../tests/db/client";
+import { dateToDay } from "@/lib/dates";
 import { CATEGORIES, KINDS } from "@/lib/validation/case";
 import { countCases, listCases, PAGE_SIZE } from "../cases/queries";
 import type { Viewer } from "../permissions";
-import { caseListRows, exportCaseList, type ListFilter } from "./case-list";
+import { caseListRows, exportCaseList, type ListFilter, progressStages } from "./case-list";
 
 const db = createTestClient();
 const t = createTranslator({ locale: "si", messages, namespace: "cases" });
@@ -45,7 +46,10 @@ async function lastExportAudit(actorId: string) {
   return db.auditLog.findFirst({ where: { actorId, action: "cases_exported" }, orderBy: { id: "desc" } });
 }
 
-describe("Excel export of a case list (EXP-1, EXP-3)", () => {
+// Each test reads lists of up to 5,000 cases: a check of the rows, not of speed (that is PRF-4). On a CI
+// runner that takes longer than vitest's default 5 seconds, and a test that times out keeps running
+// underneath the next one, which then fails too.
+describe("Excel export of a case list (EXP-1, EXP-3)", { timeout: 30_000 }, () => {
   it("holds every case of the list, every page, in the screen's order, for each filter", async () => {
     const filters: ListFilter[] = [
       {},
@@ -55,15 +59,15 @@ describe("Excel export of a case list (EXP-1, EXP-3)", () => {
       { q: "HMG" },
     ];
     for (const filter of filters) {
-      const rows = await caseListRows(db, ho, filter);
+      const rows = await caseListRows(db, ho, filter, "si");
       expect(rows?.length, JSON.stringify(filter)).toBe(await countCases(db, ho, filter));
-      const first = await listCases(db, ho, { ...filter, page: 1 });
+      const first = await listCases(db, ho, { ...filter, page: 1 }, "si");
       expect(rows!.slice(0, PAGE_SIZE).map((r) => r.caseNumber)).toEqual(first.rows.map((r) => r.caseNumber));
     }
   });
 
-  it("gives each released case its money and stage from the database", async () => {
-    const rows = (await caseListRows(db, ho, { dsOfficeId: busiestOffice }))!;
+  it("gives each released case its money from the database", async () => {
+    const rows = (await caseListRows(db, ho, { dsOfficeId: busiestOffice }, "si"))!;
     const cases = await db.case.findMany({
       where: { dsOfficeId: busiestOffice },
       select: {
@@ -78,18 +82,57 @@ describe("Excel export of a case list (EXP-1, EXP-3)", () => {
     for (const row of released) {
       const found = byNumber.get(row.caseNumber)!;
       expect(row.release!.amount).toBe(found.release!.amount);
-      expect(row.release!.paidCount).toBe(found.installments.length);
       expect(row.release!.paidOut).toBe(found.installments.reduce((sum, i) => sum + i.amount, 0));
     }
     expect(rows.filter((r) => !r.release).every((r) => r.status !== "IN_PROGRESS" && r.status !== "COMPLETED")).toBe(
       true,
     );
-    expect(rows.some((r) => r.stageName)).toBe(true);
+  });
+
+  it("gives each case its installments and the days its new-house stages were reached", async () => {
+    const rows = (await caseListRows(db, ho, { dsOfficeId: busiestOffice, kind: "NEW_HOUSE" }, "si"))!;
+    const stages = await db.stageDefinition.findMany({
+      where: { kind: "NEW_HOUSE", active: true },
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+      select: { id: true },
+    });
+    const cases = await db.case.findMany({
+      where: { dsOfficeId: busiestOffice, kind: "NEW_HOUSE", caseNumber: { not: null } },
+      select: {
+        caseNumber: true,
+        installments: { select: { number: true, status: true, expectedOn: true, releasedOn: true } },
+        stageUpdates: { where: { stageId: { not: null } }, select: { stageId: true, visitedOn: true } },
+      },
+    });
+    const byNumber = new Map(cases.map((c) => [c.caseNumber, c]));
+    for (const row of rows.filter((r) => r.caseNumber)) {
+      const found = byNumber.get(row.caseNumber)!;
+      const installments = [1, 2, 3, 4].map((n) => {
+        const item = found.installments.find((i) => i.number === n);
+        return item
+          ? {
+              status: item.status,
+              expectedOn: item.expectedOn && dateToDay(item.expectedOn),
+              releasedOn: item.releasedOn && dateToDay(item.releasedOn),
+            }
+          : null;
+      });
+      expect(row.installments, row.caseNumber!).toEqual(installments);
+      // Other test files may have added stages to the shared schema, so the columns' stages are worked out.
+      const reached = progressStages(stages).map((stage) => {
+        const update = stage && found.stageUpdates.find((u) => u.stageId === stage.id);
+        return update ? dateToDay(update.visitedOn) : null;
+      });
+      expect(row.progress, row.caseNumber!).toEqual(reached);
+    }
+    expect(rows.some((r) => r.installments[0]?.status === "RELEASED")).toBe(true);
+    expect(rows.some((r) => r.installments.some((i) => i?.status === "PROCESSING"))).toBe(true);
+    expect(rows.some((r) => r.progress[0] !== null)).toBe(true);
   });
 
   it("keeps a DS officer to their own office, and gives an admin nothing (PRM-1, PRM-2)", async () => {
     const ds = { role: "DS_OFFICER", dsOfficeId: busiestOffice, userId: "export-test-ds" } as const;
-    const rows = (await caseListRows(db, ds, {}))!;
+    const rows = (await caseListRows(db, ds, {}, "si"))!;
     const own = await db.dsOffice.findUniqueOrThrow({ where: { id: busiestOffice }, select: { nameSi: true } });
     expect(rows.length).toBe(await db.case.count({ where: { dsOfficeId: busiestOffice } }));
     expect(new Set(rows.map((r) => r.officeName))).toEqual(new Set([own.nameSi]));
@@ -99,16 +142,16 @@ describe("Excel export of a case list (EXP-1, EXP-3)", () => {
       where: { dsOfficeId: { not: busiestOffice }, caseNumber: { not: null } },
       select: { caseNumber: true },
     });
-    expect(await caseListRows(db, ds, { q: other.caseNumber! })).toEqual([]);
+    expect(await caseListRows(db, ds, { q: other.caseNumber! }, "si")).toEqual([]);
 
     const admin = { role: "ADMIN", dsOfficeId: null, userId: "export-test-admin" } as const;
-    expect(await exportCaseList(db, admin, "ho_cases", {}, t)).toBeNull();
+    expect(await exportCaseList(db, admin, "ho_cases", {}, t, "si")).toBeNull();
     expect(await lastExportAudit(admin.userId)).toBeNull();
   });
 
   it("EXP-3: logs who exported which list, with the filters used and the number of rows", async () => {
     const filter: ListFilter = { q: " HMG ", statuses: ["IN_PROGRESS"], districtId: district };
-    const file = (await exportCaseList(db, ho, "ho_cases", filter, t))!;
+    const file = (await exportCaseList(db, ho, "ho_cases", filter, t, "si"))!;
     const audit = await lastExportAudit(ho.userId);
     expect(audit).toMatchObject({ entityType: "case_list", entityId: "ho_cases", caseId: null });
     expect(audit?.after).toEqual({
@@ -117,7 +160,7 @@ describe("Excel export of a case list (EXP-1, EXP-3)", () => {
     });
 
     const ds = { role: "DS_OFFICER", dsOfficeId: busiestOffice, userId: "export-test-ds" } as const;
-    const own = (await exportCaseList(db, ds, "ds_cases", { statuses: ["COMPLETED"] }, t))!;
+    const own = (await exportCaseList(db, ds, "ds_cases", { statuses: ["COMPLETED"] }, t, "si"))!;
     expect((await lastExportAudit(ds.userId))?.after).toEqual({
       filters: { statuses: ["COMPLETED"], officeScope: busiestOffice },
       rows: own.rows,
@@ -129,7 +172,7 @@ describe("Excel export of a case list (EXP-1, EXP-3)", () => {
     expect(total).toBeGreaterThanOrEqual(LOAD);
 
     const started = performance.now();
-    const file = (await exportCaseList(db, ho, "ho_cases", {}, t))!;
+    const file = (await exportCaseList(db, ho, "ho_cases", {}, t, "si"))!;
     const seconds = (performance.now() - started) / 1000;
     expect(seconds).toBeLessThan(60);
     expect(file.rows).toBe(total);
@@ -139,6 +182,6 @@ describe("Excel export of a case list (EXP-1, EXP-3)", () => {
     const sheet = workbook.worksheets[0];
     expect(sheet.name).toBe(t("export.sheet"));
     expect(sheet.getRow(1).getCell(1).value).toBe(t("export.columns.number"));
-    expect(sheet.rowCount).toBe(total + 1);
+    expect(sheet.rowCount).toBe(total + 2);
   }, 120_000);
 });

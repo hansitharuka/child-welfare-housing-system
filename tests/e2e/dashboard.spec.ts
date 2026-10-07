@@ -40,7 +40,7 @@ test("Head Office's dashboard: totals, a district's DS offices, filters and the 
 
   // The waiting counts lead to Head Office's two queues.
   const waiting = page.getByRole("region", { name: "ඔබේ ක්‍රියාව අවශ්‍යයි" });
-  await waiting.getByRole("link", { name: /^මුදල් නිදහස් කිරීමට/ }).click();
+  await waiting.getByRole("link", { name: /^ප්‍රතිපාදන මුදා හැරීමට/ }).click();
   await expect(page).toHaveURL(/\/ho\/release$/);
   await page.goBack();
   await waiting.getByRole("link", { name: /^පරීක්ෂා කිරීමට/ }).click();

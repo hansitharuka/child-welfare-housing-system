@@ -13,6 +13,14 @@ const sinhala = localFont({
   display: "swap",
 });
 
+// Noto Sans Tamil, for the Tamil screens (UI-9), also served from this app.
+const tamil = localFont({
+  src: "./fonts/noto-sans-tamil-tamil-wght-normal.woff2",
+  weight: "100 900",
+  variable: "--font-tamil",
+  display: "swap",
+});
+
 const latin = localFont({
   src: "./fonts/noto-sans-sinhala-latin-wght-normal.woff2",
   weight: "100 900",
@@ -30,7 +38,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   await headers();
   const locale = await getLocale();
   return (
-    <html lang={locale} className={`${sinhala.variable} ${latin.variable} h-full antialiased`}>
+    <html lang={locale} className={`${sinhala.variable} ${tamil.variable} ${latin.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col">
         <NextIntlClientProvider>{children}</NextIntlClientProvider>
       </body>

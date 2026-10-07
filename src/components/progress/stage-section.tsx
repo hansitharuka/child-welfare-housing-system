@@ -19,9 +19,7 @@ export async function StageSection({ progress, update }: { progress: StageProgre
       <h2 id="stages-title" className="text-xl font-bold">
         {t("title")}
       </h2>
-      {progress.stages.length === 0 ? (
-        <p className="text-[15px] text-[#3F4843]">{t("noStages")}</p>
-      ) : (
+      {progress.stages.length > 0 && (
         <ol className="flex flex-col">
           {progress.stages.map((stage, index) => {
             const done = stage.reachedOn !== null;

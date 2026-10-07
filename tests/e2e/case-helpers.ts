@@ -63,8 +63,27 @@ export async function openAs(browser: Browser, username: string): Promise<Page> 
 }
 
 /**
- * A case of the DS officer's office that Head Office has verified and released today, from the case's
- * own page: ready for its installments and building progress (Phase 6).
+ * On the release tab, with a district's allocation letter open (REL-2): ticks only the named cases,
+ * then records the letter under this number, dated today. Other tests' cases may wait in the same
+ * district, so every other box is unticked first.
+ */
+export async function recordLetterFor(ho: Page, names: string[], letterNumber: string) {
+  // The letter's section is named after its district; find it by its list of cases.
+  const letter = ho.getByRole("region").filter({ has: ho.getByRole("group", { name: "ලිපියේ ප්‍රතිලාභීන්" }) });
+  const boxes = letter.getByRole("checkbox");
+  await expect(boxes.first()).toBeVisible();
+  for (const box of await boxes.all()) await box.uncheck();
+  for (const name of names) await letter.getByRole("checkbox", { name: new RegExp(name) }).check();
+  await letter.getByLabel("මගේ අංකය *").fill(letterNumber);
+  await letter.getByRole("button", { name: /^ලිපිය සටහන් කරන්න · / }).click();
+  await expect(ho).toHaveURL(/\/ho\/release\?notice=letterRecorded&letter=[\w-]+&districtId=\d+$/);
+  await expect(ho.getByRole("status")).toContainText(`ලිපිය ${letterNumber} සටහන් කළා`);
+}
+
+/**
+ * A case of the DS officer's office that Head Office has verified from the case's own page, then
+ * released today on its district's allocation letter: ready for its installments and building
+ * progress (Phase 6).
  */
 export async function releasedCase(ds: Page, ho: Page, label: string) {
   const name = `${TEST_CASE_NAME} ${label} ${Date.now()}`;
@@ -74,8 +93,7 @@ export async function releasedCase(ds: Page, ho: Page, label: string) {
   await ho.getByRole("button", { name: "අනුමත කරන්න", exact: true }).click();
   await ho.getByRole("dialog").getByRole("button", { name: "ඔව්, අනුමත කරන්න" }).click();
   await expect(ho).toHaveURL(new RegExp(`/ho/cases/${caseId}\\?notice=verified$`));
-  await ho.getByLabel("යොමු අංකය *").fill("HO/2026/E2E-P6");
-  await ho.getByRole("button", { name: "රු. 2,000,000 නිදහස් කළ බව සටහන් කරන්න" }).click();
-  await expect(ho).toHaveURL(new RegExp(`/ho/cases/${caseId}\\?notice=released$`));
+  await ho.getByRole("link", { name: "ලිපිය සටහන් කිරීමට යන්න →" }).click();
+  await recordLetterFor(ho, [name], `MWCA/E2E/${label}`);
   return { caseId, url, name, number };
 }

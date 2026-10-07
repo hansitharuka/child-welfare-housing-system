@@ -1,9 +1,11 @@
+import { cn } from "cn";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 /**
  * A labelled text input in the prototype's size: 48 px tall, 17 px text (UI-4, UI-6).
  * `error` shows a message under the field (ERR-1); `invalid` + `errorId` point at a shared error box instead.
+ * `trailing` is a small button shown inside the field's right edge, such as PasswordField's show/hide.
  */
 export function FormField({
   id,
@@ -12,6 +14,7 @@ export function FormField({
   error,
   invalid,
   errorId,
+  trailing,
   ...inputProps
 }: {
   id: string;
@@ -20,6 +23,7 @@ export function FormField({
   error?: string;
   invalid?: boolean;
   errorId?: string;
+  trailing?: React.ReactNode;
 } & Omit<React.ComponentProps<"input">, "id">) {
   const helpId = help ? `${id}-help` : undefined;
   const ownErrorId = error ? `${id}-error` : undefined;
@@ -31,13 +35,16 @@ export function FormField({
       <Label htmlFor={id} className="text-base font-semibold">
         {label}
       </Label>
-      <Input
-        id={id}
-        aria-invalid={isInvalid || undefined}
-        aria-describedby={describedBy}
-        className="h-12 rounded-lg px-3.5 text-[17px] md:text-[17px]"
-        {...inputProps}
-      />
+      <div className="relative">
+        <Input
+          id={id}
+          aria-invalid={isInvalid || undefined}
+          aria-describedby={describedBy}
+          className={cn("h-12 rounded-lg px-3.5 text-[17px] md:text-[17px]", trailing && "pr-12")}
+          {...inputProps}
+        />
+        {trailing && <div className="absolute inset-y-0 right-1 flex items-center">{trailing}</div>}
+      </div>
       {help && (
         <span id={helpId} className="text-sm text-muted-foreground">
           {help}

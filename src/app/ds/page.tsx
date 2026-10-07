@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { ExportLink } from "@/components/cases/export-link";
 import { caseName } from "@/components/cases/page-header";
 import { Pager } from "@/components/cases/pager";
@@ -44,7 +44,8 @@ export default async function DsHomePage({
   }>;
 }) {
   const viewer = await requireRole("DS_OFFICER");
-  const office = viewer.dsOfficeId ? await officeSummary(db, viewer.dsOfficeId) : null;
+  const locale = await getLocale();
+  const office = viewer.dsOfficeId ? await officeSummary(db, viewer.dsOfficeId, locale) : null;
   if (!office) notFound();
 
   const params = await searchParams;
@@ -53,7 +54,7 @@ export default async function DsHomePage({
 
   const [t, list, counts, todo, money] = await Promise.all([
     getTranslations("cases"),
-    listCases(db, viewer, { ...filter, page }),
+    listCases(db, viewer, { ...filter, page }, locale),
     Promise.all(TABS.map((key) => countCases(db, viewer, tabFilter(key)))),
     todoItems(db, viewer),
     officeMoney(db, viewer),
@@ -77,16 +78,10 @@ export default async function DsHomePage({
         return days === 0 ? t("home.progress.submittedToday") : t("home.progress.SUBMITTED", { days });
       }
       case "IN_PROGRESS":
-        // On the "details missing" tab, a confirmed case from the sheet says what to do next (IMP-4).
-        if (tab === "detailsMissing" && row.detailsMissing) return t("home.progress.importedMissing");
         return row.stageName ?? t("home.progress.IN_PROGRESS");
-      case "IMPORTED":
-        return row.detailsMissing ? t("home.progress.importedMissing") : t("home.progress.IMPORTED");
-      case "VERIFIED":
-        if (tab === "detailsMissing" && row.detailsMissing) return t("home.progress.importedMissing");
-        return t("home.progress.VERIFIED");
       case "DRAFT":
       case "RETURNED":
+      case "VERIFIED":
       case "COMPLETED":
       case "STOPPED":
         return t(`home.progress.${row.status}`);
@@ -128,21 +123,18 @@ export default async function DsHomePage({
           </h2>
           <div className="flex flex-wrap items-center gap-4 border-b px-5 py-3.5">
             <nav aria-label={t("home.tabsLabel")} className="flex gap-1 rounded-lg bg-muted p-1">
-              {TABS.map((key, index) =>
-                // Only offices with cases from the old sheet still to fill in see that tab (IMP-4).
-                key === "detailsMissing" && counts[index] === 0 && tab !== key ? null : (
-                  <Link
-                    key={key}
-                    href={href({ tab: key, page: 1 })}
-                    aria-current={tab === key ? "page" : undefined}
-                    className={`flex h-10.5 items-center rounded-md px-4.5 font-semibold ${
-                      tab === key ? "bg-card text-primary shadow-sm" : "text-[#3F4843]"
-                    }`}
-                  >
-                    {t(`home.tabs.${key}`, { count: counts[index] ?? 0 })}
-                  </Link>
-                ),
-              )}
+              {TABS.map((key, index) => (
+                <Link
+                  key={key}
+                  href={href({ tab: key, page: 1 })}
+                  aria-current={tab === key ? "page" : undefined}
+                  className={`flex h-10.5 items-center rounded-md px-4.5 font-semibold ${
+                    tab === key ? "bg-card text-primary shadow-sm" : "text-[#3F4843]"
+                  }`}
+                >
+                  {t(`home.tabs.${key}`, { count: counts[index] ?? 0 })}
+                </Link>
+              ))}
             </nav>
             <form method="get" action="/ds" className="ms-auto flex items-center gap-2">
               {tab !== "all" && <input type="hidden" name="tab" value={tab} />}
@@ -266,7 +258,7 @@ export default async function DsHomePage({
                 ).map(([key, amount]) => (
                   <div key={key} className="flex justify-between gap-3 border-b py-2 last:border-b-0">
                     <dt className="text-[15px] text-[#3F4843]">{t(`home.money.${key}`)}</dt>
-                    <dd className="font-bold whitespace-nowrap">{formatRupees(amount)}</dd>
+                    <dd className="font-bold whitespace-nowrap">{formatRupees(amount, locale)}</dd>
                   </div>
                 ))}
               </dl>

@@ -9,7 +9,7 @@
 - **One phase at a time.** A phase is done only when its "Done when" checks pass. The next phase does not start before that.
 - **One branch per phase** (`phase-1-foundation`, …), merged into `main` when the phase is done. Commit after each task.
 - **Tests come with the code.** Every task that adds a rule adds its tests in the same commit. CI must be green before merging.
-- **No real data in the repository.** Tests, seeds and demos use made-up people only. The real sheet is used once, on the production server, in Phase 8 (SEC-11).
+- **No real data in the repository.** Tests, seeds and demos use made-up people only (SEC-11).
 - **Keep the documents in step.** When a requirement changes, update the PRD, SPEC and this PLAN together. After Phase 1, record the build, lint and test commands in `CLAUDE.md`.
 - **Deferred questions** use the defaults in [SPEC section 13](SPEC.md#13-deferred-questions-and-the-defaults-used). When the Ministry answers one, change only the places listed there.
 
@@ -24,8 +24,8 @@
 | 5. Check and release | Head Office queues, decisions, Rs. 2M release | 4 | M |
 | 6. Installments and progress | Installments, stages, photos, stop and reopen, history | 5 | L |
 | 7. Dashboard and exports | Head Office dashboard, Excel exports, notifications | 6 | M |
-| 8. Sheet import | Import script, imported-case review | 6 | M |
-| 9. Go-live | Production server, backups, security and performance checks, training | 7, 8 | M |
+| 8. Sheet import | Built, then removed on 2026-10-06 | 6 | — |
+| 9. Go-live | Production server, backups, security and performance checks, training | 7 | M |
 
 Sizes are relative: S is a few days, M about one to two weeks, and L about two to three weeks of one developer's time.
 
@@ -46,7 +46,7 @@ src/
 messages/si.json        every screen string
 prisma/                 schema.prisma, migrations/, seed.ts
 data/                   seed lists (places and stages only, no personal data)
-scripts/                import-sheet.ts, make-sample-sheet.ts, seed-load.ts, backup.sh
+scripts/                seed-load.ts, backup.sh
 tests/e2e/              Playwright tests
 docker/                 Dockerfile, nginx.conf
 docker-compose.yml, docker-compose.dev.yml
@@ -151,6 +151,8 @@ docker-compose.yml, docker-compose.dev.yml
 | 5.5 | Release queue and the release form; four installments created on save; release corrections; the money section on both case pages | REL-1–4 | `src/app/ho/release/*`, `src/server/releases/*`, `src/components/cases/money-section.tsx` |
 | 5.6 | Notifications table, the notices for every decision, the DS bell and its list, the waiting counts in the Head Office menu | NTF-1 | `src/server/notifications/*`, `src/app/ds/notifications/*`, `src/components/shell/*` |
 | 5.7 | Edits after verification, Head Office only, logged field by field | CASE-9 | `src/server/cases/rules.ts`, `src/server/cases/commands.ts`, `src/components/forms/case-form.tsx` |
+| 5.8 | Narrowing both queues to a district or DS office, with the count waiting at each (added 2026-10-06) | CHK-4 | `src/app/ho/check/place.ts`, `src/app/ho/check/place-picker.tsx`, `src/server/cases/queues.ts` |
+| 5.9 | Release by district allocation letter, as in the prototype's option A (added 2026-10-06): the letter table and scan (migrations `letter_file_kind`, `release_letter`), the release tab's districts and letter form, the banner on the check tab, the letter on both case pages, and correcting the letter. Replaces 5.5's one-case release form | REL-1–4, AC-26 | `prisma/schema.prisma`, `src/server/releases/*`, `src/app/ho/check/review-screen.tsx`, `src/components/review/letter-*.tsx`, `src/components/review/correct-release.tsx`, `src/components/cases/money-section.tsx` |
 
 **Tests:** every allowed and refused status change; reasons required; release date rules; e2e for the full path DS → check → send back → resubmit → verify → release (AC-8, AC-9, AC-10), rejecting, and Head Office's corrections (CASE-9, REL-4).
 
@@ -186,26 +188,15 @@ docker-compose.yml, docker-compose.dev.yml
 | 7.3 | Excel export of any list, limited to what the user may see, and logged | EXP-1, EXP-3 | `src/server/exports/*`, `src/app/ho/cases/export/route.ts`, `src/app/ds/export/route.ts` |
 | 7.4 | Sheet-layout export (two tabs, original columns). Built, then removed on 2026-10-04: the Ministry no longer needs the old layout | EXP-2 | — |
 | 7.5 | Notifications: the bell, the menu's queue counts and every notice, completed, stopped and reopened included, were built in Phases 5 and 6; check they stay right beside the dashboard. The menu's count and the bell are read again after every move, because a layout isn't rendered again on a client-side move | NTF-1 | `src/components/shell/*`, `src/app/ho/waiting/route.ts`, `src/app/ds/notifications/unread/route.ts` |
+| 7.6 | Screens in Sinhala, Tamil and English (added 2026-10-07, PRD question 8): the language picker and its cookie, `messages/ta.json` and `en.json`, Noto Sans Tamil, money in each language; Tamil names for provinces, districts and DS offices and Tamil and English names for stages (migration `names_in_three_languages`, the admin's lists screen); queries, exports and the case history in the screen's language | UI-1, UI-3, UI-4, UI-9, LST-1, LST-2, LST-4, EXP-1, HIS-2, AC-27 | `src/i18n/*`, `messages/*.json`, `src/components/language-picker.tsx`, `src/lib/names.ts`, `prisma/schema.prisma`, `data/places.json`, `data/stages.json`, `src/server/**/queries.ts`, `src/app/admin/lists/*` |
 
-**Tests:** dashboard totals against direct database sums (AC-17); the exported list reopened with ExcelJS and checked (EXP-1); dashboard time with 5,000 cases (AC-21); full export under 60 seconds (PRF-4); the menu's count matching the dashboard, and the bell, after moves by the menu alone (NTF-1).
+**Tests:** dashboard totals against direct database sums (AC-17); the exported list reopened with ExcelJS and checked (EXP-1); dashboard time with 5,000 cases (AC-21); full export under 60 seconds (PRF-4); the menu's count matching the dashboard, and the bell, after moves by the menu alone (NTF-1); the three message files having the same keys and placeholders, place names in each language, the history's names in Tamil and English, and the sign-in page, a DS officer in Tamil and Head Office's export in English in the browser (UI-9, AC-27).
 
 **Done when:** AC-17 and AC-21 pass.
 
 ## Phase 8 — Sheet import
 
-**Goal:** the 729 cases can be brought in once, safely, and Head Office can confirm them.
-
-| # | Task | SPEC | Files |
-| --- | --- | --- | --- |
-| 8.1 | A script that makes a made-up sample sheet with the real layout (two tabs, two-row headers, zero-width joiners, mixed district spellings) | SEC-11 | `scripts/make-sample-sheet.ts` |
-| 8.2 | Import script with a dry run: header matching, district and DS mapping, IMPORTED status, the case's sheet reference and read-only sheet notes, no duplicates on re-run (serial number, else row number) | IMP-1–3, IMP-5, IMP-7 | `scripts/import-sheet.ts`, `src/server/import/*`, `prisma/schema.prisma` |
-| 8.3 | Import report (tab, row, reason) written outside the repository | IMP-6 | `scripts/import-sheet.ts` |
-| 8.4 | "Details missing" filter; DS can fill NIC, phones and kind of help on imported cases | IMP-4, IMP-5 | `src/server/cases/*`, `src/app/ds/page.tsx`, `src/app/ds/cases/[id]/fill/*`, `src/components/cases/sheet-notes.tsx` |
-| 8.5 | Head Office "imported cases" screen to confirm each case's real status, with release and installments, also on the case page; a case number on confirmation; the DS still fills in a missing NIC or phone after it | IMP-4, IMP-5, CASE-9 | `src/app/ho/imported/*`, `src/server/cases/confirm-import.ts`, `src/lib/validation/confirm.ts`, `src/components/review/confirm-import.tsx` |
-
-**Tests:** import of the sample sheet, including every mapping and report case, and a second run with no new rows (AC-19); confirming imported cases as each status, and filling in what they lack afterwards (AC-24).
-
-**Done when:** AC-19 passes on the sample sheet, and AC-24 on cases made like the import's. The real sheet is not imported until Phase 9.
+**Removed on 2026-10-06.** Tasks 8.1 to 8.5 were built (a made-up sample sheet, the import script and its report, the DS office filling in imported cases, and Head Office confirming them) and merged. They were then taken out of the code, because the sheet is still being updated. The database migration `20261006090000_remove_sheet_import` drops the sheet's columns, the `IMPORTED` status and the `CONFIRM_IMPORT` decision. SPEC IMP-1 to IMP-7, AC-19 and AC-24 stay unused. The work is in the git history, up to commit `9a5ce1b`, if the import is wanted again once the sheet is final. How the sheet's cases come into the system is open (see "Waiting on others").
 
 ## Phase 9 — Go-live
 
@@ -219,14 +210,14 @@ docker-compose.yml, docker-compose.dev.yml
 | 9.4 | Uptime, disk and backup alerts | OPS-4 | server configuration |
 | 9.5 | Security pass: a test calling every action with every role, headers, CSP, `npm audit`, secrets only in the environment | SEC-2–9 | `tests/security/*` |
 | 9.6 | Performance and accessibility pass on staging | PRF-2–4, UI-6 | — |
-| 9.7 | Full list of DS offices with codes loaded; admin creates the first accounts | LST-1 | `data/places.json` |
+| 9.7 | Full list of DS offices with codes loaded, and their Tamil names checked with the Ministry; the Tamil and English screen text checked by Tamil- and English-speaking officers; admin creates the first accounts | LST-1, UI-9 | `data/places.json`, `messages/ta.json`, `messages/en.json` |
 | 9.8 | Short Sinhala guides for DS officers and Head Office, plus a user test with a few officers | — | `docs/guides/*` |
-| 9.9 | Production launch; import the real sheet on the server, then delete the file from the server; Head Office starts confirming imported cases | IMP-1–7 | — |
+| 9.9 | Production launch | — | — |
 
 **Done when:**
 - AC-20 and AC-22 pass.
 - Every other acceptance check passes again on staging.
-- The real sheet is imported, the sheet is set to read-only, and DS offices have signed in.
+- DS offices have signed in.
 
 ## Waiting on others
 
@@ -237,4 +228,5 @@ These don't block Phases 1–8. Each one is needed by the phase shown.
 | Where the server runs (PRD question 4) | Phase 9 | Ministry / ICTA |
 | The full list of DS offices with Sinhala names | Phase 9 (sample list until then) | Ministry |
 | Renovation stages (PRD question 3) | Any time; the admin adds them | Ministry |
+| How the sheet's cases come into the system, now that the import is removed | Phase 9 | Ministry / Head Office |
 | Answers to the other deferred questions | When they arrive; SPEC section 13 lists what to change | Ministry |

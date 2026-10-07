@@ -17,7 +17,8 @@ async function exportList(page: Page) {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(await download.path());
   const sheet = workbook.worksheets[0];
-  const rows = sheet.getSheetValues().slice(2) as unknown[][];
+  // Two header rows: the progress groups stand over their columns.
+  const rows = sheet.getSheetValues().slice(3) as unknown[][];
   return { fileName: download.suggestedFilename(), sheet, rows: rows.map((row) => row.slice(1, 6)) };
 }
 

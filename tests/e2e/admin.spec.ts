@@ -170,6 +170,7 @@ test("the admin adds a DS office to a district (LST-2)", async ({ page }) => {
 
   // A wrong code is explained, and what was typed stays.
   await page.getByLabel("නම (සිංහලෙන්) *").fill(nameSi);
+  await page.getByLabel("නම (දෙමළෙන්) *").fill("சோதனை அலுவலகம்");
   await page.getByLabel("නම (ඉංග්‍රීසියෙන්) *").fill(`${TEST_MARKER} Office ${code}`);
   await page.getByLabel("කේතය *").fill("Q1");
   await page.getByRole("button", { name: "එක් කරන්න" }).click();
@@ -194,10 +195,12 @@ test("the admin adds and reorders renovation stages (LST-4)", async ({ page }) =
   const renovation = page.getByRole("region", { name: "නිවස අලුත්වැඩියා කිරීම" });
   const stages = renovation.getByRole("listitem");
   for (const name of [first, second]) {
-    await renovation.getByLabel("මට්ටමේ නම *").fill(name);
+    await renovation.getByLabel("නම (සිංහලෙන්) *").fill(name);
+    await renovation.getByLabel("නම (දෙමළෙන්) *").fill("சோதனைக் கட்டம்");
+    await renovation.getByLabel("නම (ඉංග්‍රීසියෙන්) *").fill(`Test stage ${suffix}`);
     await renovation.getByRole("button", { name: "එක් කරන්න" }).click();
     await expect(stages.filter({ hasText: name })).toBeVisible();
-    await expect(renovation.getByLabel("මට්ටමේ නම *")).toHaveValue("");
+    await expect(renovation.getByLabel("නම (සිංහලෙන්) *")).toHaveValue("");
   }
 
   const order = async () => {

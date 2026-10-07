@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { FormNotice } from "@/components/forms/form-field";
 import { formatDate } from "@/lib/dates";
 import { isRole, ROLES } from "@/server/auth/roles";
@@ -16,6 +16,7 @@ export default async function AdminUsersPage({
   searchParams: Promise<{ q?: string | string[]; role?: string | string[]; notice?: string | string[] }>;
 }) {
   const admin = await requireRole("ADMIN");
+  const locale = await getLocale();
   const params = await searchParams;
   const q = typeof params.q === "string" ? params.q.slice(0, 100) : "";
   const role = isRole(params.role) ? params.role : undefined;
@@ -23,7 +24,7 @@ export default async function AdminUsersPage({
 
   const [t, rows, counts] = await Promise.all([
     getTranslations("users"),
-    listAccounts(db, { q, role }),
+    listAccounts(db, { q, role }, locale),
     accountCounts(db),
   ]);
 

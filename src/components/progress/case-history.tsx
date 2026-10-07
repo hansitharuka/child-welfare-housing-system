@@ -1,5 +1,4 @@
 import { getTranslations } from "next-intl/server";
-import { CaseStatus } from "@/generated/prisma/enums";
 import { formatDate } from "@/lib/dates";
 import type { HistoryEntry } from "@/server/history/queries";
 
@@ -19,8 +18,6 @@ const ACTIONS = [
   "case_completed",
   "case_stopped",
   "case_reopened",
-  "case_imported",
-  "case_import_confirmed",
 ] as const;
 type Action = (typeof ACTIONS)[number];
 const isAction = (value: string): value is Action => (ACTIONS as readonly string[]).includes(value);
@@ -39,20 +36,20 @@ const FIELDS = [
   "remark",
   "releasedOn",
   "referenceNumber",
+  "letterNumber",
+  "letterDate",
+  "validUntil",
   "note",
 ] as const;
 type Field = (typeof FIELDS)[number];
 
 const text = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value : null);
-const record = (value: unknown): Record<string, unknown> | null =>
-  typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
-const isStatus = (value: string): value is CaseStatus => (Object.values(CaseStatus) as string[]).includes(value);
 const count = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
 const installmentNumber = (value: unknown): 1 | 2 | 3 | 4 | null =>
   value === 1 || value === 2 || value === 3 || value === 4 ? value : null;
 
 /**
- * HIS-2: the case's history, newest first, as plain Sinhala sentences as in the prototype: the day,
+ * HIS-2: the case's history, newest first, as plain sentences in the screen's language as in the prototype: the day,
  * what happened, and who did it. Reasons, notes and changed fields go on a line under the sentence.
  * A changed detail is named; its old and new values stay in the audit record (CASE-9, HIS-1).
  */
@@ -92,41 +89,29 @@ export async function CaseHistory({ entries }: { entries: HistoryEntry[] }) {
           lines,
         };
       }
-      case "case_import_confirmed": {
-        // IMP-5: the status Head Office confirmed, with the money it recorded for a case in progress.
-        const release = record(after.release);
-        if (release) {
-          const reference = text(release.referenceNumber) ?? tc("none");
-          lines.push(t("importRelease", { date: day(release.releasedOn), reference }));
-          const paid = Array.isArray(after.installments)
-            ? after.installments.filter((i) => record(i)?.status === "RELEASED").length
-            : 0;
-          lines.push(t("importPaid", { count: paid }));
-        }
-        const status = text(after.status);
+      case "case_released": {
+        // Since 6 Oct 2026 a release comes with its district's allocation letter (REL-2); older
+        // records name only the release's reference number.
+        const letter = text(after.letterNumber);
         return {
-          sentence: t("actions.case_import_confirmed", {
-            status: status && isStatus(status) ? tc(`status.${status}`) : tc("none"),
-            number: text(after.caseNumber) ?? tc("noNumber"),
-          }),
+          sentence: letter
+            ? t("actions.case_releasedLetter", { district: text(after.district) ?? tc("none"), number: letter })
+            : t("actions.case_released", { reference: text(after.referenceNumber) ?? tc("none") }),
           lines,
         };
       }
-      case "case_released":
-        return {
-          sentence: t("actions.case_released", { reference: text(after.referenceNumber) ?? tc("none") }),
-          lines,
-        };
       case "release_corrected": {
-        if ("releasedOn" in after) {
-          lines.push(
-            t("change", { field: t("fields.releasedOn"), from: day(before.releasedOn), to: day(after.releasedOn) }),
-          );
+        for (const field of ["releasedOn", "letterDate", "validUntil"] as const) {
+          if (field in after) {
+            lines.push(t("change", { field: t(`fields.${field}`), from: day(before[field]), to: day(after[field]) }));
+          }
         }
-        if ("referenceNumber" in after) {
-          const from = text(before.referenceNumber) ?? tc("none");
-          const to = text(after.referenceNumber) ?? tc("none");
-          lines.push(t("change", { field: t("fields.referenceNumber"), from, to }));
+        for (const field of ["referenceNumber", "letterNumber"] as const) {
+          if (field in after) {
+            const from = text(before[field]) ?? tc("none");
+            const to = text(after[field]) ?? tc("none");
+            lines.push(t("change", { field: t(`fields.${field}`), from, to }));
+          }
         }
         if ("note" in after) lines.push(t("changedFields", { fields: t("fields.note") }));
         return { sentence: t("actions.release_corrected"), lines };

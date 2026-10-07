@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { DeleteDraft } from "@/components/cases/delete-draft";
 import { formValues, PageHeader } from "@/components/cases/page-header";
 import { StatusChip } from "@/components/cases/status-chip";
@@ -26,8 +26,9 @@ export default async function EditCasePage({
   searchParams: Promise<{ notice?: string | string[] }>;
 }) {
   const viewer = await requireRole("DS_OFFICER");
+  const locale = await getLocale();
   const { id } = await params;
-  const details = await getCase(db, viewer, id);
+  const details = await getCase(db, viewer, id, locale);
   if (!details) notFound();
   // Nobody changes a case while Head Office checks it, or after (STS-3, CASE-9).
   if (!canEditDetails(viewer.role, details.status)) redirect(`/ds/cases/${id}`);

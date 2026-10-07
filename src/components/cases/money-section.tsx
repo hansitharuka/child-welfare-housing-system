@@ -1,4 +1,5 @@
-import { getTranslations } from "next-intl/server";
+import { FileText } from "lucide-react";
+import { getLocale, getTranslations } from "next-intl/server";
 import type { InstallmentStatus } from "@/generated/prisma/enums";
 import { formatDate } from "@/lib/dates";
 import { formatRupees, paidOut } from "@/lib/money";
@@ -17,34 +18,42 @@ const STATUS_TEXT: Record<InstallmentStatus, string> = {
 };
 
 /**
- * "මූල්‍ය ප්‍රගතිය" as in the prototype: the Rs. 2,000,000 released to the DS office, what has been paid
- * to the beneficiary, what the office still holds, and the four installments (REL-3, INS-1).
- * `correction` is Head Office's button to correct the release (REL-4). `actions` gives each installment's
- * button, if any: the DS office's next step (INS-3, INS-4) or Head Office's undo (INS-6).
+ * "මූල්‍ය ප්‍රගතිය" as in the prototype: the Rs. 2,000,000 released through the District Secretary by
+ * an allocation letter, what has been paid to the beneficiary, what the office still holds, the letter
+ * itself, and the four installments (REL-3, INS-1). Head Office reads it as released to the District
+ * Secretary, the DS office as received through them. `correction` is Head Office's button to correct
+ * the letter (REL-4). `actions` gives each installment's button, if any: the DS office's next step
+ * (INS-3, INS-4) or Head Office's undo (INS-6).
  */
 export async function MoneySection({
+  audience,
   release,
   installments,
   correction,
   actions,
 }: {
+  audience: "ds" | "ho";
   release: ReleaseDetails;
   installments: InstallmentDetails[];
   correction?: React.ReactNode;
   actions?: (item: InstallmentDetails) => React.ReactNode;
 }) {
-  const [t, tp] = await Promise.all([getTranslations("cases"), getTranslations("progress")]);
+  const [t, tp, locale] = await Promise.all([getTranslations("cases"), getTranslations("progress"), getLocale()]);
   const paid = installments.filter((i) => i.status === "RELEASED");
   const paidAmount = paidOut(installments);
+  const { letter } = release;
   const tiles = [
-    {
-      label: t("money.released"),
-      amount: release.amount,
-      detail: t("money.releasedDetail", {
-        date: formatDate(release.releasedOn),
-        reference: release.referenceNumber,
-      }),
-    },
+    audience === "ho"
+      ? {
+          label: t("money.released"),
+          amount: release.amount,
+          detail: t("money.releasedDetail", { date: formatDate(letter.letterDate), district: letter.districtName }),
+        }
+      : {
+          label: t("money.received"),
+          amount: release.amount,
+          detail: t("money.receivedDetail", { number: letter.letterNumber }),
+        },
     { label: t("money.paid"), amount: paidAmount, detail: t("money.count", { count: paid.length }) },
     {
       label: t("money.left"),
@@ -62,11 +71,41 @@ export async function MoneySection({
         {tiles.map((tile) => (
           <div key={tile.label} className="flex flex-col gap-0.5 rounded-lg bg-background px-4 py-3">
             <dt className="text-[15px] text-muted-foreground">{tile.label}</dt>
-            <dd className="text-[22px] font-bold">{formatRupees(tile.amount)}</dd>
+            <dd className="text-[22px] font-bold">{formatRupees(tile.amount, locale)}</dd>
             <dd className="text-sm text-[#3F4843]">{tile.detail}</dd>
           </div>
         ))}
       </dl>
+
+      <div className="flex items-center gap-3 rounded-lg border px-3.5 py-2.5 text-[15px] text-[#3F4843]">
+        <FileText aria-hidden="true" className="size-5.5 shrink-0 text-muted-foreground" />
+        <p className="flex-1">
+          <strong className="text-foreground">{t("money.letterName", { number: letter.letterNumber })}</strong>{" "}
+          {audience === "ho"
+            ? t("money.letterHo", {
+                date: formatDate(letter.letterDate),
+                district: letter.districtName,
+                count: letter.cases,
+                total: formatRupees(letter.cases * release.amount, locale),
+                until: formatDate(letter.validUntil),
+              })
+            : t("money.letterDs", {
+                date: formatDate(letter.letterDate),
+                district: letter.districtName,
+                until: formatDate(letter.validUntil),
+              })}
+        </p>
+        {letter.scanId && (
+          <a
+            href={`/files/${letter.scanId}`}
+            target="_blank"
+            rel="noopener"
+            className="shrink-0 font-semibold text-primary underline"
+          >
+            {t("money.letterScan")} <span className="font-normal">{t("money.opensInNewTab")}</span>
+          </a>
+        )}
+      </div>
 
       <table className="w-full border-collapse text-left">
         <thead className="text-[15px] text-muted-foreground">
@@ -99,8 +138,8 @@ export async function MoneySection({
                     <span className="font-semibold">{t(`installment.name.${item.number as 1 | 2 | 3 | 4}`)}</span>
                     <span className="text-sm text-muted-foreground">
                       {item.purpose
-                        ? t("money.amountPurpose", { amount: formatRupees(item.amount), purpose: item.purpose })
-                        : formatRupees(item.amount)}
+                        ? t("money.amountPurpose", { amount: formatRupees(item.amount, locale), purpose: item.purpose })
+                        : formatRupees(item.amount, locale)}
                     </span>
                   </span>
                 </div>
@@ -125,7 +164,7 @@ export async function MoneySection({
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-[15px] text-[#3F4843]">
         <div className="flex flex-col gap-0.5">
-          {release.note && <p className="whitespace-pre-line">{t("money.note", { note: release.note })}</p>}
+          {letter.note && <p className="whitespace-pre-line">{t("money.note", { note: letter.note })}</p>}
           <p>{t("money.recordedBy", { name: release.byName, date: formatDate(release.at) })}</p>
         </div>
         {correction}

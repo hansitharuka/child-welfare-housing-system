@@ -3,7 +3,7 @@ import { asUser, newSubmittedCase, openAs, randomNic } from "./case-helpers";
 import { signInAs, TEST_CASE_NAME, TEXT } from "./helpers";
 
 /** Screen text the tests look for (messages/si.json). */
-const CHECK_MENU = "පරීක්ෂා කිරීම සහ මුදල් නිදහස් කිරීම";
+const CHECK_MENU = "පරීක්ෂා කිරීම සහ ප්‍රතිපාදන මුදා හැරීම";
 const WAITING = "ඔබේ ක්‍රියාව අවශ්‍යයි";
 const BELL = "දැනුම්දීම්";
 
@@ -30,7 +30,7 @@ test("the menu's waiting count agrees with the dashboard after a DS office sends
     await nav.getByRole("link", { name: "සාරාංශය" }).click();
     await expect(ho).toHaveURL(/\/ho$/);
     const count = async (name: RegExp) => Number((await queue(name).innerText()).replace(/\D/g, ""));
-    const total = (await count(/^පරීක්ෂා කිරීමට/)) + (await count(/^මුදල් නිදහස් කිරීමට/));
+    const total = (await count(/^පරීක්ෂා කිරීමට/)) + (await count(/^ප්‍රතිපාදන මුදා හැරීමට/));
     expect(total).toBeGreaterThan(0);
     await expect(
       nav.getByRole("link", { name: `${CHECK_MENU} (බලා සිටින ප්‍රතිලාභීන් ${total})`, exact: true }),

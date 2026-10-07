@@ -4,6 +4,7 @@ import { LoaderCircle } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useActionState } from "react";
 import { FormError, FormField } from "@/components/forms/form-field";
+import { PasswordField } from "@/components/forms/password-field";
 import { Button } from "@/components/ui/button";
 import { signIn, type SignInState } from "../actions";
 
@@ -27,10 +28,9 @@ export function SignInForm({ next }: { next: string }) {
         errorId="sign-in-error"
         required
       />
-      <FormField
+      <PasswordField
         id="password"
         name="password"
-        type="password"
         label={t("password")}
         autoComplete="current-password"
         invalid={invalid}
@@ -42,7 +42,7 @@ export function SignInForm({ next }: { next: string }) {
         type="submit"
         disabled={pending}
         aria-busy={pending}
-        className="h-12 gap-2 rounded-lg text-[17px] font-semibold"
+        className="h-12 gap-2 rounded-lg bg-sign-in text-[17px] font-semibold text-white hover:bg-sign-in/90"
       >
         {pending && <LoaderCircle aria-hidden="true" className="size-5 animate-spin" />}
         {pending ? t("submitting") : t("submit")}

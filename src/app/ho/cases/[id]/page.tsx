@@ -1,20 +1,18 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { CaseColumns, CaseDetailsSection, CaseNotes, caseSubtitle } from "@/components/cases/case-view";
 import { MoneySection } from "@/components/cases/money-section";
 import { caseName, PageHeader } from "@/components/cases/page-header";
-import { SheetNotesSection } from "@/components/cases/sheet-notes";
 import { StatusChip } from "@/components/cases/status-chip";
 import { FormNotice } from "@/components/forms/form-field";
 import { CompletedBanner, StoppedBanner } from "@/components/progress/case-banners";
 import { CaseHistory } from "@/components/progress/case-history";
 import { ReasonAction } from "@/components/progress/reason-action";
 import { StageSection } from "@/components/progress/stage-section";
-import { ConfirmImport } from "@/components/review/confirm-import";
 import { CorrectRelease } from "@/components/review/correct-release";
 import { DecisionPanel } from "@/components/review/decision-panel";
 import { DuplicateCases } from "@/components/review/duplicate-cases";
-import { ReleaseForm } from "@/components/review/release-form";
 import { ReviewNotice } from "@/components/review/review-notice";
 import { colomboDay } from "@/lib/dates";
 import { balance, formatRupees } from "@/lib/money";
@@ -27,8 +25,7 @@ import { db } from "@/server/db";
 import { caseHistory } from "@/server/history/queries";
 import { lastPaid } from "@/server/installments/rules";
 import { getStageProgress } from "@/server/stages/queries";
-import { correctReleaseAction, decideAction, releaseAction } from "../../check/actions";
-import { confirmImportAction } from "../../imported/actions";
+import { correctReleaseAction, decideAction } from "../../check/actions";
 import { reopenAction, stopAction, undoInstallmentAction } from "./actions";
 
 /** What a stop, reopen or undo leaves on the page, by its key under "progress.notices". */
@@ -38,10 +35,10 @@ const isNotice = (value: unknown): value is (typeof NOTICES)[number] =>
 
 /**
  * Head Office's case page (UI-7). A submitted case can be decided here as in the check view (CHK-2,
- * CHK-3), a verified one released (REL-2), and a recorded release corrected (REL-4). A running case
+ * CHK-3); a verified one leads to its district's allocation letter (REL-2), and the letter of a
+ * recorded release can be corrected (REL-4). A running case
  * shows its installments, stages with photos (STG-6) and history (HIS-2); Head Office can stop and
- * reopen it (CLS-2, CLS-3) and undo the last payment (INS-6). A case from the old sheet shows the
- * sheet's notes, and is confirmed here as on the imported cases' screen (IMP-5).
+ * reopen it (CLS-2, CLS-3) and undo the last payment (INS-6).
  */
 export default async function HoCasePage({
   params,
@@ -51,16 +48,17 @@ export default async function HoCasePage({
   searchParams: Promise<{ notice?: string | string[] }>;
 }) {
   const viewer = await requireRole("HO_OFFICER");
+  const locale = await getLocale();
   const { id } = await params;
-  const details = await getCase(db, viewer, id);
+  const details = await getCase(db, viewer, id, locale);
   if (!details) notFound();
 
   const [t, tr, tp, history, progress, subtitle] = await Promise.all([
     getTranslations("cases"),
     getTranslations("review"),
     getTranslations("progress"),
-    caseHistory(db, viewer, details.id),
-    details.release ? getStageProgress(db, details.id, details.kind) : Promise.resolve(null),
+    caseHistory(db, viewer, details.id, locale),
+    details.release ? getStageProgress(db, details.id, details.kind, locale) : Promise.resolve(null),
     caseSubtitle(details, "ho"),
   ]);
   const notice = (await searchParams).notice;
@@ -68,10 +66,14 @@ export default async function HoCasePage({
   const name = caseName(t, details.name, details.childName);
   const number = details.caseNumber ?? t("noNumber");
   const now = new Date();
-  const limits = { earliest: details.verifiedAt && colomboDay(details.verifiedAt), today: colomboDay(now) };
   const duplicates =
-    details.status === "SUBMITTED" || details.status === "IMPORTED"
-      ? await duplicatesInFull(db, viewer, { caseId: details.id, nic: details.nic, dsOfficeId: details.dsOfficeId })
+    details.status === "SUBMITTED"
+      ? await duplicatesInFull(
+          db,
+          viewer,
+          { caseId: details.id, nic: details.nic, dsOfficeId: details.dsOfficeId },
+          locale,
+        )
       : [];
   const hidden = { caseId: details.id, version: String(details.version) };
   const reasonTexts = {
@@ -93,7 +95,11 @@ export default async function HoCasePage({
         button: tp("stop.button"),
         title: tp("stop.title"),
         text: details.release
-          ? tp("stop.text", { name, number, balance: formatRupees(balance(details.release, details.installments)) })
+          ? tp("stop.text", {
+              name,
+              number,
+              balance: formatRupees(balance(details.release, details.installments), locale),
+            })
           : tp("stop.textNoRelease", { name, number }),
         reason: tp("stop.reason"),
         confirm: tp("stop.confirm"),
@@ -198,43 +204,26 @@ export default async function HoCasePage({
                 />
               </div>
             )}
-            {details.status === "IMPORTED" && (
-              <div className="rounded-xl border bg-card px-6 pb-5 [&>section]:border-t-0">
-                <ConfirmImport
-                  key={details.version}
-                  caseId={details.id}
-                  version={details.version}
-                  from="case"
-                  caseName={name}
-                  kindMissing={details.kind === null}
-                  today={limits.today}
-                  sheetInstallments={details.sheetNotes?.installments ?? []}
-                  action={confirmImportAction}
-                />
-              </div>
-            )}
             {details.status === "VERIFIED" && (
               <section
                 aria-labelledby="release-title"
                 className="flex flex-col gap-3 rounded-xl border bg-card px-6 py-5"
               >
                 <h2 id="release-title" className="text-xl font-bold">
-                  {tr("release.title")}
+                  {tr("letters.caseTitle")}
                 </h2>
-                <ReleaseForm
-                  key={details.version}
-                  caseId={details.id}
-                  version={details.version}
-                  from="case"
-                  limits={limits}
-                  initial={{ releasedOn: limits.today, referenceNumber: "", note: "" }}
-                  mode="record"
-                  action={releaseAction}
-                />
+                <p>{tr("letters.caseText", { district: details.districtName })}</p>
+                <Link
+                  href={`/ho/release?districtId=${details.districtId}`}
+                  className="flex h-12 items-center self-start rounded-lg bg-primary px-5.5 text-[17px] font-bold text-primary-foreground"
+                >
+                  {tr("letters.caseGo")}
+                </Link>
               </section>
             )}
             {details.release && (
               <MoneySection
+                audience="ho"
                 release={details.release}
                 installments={details.installments}
                 actions={undoTarget ? undo : undefined}
@@ -243,18 +232,19 @@ export default async function HoCasePage({
                     key={details.version}
                     caseId={details.id}
                     version={details.version}
-                    limits={limits}
+                    limits={{ earliest: details.release.letter.latestVerification, today: colomboDay(now) }}
                     current={{
-                      releasedOn: details.release.releasedOn,
-                      referenceNumber: details.release.referenceNumber,
-                      note: details.release.note ?? "",
+                      letterNumber: details.release.letter.letterNumber,
+                      letterDate: details.release.letter.letterDate,
+                      validUntil: details.release.letter.validUntil,
+                      note: details.release.letter.note ?? "",
                     }}
+                    cases={details.release.letter.cases}
                     action={correctReleaseAction}
                   />
                 }
               />
             )}
-            {details.sheetNotes && <SheetNotesSection notes={details.sheetNotes} />}
             <CaseHistory entries={history ?? []} />
           </>
         }

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { caseName } from "@/components/cases/page-header";
 import { ExportLink } from "@/components/cases/export-link";
 import { Pager } from "@/components/cases/pager";
@@ -21,6 +21,7 @@ export default async function HoCasesPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const viewer = await requireRole("HO_OFFICER");
+  const locale = await getLocale();
   const params = await searchParams;
   const read = (key: string) => (typeof params[key] === "string" ? params[key] : "");
   const { values, filter } = readFilters(read);
@@ -28,8 +29,8 @@ export default async function HoCasesPage({
 
   const [t, districts, list] = await Promise.all([
     getTranslations("cases"),
-    districtsWithOffices(db),
-    listCases(db, viewer, { ...filter, page }),
+    districtsWithOffices(db, locale),
+    listCases(db, viewer, { ...filter, page }, locale),
   ]);
 
   const withQuery = (path: string, query: URLSearchParams) => (query.size > 0 ? `${path}?${query}` : path);

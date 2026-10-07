@@ -16,7 +16,7 @@ import { reopenCase, stopCase } from "../cases/stop";
 import { readStoredFile } from "../files/storage";
 import { fileForViewer, uploadPhoto } from "../files/uploads";
 import { caseHistory } from "../history/queries";
-import { recordRelease } from "../releases/commands";
+import { recordLetter } from "../releases/commands";
 import { recordStageUpdate } from "../stages/commands";
 import { getStageProgress } from "../stages/queries";
 import { markInstallmentPaid, startInstallment, undoInstallmentPayment } from "./commands";
@@ -81,10 +81,12 @@ async function running(overrides: Partial<CaseValues> = {}) {
   if (!verified.ok) throw new Error(verified.error);
   await db.case.update({ where: { id: sent.id }, data: { verifiedAt: colomboStartOf(daysAgo(60)) } });
   const ready = await load(sent.id);
-  const release = await recordRelease(db, ho, {
-    caseId: ready.id,
-    version: ready.version,
-    form: { releasedOn: daysAgo(RELEASED_DAYS_AGO), referenceNumber: "HO/2026/P6", note: "" },
+  const { districtId } = await db.dsOffice.findUniqueOrThrow({ where: { id: ready.dsOfficeId } });
+  const release = await recordLetter(db, ho, {
+    districtId,
+    cases: [{ id: ready.id, version: ready.version }],
+    form: { letterNumber: "MWCA/2026/P6", letterDate: daysAgo(RELEASED_DAYS_AGO), validUntil: "2099-12-31", note: "" },
+    scanId: null,
   });
   if (!release.ok) throw new Error(String(release.error ?? JSON.stringify(release.errors)));
   return load(ready.id);
@@ -134,7 +136,7 @@ async function newHouseStages() {
   return db.stageDefinition.findMany({
     where: { kind: "NEW_HOUSE", active: true },
     orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
-    select: { id: true, nameSi: true },
+    select: { id: true, nameSi: true, nameTa: true, nameEn: true },
   });
 }
 
@@ -273,7 +275,7 @@ describe("building progress (STG-1 to STG-5)", () => {
       new Set([dayToDate(daysAgo(20)).toISOString()]),
     );
 
-    const progress = await getStageProgress(db, c.id, "NEW_HOUSE");
+    const progress = await getStageProgress(db, c.id, "NEW_HOUSE", "si");
     expect(progress.current).toEqual({ id: third.id, reachedOn: daysAgo(20) });
     expect(progress.choices.map((s) => s.id)).toEqual(stages.slice(3).map((s) => s.id));
     const audit = await db.auditLog.findFirstOrThrow({ where: { caseId: c.id, action: "stage_updated" } });
@@ -301,7 +303,7 @@ describe("building progress (STG-1 to STG-5)", () => {
       errors: { visitedOn: "dateBeforeRelease" },
     });
     expect(await stage(c.id, v, null, daysAgo(30))).toEqual({ ok: true, completed: false });
-    const progress = await getStageProgress(db, c.id, "NEW_HOUSE");
+    const progress = await getStageProgress(db, c.id, "NEW_HOUSE", "si");
     expect(progress.visits).toHaveLength(1);
     expect(progress.current?.id).toBe(stages[1]!.id);
   });
@@ -315,7 +317,7 @@ describe("building progress (STG-1 to STG-5)", () => {
     await db.stageDefinition.updateMany({ where: { id: { in: active.map((s) => s.id) } }, data: { active: false } });
     try {
       const c = await running({ kind: "RENOVATION" });
-      const progress = await getStageProgress(db, c.id, "RENOVATION");
+      const progress = await getStageProgress(db, c.id, "RENOVATION", "si");
       expect(progress.choices).toEqual([]);
       const [anyStage] = await newHouseStages();
       expect(await stage(c.id, c.version, anyStage!.id)).toMatchObject({ errors: { stageId: "stageNotLater" } });
@@ -389,10 +391,10 @@ describe("building progress (STG-1 to STG-5)", () => {
     expect(await fileForViewer(db, dsB, row.id)).toBeNull();
     expect(await fileForViewer(db, dsB, row.id, "thumb")).toBeNull();
     expect(await fileForViewer(db, admin, row.id)).toBeNull();
-    const progress = await getStageProgress(db, c.id, "NEW_HOUSE");
+    const progress = await getStageProgress(db, c.id, "NEW_HOUSE", "si");
     expect(progress.stages[0]?.photos).toEqual([{ id: row.id, name: "IMG_0001.jpg" }]);
     // A photo is not one of the case's documents.
-    expect((await getCase(db, dsA, c.id))?.documents).toEqual([]);
+    expect((await getCase(db, dsA, c.id, "si"))?.documents).toEqual([]);
   });
 
   it("attaches only the officer's own new photos, never a document, and at most 10", async () => {
@@ -510,7 +512,7 @@ describe("stopping and reopening (CLS-2, CLS-3, AC-14)", () => {
 
     const stopped = await load(c.id);
     expect(stopped).toMatchObject({ status: "STOPPED", statusBeforeStop: "IN_PROGRESS" });
-    const details = await getCase(db, dsA, c.id);
+    const details = await getCase(db, dsA, c.id, "si");
     expect(details?.stop).toMatchObject({ reason: "ඉඩම පිළිබඳ ගැටලුවක්", statusBefore: "IN_PROGRESS" });
     const audit = await db.auditLog.findFirstOrThrow({ where: { caseId: c.id, action: "case_stopped" } });
     expect(audit.after).toMatchObject({ reason: "ඉඩම පිළිබඳ ගැටලුවක්", balance: 1_500_000 });
@@ -600,7 +602,7 @@ describe("the case history (HIS-1 to HIS-3, AC-15)", () => {
     await stage(c.id, c.version, stages.at(-1)!.id, daysAgo(45));
     for (const number of [1, 2, 3, 4]) await payNext(c.id, number, daysAgo(40 - number));
 
-    const history = await caseHistory(db, ho, c.id);
+    const history = await caseHistory(db, ho, c.id, "si");
     expect(history?.map((e) => e.action)).toEqual([
       "case_completed",
       "installment_paid",
@@ -622,12 +624,54 @@ describe("the case history (HIS-1 to HIS-3, AC-15)", () => {
     expect(history?.find((e) => e.action === "case_released")).toMatchObject({ actor: { role: "HO_OFFICER" } });
     expect(history?.every((e) => e.at instanceof Date)).toBe(true);
 
-    expect(await caseHistory(db, dsB, c.id)).toBeNull();
-    expect(await caseHistory(db, admin, c.id)).toBeNull();
+    expect(await caseHistory(db, dsB, c.id, "si")).toBeNull();
+    expect(await caseHistory(db, admin, c.id, "si")).toBeNull();
     // The database refuses any change to the record (HIS-3).
     const row = await db.auditLog.findFirstOrThrow({ where: { caseId: c.id, action: "case_completed" } });
     await expect(db.auditLog.update({ where: { id: row.id }, data: { action: "x" } })).rejects.toThrow(/append-only/);
     await expect(db.auditLog.delete({ where: { id: row.id } })).rejects.toThrow(/append-only/);
+  });
+});
+
+describe("the case history in Tamil and English (UI-9)", () => {
+  const stagesOf = (history: Awaited<ReturnType<typeof caseHistory>>) =>
+    history?.filter((e) => e.action === "stage_updated").map((e) => e.after.stages);
+
+  it("names the district and the stages reached in the screen's language", async () => {
+    const c = await running();
+    const [first, second] = await newHouseStages();
+    expect(await stage(c.id, c.version, second!.id, daysAgo(10))).toMatchObject({ ok: true });
+
+    const [si, ta, en] = await Promise.all(
+      (["si", "ta", "en"] as const).map((locale) => caseHistory(db, ho, c.id, locale)),
+    );
+    expect(stagesOf(si)).toEqual([[first!.nameSi, second!.nameSi]]);
+    expect(stagesOf(ta)).toEqual([[first!.nameTa, second!.nameTa]]);
+    expect(stagesOf(en)).toEqual([[first!.nameEn, second!.nameEn]]);
+
+    const district = await db.district.findFirstOrThrow({ where: { dsOffices: { some: { id: c.dsOfficeId } } } });
+    const released = (history: typeof si) => history?.find((e) => e.action === "case_released")?.after.district;
+    expect([released(si), released(ta), released(en)]).toEqual([district.nameSi, district.nameTa, district.nameEn]);
+  });
+
+  it("reads an older record's stages by id, except on the Sinhala screen, which keeps the names of the day", async () => {
+    const c = await running();
+    const [first] = await newHouseStages();
+    // As recorded before 7 Oct 2026: Sinhala names only.
+    await db.auditLog.create({
+      data: {
+        actorId: dsA.userId,
+        action: "stage_updated",
+        entityType: "stage_update",
+        entityId: randomUUID(),
+        caseId: c.id,
+        before: { stageId: null },
+        after: { stageIds: [first!.id], stages: ["පැරණි නම"], visitedOn: daysAgo(5), note: null, photos: [] },
+      },
+    });
+    expect(stagesOf(await caseHistory(db, ho, c.id, "si"))).toEqual([["පැරණි නම"]]);
+    expect(stagesOf(await caseHistory(db, ho, c.id, "ta"))).toEqual([[first!.nameTa]]);
+    expect(stagesOf(await caseHistory(db, ho, c.id, "en"))).toEqual([[first!.nameEn]]);
   });
 });
 
@@ -663,7 +707,7 @@ describe("the DS home (HOME-1, HOME-3, HOME-4)", () => {
       balance: before!.balance + 1_500_000,
     });
     expect(await officeMoney(db, admin)).toBeNull();
-    const { rows } = await listCases(db, dsA, { q: (await load(c.id)).caseNumber ?? "" });
+    const { rows } = await listCases(db, dsA, { q: (await load(c.id)).caseNumber ?? "" }, "si");
     expect(rows).toEqual([expect.objectContaining({ id: c.id, paid: 1, stageName: first!.nameSi })]);
   });
 });

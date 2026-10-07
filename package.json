@@ -20,8 +20,7 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "db:seed-load": "tsx scripts/seed-load.ts",
-    "sheet:sample": "tsx scripts/make-sample-sheet.ts",
-    "sheet:import": "tsx scripts/import-sheet.ts",
+    "db:seed-demo": "tsx scripts/seed-demo.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -45,6 +44,8 @@
   },
   "devDependencies": {
     "@fontsource-variable/noto-sans-sinhala": "5.3.0",
+    "@fontsource-variable/noto-sans-tamil": "5.3.0",
+    "@formatjs/icu-messageformat-parser": "3.5.18",
     "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "22.20.4",

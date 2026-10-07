@@ -12,9 +12,8 @@ export type StopError = "notFound" | MoveError | ReasonErrorKey;
 type Input = { caseId: string; version: number; reason: string };
 
 /**
- * The status a stopped case goes back to (CLS-3). A case stopped before Phase 6, or confirmed as
- * stopped from the sheet, may have none recorded; it then goes back to in progress if its money was
- * released, otherwise to verified.
+ * The status a stopped case goes back to (CLS-3). A case stopped before Phase 6 may have none
+ * recorded; it then goes back to in progress if its money was released, otherwise to verified.
  */
 export function statusToReopen(stopped: { statusBeforeStop: CaseStatus | null; hasRelease: boolean }): CaseStatus {
   return stopped.statusBeforeStop ?? (stopped.hasRelease ? "IN_PROGRESS" : "VERIFIED");

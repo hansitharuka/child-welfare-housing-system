@@ -53,9 +53,5 @@ next-env.d.ts
 /playwright-report/
 /playwright/.cache/
 
-# uploaded files and import reports never belong in git (SEC-11, IMP-6); a report is written next to its sheet
+# uploaded files never belong in git (SEC-11)
 /data/files/
-*-import-report-*.csv
-
-# the made-up sample sheet (npm run sheet:sample) is made again whenever it is needed
-/data/sample-sheet.xlsx

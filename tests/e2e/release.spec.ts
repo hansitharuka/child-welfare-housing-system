@@ -1,23 +1,27 @@
-import { expect, type Page, test } from "@playwright/test";
-import { CONFIRM, fillCase, newSubmittedCase, openAs, randomNic, SEND, submit } from "./case-helpers";
+import { expect, type Locator, type Page, test } from "@playwright/test";
+import { CONFIRM, fillCase, newSubmittedCase, openAs, randomNic, recordLetterFor, SEND, submit } from "./case-helpers";
 import { signInAs, TEST_CASE_NAME } from "./helpers";
 
 /** Screen text the tests look for (messages/si.json). */
-const CHECK_MENU = "පරීක්ෂා කිරීම සහ මුදල් නිදහස් කිරීම";
+const CHECK_MENU = "පරීක්ෂා කිරීම සහ ප්‍රතිපාදන මුදා හැරීම";
 const VERIFY = "අනුමත කරන්න";
 const SEND_BACK = "නිවැරදි කිරීමට ආපසු යවන්න";
 const REJECT = "ප්‍රතික්ෂේප කරන්න";
 const SEND_BACK_REASON = "ප්‍රා.ලේ. කාර්යාලය නිවැරදි කළ යුත්තේ කුමක්ද? *";
 const REJECT_REASON = "ප්‍රතික්ෂේප කිරීමට හේතුව *";
-const RELEASE = "රු. 2,000,000 නිදහස් කළ බව සටහන් කරන්න";
+const LETTER = /^ලිපිය සටහන් කරන්න · /;
 const NOT_STARTED = "තවම ආරම්භ කර නැත";
 
-/** Opens a case from one of Head Office's two queues and waits for its details on the right. */
-async function openFromQueue(ho: Page, queue: "check" | "release", number: string, name: string) {
-  await ho.goto(`/ho/${queue}`);
-  const list = ho.getByRole("region", {
-    name: queue === "check" ? "පරීක්ෂා කිරීමට ඇති ප්‍රතිලාභීන්" : "මුදල් නිදහස් කිරීමට ඇති ප්‍රතිලාභීන්",
-  });
+/** Chooses a district or DS office by its name; each option reads "<name> (<cases waiting>)" (CHK-4). */
+async function choosePlace(select: Locator, name: string) {
+  const option = select.locator("option").filter({ hasText: new RegExp(`^${name} \\(\\d+\\)$`) });
+  await select.selectOption((await option.getAttribute("value")) ?? "");
+}
+
+/** Opens a case from Head Office's check queue and waits for its details on the right. */
+async function openFromQueue(ho: Page, number: string, name: string) {
+  await ho.goto("/ho/check");
+  const list = ho.getByRole("region", { name: "පරීක්ෂා කිරීමට ඇති ප්‍රතිලාභීන්" });
   await list.getByRole("link", { name: new RegExp(number) }).click();
   await expect(ho.getByRole("heading", { level: 2, name })).toBeVisible();
 }
@@ -38,7 +42,7 @@ test("AC-8, AC-9, AC-10: DS submits, Head Office sends back, DS corrects, Head O
   await expect(
     ho.getByRole("link", { name: new RegExp(`^${CHECK_MENU} \\(බලා සිටින ප්‍රතිලාභීන් \\d+\\)$`) }),
   ).toBeVisible();
-  await openFromQueue(ho, "check", number, name);
+  await openFromQueue(ho, number, name);
 
   // AC-9: sending back needs a reason.
   await ho.getByRole("button", { name: SEND_BACK }).click();
@@ -63,25 +67,42 @@ test("AC-8, AC-9, AC-10: DS submits, Head Office sends back, DS corrects, Head O
   await expect(ds.getByTestId("case-number")).toHaveText(number);
 
   // Back in the queue; verified after one confirmation.
-  await openFromQueue(ho, "check", number, name);
+  await openFromQueue(ho, number, name);
   await ho.getByRole("button", { name: VERIFY, exact: true }).click();
   await ho.getByRole("dialog").getByRole("button", { name: "ඔව්, අනුමත කරන්න" }).click();
   await expect(ho).toHaveURL(new RegExp(`/ho/check\\?notice=verified&done=${caseId}$`));
   await expect(ho.getByRole("status")).toContainText(`${name} (${number}) අනුමත කළා`);
 
-  // AC-10: in the release queue; a release without a reference number is refused.
-  await openFromQueue(ho, "release", number, name);
-  await expect(ho.getByText("රු. 2,000,000", { exact: true })).toBeVisible();
-  await ho.getByRole("button", { name: RELEASE }).click();
-  await expect(ho.locator("#record-referenceNumber-error")).toHaveText("යොමු අංකය ඇතුළත් කරන්න.");
-  await ho.getByLabel("යොමු අංකය *").fill("HO/2026/E2E");
-  await ho.getByRole("button", { name: RELEASE }).click();
-  await expect(ho).toHaveURL(new RegExp(`/ho/release\\?notice=released&done=${caseId}$`));
+  // AC-10: on the release tab, under Colombo's letter with Homagama's cases; a letter without a
+  // number is refused, and the total follows the ticks.
+  await ho.goto("/ho/release");
+  await ho.getByRole("link", { name: /^කොළඹ දිස්ත්‍රික්කය/ }).click();
+  const letter = ho.getByRole("region", { name: "කොළඹ දිස්ත්‍රික්කය", exact: true });
+  const box = letter.getByRole("checkbox", { name: new RegExp(name) });
+  await expect(box).toBeChecked();
+  for (const other of await letter.getByRole("checkbox").all()) await other.uncheck();
+  await expect(letter.getByTestId("letter-total")).toHaveText("රු. 0");
+  await letter.getByRole("button", { name: LETTER }).click();
+  await expect(letter.locator("#letter-error")).toHaveText("ලිපියේ නම් ඇති අවම වශයෙන් එක් ප්‍රතිලාභියෙකු තෝරන්න.");
+  await box.check();
+  await expect(letter.getByTestId("letter-total")).toHaveText("රු. 2,000,000");
+  await letter.getByRole("button", { name: LETTER }).click();
+  await expect(letter.locator("#letter-letterNumber-error")).toHaveText("මගේ අංකය ඇතුළත් කරන්න.");
+  await letter.getByLabel("මගේ අංකය *").fill("MWCA/3/8/16/E2E-2026");
+  await letter.getByRole("button", { name: LETTER }).click();
+  await expect(ho).toHaveURL(/\/ho\/release\?notice=letterRecorded&letter=[\w-]+&districtId=\d+$/);
+  await expect(ho.getByRole("status")).toContainText(
+    "කොළඹ දිස්ත්‍රික්කයට ලිපිය MWCA/3/8/16/E2E-2026 සටහන් කළා: ප්‍රතිලාභීන් 1, රු. 2,000,000.",
+  );
+  await expect(
+    ho.getByRole("region", { name: "සටහන් කළ ලිපි" }).getByText("කොළඹ · MWCA/3/8/16/E2E-2026"),
+  ).toBeVisible();
 
-  // Four installments, none started.
+  // Four installments, none started; the letter is on the case.
   await ho.goto(`/ho/cases/${caseId}`);
   const money = ho.getByRole("region", { name: "මූල්‍ය ප්‍රගතිය" });
-  await expect(money).toContainText("HO/2026/E2E");
+  await expect(money).toContainText("ප්‍රතිපාදන ලිපිය MWCA/3/8/16/E2E-2026");
+  await expect(money).toContainText("කොළඹ දිස්ත්‍රික් ලේකම් වෙත · ප්‍රතිලාභීන් 1, මුළු රු. 2,000,000");
   await expect(money.getByText(NOT_STARTED, { exact: true })).toHaveCount(4);
 
   // The DS is notified; opening the notice shows the case and marks it read.
@@ -90,12 +111,66 @@ test("AC-8, AC-9, AC-10: DS submits, Head Office sends back, DS corrects, Head O
   await expect(notice).toContainText("අලුත්");
   await notice.click();
   await expect(ds).toHaveURL(new RegExp(`/ds/cases/${caseId}$`));
-  await expect(ds.getByRole("region", { name: "මූල්‍ය ප්‍රගතිය" }).getByText(NOT_STARTED, { exact: true })).toHaveCount(
-    4,
-  );
+  const dsMoney = ds.getByRole("region", { name: "මූල්‍ය ප්‍රගතිය" });
+  await expect(dsMoney.getByText(NOT_STARTED, { exact: true })).toHaveCount(4);
+  await expect(dsMoney).toContainText("ප්‍රධාන කාර්යාලයෙන් කොළඹ දිස්ත්‍රික් ලේකම් හරහා");
   await ds.goto("/ds/notifications");
   await expect(ds.getByRole("button", { name: new RegExp(`^${name} සඳහා`) })).not.toContainText("අලුත්");
 
+  await ho.context().close();
+});
+
+test("Head Office narrows the queues to a district and a DS office, and stays there after each decision (CHK-4)", async ({
+  page: ds,
+  browser,
+}) => {
+  test.slow();
+  await signInAs(ds, "ds0101", /\/ds$/);
+  const name = `${TEST_CASE_NAME} ප්‍රදේශය ${Date.now()}`;
+  const { url, number } = await newSubmittedCase(ds, { name, nic: randomNic() });
+  const caseId = url.split("/").at(-1) ?? "";
+
+  const ho = await openAs(browser, "ho0001");
+  await ho.goto("/ho/check");
+  const district = ho.getByRole("combobox", { name: "දිස්ත්‍රික්කය" });
+  const office = ho.getByRole("combobox", { name: "ප්‍රා.ලේ. කොට්ඨාසය" });
+  await expect(office).toBeDisabled();
+  await choosePlace(district, "කොළඹ");
+  await expect(ho).toHaveURL(/\/ho\/check\?districtId=\d+$/);
+  await choosePlace(office, "හෝමාගම");
+  await expect(ho).toHaveURL(/\/ho\/check\?districtId=\d+&dsOfficeId=\d+$/);
+  const place = new URL(ho.url()).search.slice(1);
+
+  // Only Homagama's cases are listed.
+  const list = ho.getByRole("region", { name: "පරීක්ෂා කිරීමට ඇති ප්‍රතිලාභීන්" });
+  const rows = list.getByRole("listitem");
+  await expect(rows.first()).toBeVisible();
+  for (const row of await rows.all()) await expect(row).toContainText("හෝමාගම ප්‍රා.ලේ.");
+  await list.getByRole("link", { name: new RegExp(number) }).click();
+  await expect(ho.getByRole("heading", { level: 2, name })).toBeVisible();
+  expect(ho.url()).toContain(place);
+
+  // Verified; back in Homagama's queue.
+  await ho.getByRole("button", { name: VERIFY, exact: true }).click();
+  await ho.getByRole("dialog").getByRole("button", { name: "ඔව්, අනුමත කරන්න" }).click();
+  await expect(ho).toHaveURL(new RegExp(`/ho/check\\?notice=verified&done=${caseId}&${place}$`));
+  await expect(office.locator("option:checked")).toHaveText(/^හෝමාගම \(\d+\)$/);
+
+  // The release tab opens on the same district's letter (REL-2), and the letter stays there.
+  await ho.getByRole("link", { name: /^2\. ප්‍රතිපාදන මුදා හැරීමට/ }).click();
+  await expect(ho).toHaveURL(new RegExp(`/ho/release\\?${place}$`));
+  await expect(ho.getByRole("link", { name: /^කොළඹ දිස්ත්‍රික්කය/ })).toHaveAttribute("aria-current", "true");
+  await recordLetterFor(ho, [name], "MWCA/E2E/PLACE");
+  const districtId = new URLSearchParams(place).get("districtId");
+  expect(new URL(ho.url()).searchParams.get("districtId")).toBe(districtId);
+
+  // Back on the check tab, still in the district.
+  await ho.getByRole("link", { name: /^1\. පරීක්ෂා කිරීමට/ }).click();
+  await expect(ho).toHaveURL(new RegExp(`/ho/check\\?districtId=${districtId}$`));
+  await ho.getByRole("link", { name: "සියලු ප්‍රදේශ පෙන්වන්න" }).click();
+  await expect(ho).toHaveURL(/\/ho\/check$/);
+  await expect(district.locator("option:checked")).toHaveText(/^සියලු දිස්ත්‍රික්ක \(\d+\)$/);
+  await expect(office).toBeDisabled();
   await ho.context().close();
 });
 
@@ -151,15 +226,21 @@ test("Head Office corrects a verified case and its release, and both are saved (
   await expect(ho).toHaveURL(`${url}?notice=changed`);
   await expect(ho.getByText("0770000909", { exact: true })).toBeVisible();
 
-  await ho.getByLabel("යොමු අංකය *").fill("HO/2026/E2E-1");
-  await ho.getByRole("button", { name: RELEASE }).click();
-  await expect(ho).toHaveURL(`${url}?notice=released`);
+  // A verified case leads to its district's letter.
+  await expect(ho.getByRole("region", { name: "රු. 2,000,000 නිදහස් කිරීම" })).toContainText(
+    "කොළඹ දිස්ත්‍රික් ලේකම්ට යවන ප්‍රතිපාදන ලිපියකිනි",
+  );
+  await ho.getByRole("link", { name: "ලිපිය සටහන් කිරීමට යන්න →" }).click();
+  await recordLetterFor(ho, [name], "MWCA/E2E-1");
+  await ho.goto(url);
 
-  // REL-4: the reference number is corrected in a pop-up.
-  await ho.getByRole("button", { name: "නිදහස් කිරීමේ විස්තර නිවැරදි කරන්න" }).click();
+  // REL-4: the letter's number is corrected in a pop-up.
+  await ho.getByRole("button", { name: "ලිපියේ විස්තර නිවැරදි කරන්න" }).click();
   const dialog = ho.getByRole("dialog");
-  await dialog.getByLabel("යොමු අංකය *").fill("HO/2026/E2E-2");
+  await expect(dialog).toContainText("මෙම ලිපිය මෙම ප්‍රතිලාභියා සඳහා පමණි.");
+  await dialog.getByLabel("මගේ අංකය *").fill("MWCA/E2E-2");
   await dialog.getByRole("button", { name: "නිවැරදි කිරීම සුරකින්න" }).click();
   await expect(ho).toHaveURL(`${url}?notice=corrected`);
-  await expect(ho.getByRole("region", { name: "මූල්‍ය ප්‍රගතිය" })).toContainText("HO/2026/E2E-2");
+  await expect(ho.getByRole("region", { name: "මූල්‍ය ප්‍රගතිය" })).toContainText("MWCA/E2E-2");
+  await expect(ho.getByRole("region", { name: "සිදු වූ දේ" })).toContainText("මගේ අංකය: MWCA/E2E-1 → MWCA/E2E-2");
 });

@@ -1,12 +1,12 @@
 import { notFound, redirect } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { DeleteDraft } from "@/components/cases/delete-draft";
 import { formValues, PageHeader } from "@/components/cases/page-header";
 import { StatusChip } from "@/components/cases/status-chip";
 import { CaseForm, type OfficeSetting } from "@/components/forms/case-form";
 import { FormNotice } from "@/components/forms/form-field";
 import { getCase } from "@/server/cases/queries";
-import { canChangeOffice, canDeleteDraft, canEditDetails, isBeingEntered, mayStayEmpty } from "@/server/cases/rules";
+import { canChangeOffice, canDeleteDraft, canEditDetails, isBeingEntered } from "@/server/cases/rules";
 import { requireRole } from "@/server/context";
 import { db } from "@/server/db";
 import { districtsWithOffices } from "@/server/lists/queries";
@@ -30,8 +30,9 @@ export default async function HoEditCasePage({
   searchParams: Promise<{ notice?: string | string[] }>;
 }) {
   const viewer = await requireRole("HO_OFFICER");
+  const locale = await getLocale();
   const { id } = await params;
-  const details = await getCase(db, viewer, id);
+  const details = await getCase(db, viewer, id, locale);
   if (!details) notFound();
   if (!canEditDetails(viewer.role, details.status)) redirect(`/ho/cases/${id}`);
 
@@ -41,7 +42,7 @@ export default async function HoEditCasePage({
   const office: OfficeSetting = canChangeOffice(viewer.role, details.status)
     ? {
         kind: "choose",
-        districts: await districtsWithOffices(db),
+        districts: await districtsWithOffices(db, locale),
         districtId: details.districtId,
         dsOfficeId: details.dsOfficeId,
       }
@@ -70,7 +71,6 @@ export default async function HoEditCasePage({
         documents={details.documents}
         returnReason={details.returnReason}
         mode={isBeingEntered(details.status) ? "entry" : "change"}
-        mayStayEmpty={mayStayEmpty(details)}
         actions={{
           save: saveCaseAction,
           upload: uploadDocumentAction,
