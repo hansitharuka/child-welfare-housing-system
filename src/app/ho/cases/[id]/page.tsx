@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { CaseColumns, CaseDetailsSection, CaseNotes, caseSubtitle } from "@/components/cases/case-view";
 import { MoneySection } from "@/components/cases/money-section";
 import { caseName, PageHeader } from "@/components/cases/page-header";
@@ -48,16 +48,17 @@ export default async function HoCasePage({
   searchParams: Promise<{ notice?: string | string[] }>;
 }) {
   const viewer = await requireRole("HO_OFFICER");
+  const locale = await getLocale();
   const { id } = await params;
-  const details = await getCase(db, viewer, id);
+  const details = await getCase(db, viewer, id, locale);
   if (!details) notFound();
 
   const [t, tr, tp, history, progress, subtitle] = await Promise.all([
     getTranslations("cases"),
     getTranslations("review"),
     getTranslations("progress"),
-    caseHistory(db, viewer, details.id),
-    details.release ? getStageProgress(db, details.id, details.kind) : Promise.resolve(null),
+    caseHistory(db, viewer, details.id, locale),
+    details.release ? getStageProgress(db, details.id, details.kind, locale) : Promise.resolve(null),
     caseSubtitle(details, "ho"),
   ]);
   const notice = (await searchParams).notice;
@@ -67,7 +68,12 @@ export default async function HoCasePage({
   const now = new Date();
   const duplicates =
     details.status === "SUBMITTED"
-      ? await duplicatesInFull(db, viewer, { caseId: details.id, nic: details.nic, dsOfficeId: details.dsOfficeId })
+      ? await duplicatesInFull(
+          db,
+          viewer,
+          { caseId: details.id, nic: details.nic, dsOfficeId: details.dsOfficeId },
+          locale,
+        )
       : [];
   const hidden = { caseId: details.id, version: String(details.version) };
   const reasonTexts = {
@@ -89,7 +95,11 @@ export default async function HoCasePage({
         button: tp("stop.button"),
         title: tp("stop.title"),
         text: details.release
-          ? tp("stop.text", { name, number, balance: formatRupees(balance(details.release, details.installments)) })
+          ? tp("stop.text", {
+              name,
+              number,
+              balance: formatRupees(balance(details.release, details.installments), locale),
+            })
           : tp("stop.textNoRelease", { name, number }),
         reason: tp("stop.reason"),
         confirm: tp("stop.confirm"),

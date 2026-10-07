@@ -1,12 +1,12 @@
 # Diviyata Sawiyak — Product Requirements Document
 
-2026-09-28, updated 2026-09-29 · Janindu Pramod
+2026-09-28, updated 2026-10-07 · Janindu Pramod
 
 > **Status:** draft, awaiting approval. This file mirrors the [review copy](https://claude.ai/code/artifact/9b67ede5-1f80-41e8-96be-0af36e03eda2) of the PRD.
 
 ## Overview
 
-Diviyata Sawiyak (දිවියට සවියක්) is a web system to replace the Google Sheet that the Ministry of Women and Child Affairs uses to run this housing programme. Head Office and every Divisional Secretariat (DS) will use it on office PCs, with screens in Sinhala. For each case it records the Rs. 2,000,000 released, the four installments paid from that amount, and the work done on the ground.
+Diviyata Sawiyak (දිවියට සවියක්) is a web system to replace the Google Sheet that the Ministry of Women and Child Affairs uses to run this housing programme. Head Office and every Divisional Secretariat (DS) will use it on office PCs, with screens in Sinhala, Tamil and English. For each case it records the Rs. 2,000,000 released, the four installments paid from that amount, and the work done on the ground.
 
 - **Who it helps.** Two groups. Care leavers are young people who grew up in a child-care institution and are now 18 or older. Children at risk are vulnerable children in at-risk families, and their cases are recorded under the child's guardian.
 - **Who selects them.** Each DS selects its beneficiaries after its own field research. Head Office then checks each case and verifies or rejects it.
@@ -74,7 +74,7 @@ Version 1 has three kinds of login, as decided on 24 Sep. Beneficiaries do not l
 
 What each role needs most:
 
-- **DS officer:** simple Sinhala screens on the office PC, and a clear list of what to do next.
+- **DS officer:** simple screens on the office PC, in Sinhala, Tamil or English, and a clear list of what to do next.
 - **Head Office officer:** a queue of cases to check, a national picture by district and DS, and early warning of stuck cases.
 - **Head Office admin:** fast setup of each DS office's officer account at launch.
 
@@ -221,13 +221,12 @@ Version 1 replaces the sheet end to end for all three roles. Paying out money an
 ### In version 1
 
 - Every item under Main features, for all DS offices and Head Office.
-- Screens in Sinhala, designed for office PCs.
+- Screens in Sinhala, Tamil and English, designed for office PCs. Each officer picks the language; Sinhala is the default.
 - Bringing the 729 sheet cases into the system (how is open; see Moving off the sheet).
 
 ### Later
 
 - SMS or email alerts.
-- Tamil screens, unless the Ministry needs them in version 1.
 - Offline entry at sites with no signal, synced when back online.
 - Photo locations and a map of cases.
 - A printable case file (PDF).
@@ -245,10 +244,10 @@ Version 1 replaces the sheet end to end for all three roles. Paying out money an
 
 ## Constraints
 
-The system holds children's personal data, and it must be easy for non-technical officers who work in Sinhala.
+The system holds children's personal data, and it must be easy for non-technical officers who work in Sinhala or Tamil.
 
 - **Devices.** Office PCs with a web browser; nothing is installed. Screens are designed for desktop first, for DS officers as well as Head Office.
-- **Language.** Screens are in Sinhala, because officers are non-technical and their other systems are in Sinhala. Northern DS offices typed their rows in English, and Tamil-speaking offices may need Tamil (question 8).
+- **Language.** Screens come in Sinhala, Tamil and English (7 Oct 2026, answering question 8), because the system is used by Sinhala-, Tamil- and English-speaking officers. Sinhala is the default. Each officer picks a language on the sign-in page or in the header, and the browser remembers it. Districts, DS offices and building stages are named in all three languages; what officers type is kept as typed. Excel files come in the language of the screen. The Tamil and English wording, and the Tamil place names, need checking by the Ministry before go-live.
 - **Ease of use.** Each screen does one main task, in plain words, using the sheet's own terms such as නිවාසගත and පළමු වාරිකය.
 - **Personal data.** Cases hold the names, NICs, addresses and phone numbers of children and vulnerable families. Handling must meet the [Personal Data Protection Act, No. 9 of 2022](https://www.dpa.gov.lk/Background.php): each role sees only what it needs, and every change is logged.
 - **Real data stays out of the code.** The sheet is never copied into the code repository, and tests use made-up cases.
@@ -256,7 +255,7 @@ The system holds children's personal data, and it must be easy for non-technical
 
 ## Open questions for the Ministry
 
-These were set aside on 28 Sep, to be answered later. Until then the [SPEC](SPEC.md#13-deferred-questions-and-the-defaults-used) uses a default for each. Questions 2, 10 and 11 were settled on 28 Sep and removed: land cases stay out of the system, and no documents are required. The other numbers stay the same, because the prototype's notes use them. Question 12 was added on 28 Sep.
+These were set aside on 28 Sep, to be answered later. Until then the [SPEC](SPEC.md#13-deferred-questions-and-the-defaults-used) uses a default for each. Questions 2, 10 and 11 were settled on 28 Sep and removed: land cases stay out of the system, and no documents are required. The other numbers stay the same, because the prototype's notes use them. Question 12 was added on 28 Sep. Question 8 was answered on 7 Oct: the screens come in Sinhala, Tamil and English.
 
 | # | Question | Why it matters |
 | --- | --- | --- |
@@ -266,6 +265,6 @@ These were set aside on 28 Sep, to be answered later. Until then the [SPEC](SPEC
 | 5 | How long are records kept? | Rejected, stopped and completed cases hold personal data. |
 | 6 | What happens to the money on a stopped case? | One sheet case is already marked as a project that cannot be carried out. |
 | 7 | How is a beneficiary replaced? | The sheet has "another name submitted for approval". It could be a new case or an edit. |
-| 8 | Is Tamil needed in version 1? | Northern DS offices typed the sheet in English. |
+| 8 | Is Tamil needed in version 1? **Answered 7 Oct 2026: yes, and English too.** | Northern DS offices typed the sheet in English. |
 | 9 | Is the Rs. 2M released case by case, or in batches per DS? | This decides how Head Office records releases. |
 | 12 | How does a new officer get their first password? | SMS alerts come later, so for now the admin must pass it on by phone or in person. |

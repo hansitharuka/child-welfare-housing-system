@@ -1,4 +1,9 @@
 {
-  "NEW_HOUSE": ["අත්තිවාරම් මට්ටම", "බිත්ති මට්ටම", "වහල මට්ටම", "නිමයි"],
+  "NEW_HOUSE": [
+    { "nameSi": "අත්තිවාරම් මට්ටම", "nameTa": "அத்திவார மட்டம்", "nameEn": "Foundation level" },
+    { "nameSi": "බිත්ති මට්ටම", "nameTa": "சுவர் மட்டம்", "nameEn": "Wall level" },
+    { "nameSi": "වහල මට්ටම", "nameTa": "கூரை மட்டம்", "nameEn": "Roof level" },
+    { "nameSi": "නිමයි", "nameTa": "நிறைவு", "nameEn": "Completed" }
+  ],
   "RENOVATION": []
 }

@@ -1,5 +1,5 @@
 import { FileText } from "lucide-react";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import type { InstallmentStatus } from "@/generated/prisma/enums";
 import { formatDate } from "@/lib/dates";
 import { formatRupees, paidOut } from "@/lib/money";
@@ -38,7 +38,7 @@ export async function MoneySection({
   correction?: React.ReactNode;
   actions?: (item: InstallmentDetails) => React.ReactNode;
 }) {
-  const [t, tp] = await Promise.all([getTranslations("cases"), getTranslations("progress")]);
+  const [t, tp, locale] = await Promise.all([getTranslations("cases"), getTranslations("progress"), getLocale()]);
   const paid = installments.filter((i) => i.status === "RELEASED");
   const paidAmount = paidOut(installments);
   const { letter } = release;
@@ -71,7 +71,7 @@ export async function MoneySection({
         {tiles.map((tile) => (
           <div key={tile.label} className="flex flex-col gap-0.5 rounded-lg bg-background px-4 py-3">
             <dt className="text-[15px] text-muted-foreground">{tile.label}</dt>
-            <dd className="text-[22px] font-bold">{formatRupees(tile.amount)}</dd>
+            <dd className="text-[22px] font-bold">{formatRupees(tile.amount, locale)}</dd>
             <dd className="text-sm text-[#3F4843]">{tile.detail}</dd>
           </div>
         ))}
@@ -86,7 +86,7 @@ export async function MoneySection({
                 date: formatDate(letter.letterDate),
                 district: letter.districtName,
                 count: letter.cases,
-                total: formatRupees(letter.cases * release.amount),
+                total: formatRupees(letter.cases * release.amount, locale),
                 until: formatDate(letter.validUntil),
               })
             : t("money.letterDs", {
@@ -138,8 +138,8 @@ export async function MoneySection({
                     <span className="font-semibold">{t(`installment.name.${item.number as 1 | 2 | 3 | 4}`)}</span>
                     <span className="text-sm text-muted-foreground">
                       {item.purpose
-                        ? t("money.amountPurpose", { amount: formatRupees(item.amount), purpose: item.purpose })
-                        : formatRupees(item.amount)}
+                        ? t("money.amountPurpose", { amount: formatRupees(item.amount, locale), purpose: item.purpose })
+                        : formatRupees(item.amount, locale)}
                     </span>
                   </span>
                 </div>

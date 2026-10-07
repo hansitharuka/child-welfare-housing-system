@@ -93,6 +93,7 @@ beforeAll(async () => {
         code: "QQC",
         nameEn: "Cases Test Closed",
         nameSi: "පරීක්ෂණ වසා ඇත",
+        nameTa: "சோதனை மூடப்பட்டது",
         districtId: district.id,
         active: false,
       },
@@ -210,9 +211,9 @@ describe("who may change a case", () => {
         error: "notFound",
       });
       expect(await deleteDraft(db, actor, draft.id)).toEqual({ ok: false, error: "notFound" });
-      expect(await getCase(db, actor, draft.id)).toBeNull();
+      expect(await getCase(db, actor, draft.id, "si")).toBeNull();
     }
-    expect(await getCase(db, ho, draft.id)).not.toBeNull();
+    expect(await getCase(db, ho, draft.id, "si")).not.toBeNull();
     expect(await saveCase(db, admin, newCase("200100000043"))).toEqual({ ok: false, error: "notFound" });
   });
 
@@ -273,23 +274,25 @@ describe("duplicate NIC (CASE-6, AC-7)", () => {
     const elsewhere = await saved(dsB, newCase("880201234V", { submit: true }));
     await saved(dsB, newCase("880201234V")); // a draft in the other office stays out of sight
 
-    const asA = await findNicMatches(db, dsA, { nic: "880201234v", dsOfficeId: null, exceptCaseId: null });
+    const asA = await findNicMatches(db, dsA, { nic: "880201234v", dsOfficeId: null, exceptCaseId: null }, "si");
     expect(asA).toEqual([
       { caseNumber: own.caseNumber, name: own.name, officeName: null },
       { caseNumber: elsewhere.caseNumber, name: null, officeName: expect.any(String) },
     ]);
 
-    const asHo = await findNicMatches(db, ho, { nic: "198802001234", dsOfficeId: null, exceptCaseId: own.id });
+    const asHo = await findNicMatches(db, ho, { nic: "198802001234", dsOfficeId: null, exceptCaseId: own.id }, "si");
     expect(asHo).toEqual([{ caseNumber: elsewhere.caseNumber, name: elsewhere.name, officeName: expect.any(String) }]);
   });
 
   it("includes the office's own drafts, and finds nothing for an invalid NIC", async () => {
     const draft = await saved(dsA, newCase("198803001234"));
-    expect(await findNicMatches(db, dsA, { nic: "880301234V", dsOfficeId: null, exceptCaseId: null })).toEqual([
+    expect(await findNicMatches(db, dsA, { nic: "880301234V", dsOfficeId: null, exceptCaseId: null }, "si")).toEqual([
       { caseNumber: null, name: draft.name, officeName: null },
     ]);
-    expect(await findNicMatches(db, dsA, { nic: "12345", dsOfficeId: null, exceptCaseId: null })).toEqual([]);
-    expect(await findNicMatches(db, admin, { nic: "880301234V", dsOfficeId: null, exceptCaseId: null })).toEqual([]);
+    expect(await findNicMatches(db, dsA, { nic: "12345", dsOfficeId: null, exceptCaseId: null }, "si")).toEqual([]);
+    expect(await findNicMatches(db, admin, { nic: "880301234V", dsOfficeId: null, exceptCaseId: null }, "si")).toEqual(
+      [],
+    );
   });
 });
 
@@ -313,7 +316,7 @@ describe("documents (CASE-2, SEC-7)", () => {
     expect(await fileForViewer(db, ho, row.id)).not.toBeNull();
     expect(await fileForViewer(db, dsB, row.id)).toBeNull();
     expect(await fileForViewer(db, admin, row.id)).toBeNull();
-    expect((await getCase(db, dsA, draft.id))?.documents).toEqual([{ id: row.id, name: "ලේඛනය.pdf" }]);
+    expect((await getCase(db, dsA, draft.id, "si"))?.documents).toEqual([{ id: row.id, name: "ලේඛනය.pdf" }]);
   });
 
   it("refuses a file whose contents are not a PDF, JPEG or PNG, whatever its name (ERR-5)", async () => {
@@ -348,7 +351,7 @@ describe("documents (CASE-2, SEC-7)", () => {
 
     expect(await removeDocument(db, dsB, draft.id, upload.value.id)).toEqual({ ok: false, error: "notFound" });
     expect(await removeDocument(db, dsA, draft.id, upload.value.id)).toEqual({ ok: true, value: null });
-    expect((await getCase(db, dsA, draft.id))?.documents).toEqual([]);
+    expect((await getCase(db, dsA, draft.id, "si"))?.documents).toEqual([]);
     expect(await fileForViewer(db, dsA, upload.value.id)).toBeNull();
     expect(await db.storedFile.count({ where: { id: upload.value.id } })).toBe(1);
   });
@@ -357,7 +360,8 @@ describe("documents (CASE-2, SEC-7)", () => {
 describe("lists (HOME-1 to HOME-3, FND-1)", () => {
   it("finds a case by either NIC format, only within the viewer's office", async () => {
     const own = await saved(dsA, newCase("198804001234"));
-    const search = (actor: Actor, q: string) => listCases(db, actor, { q }).then((r) => r.rows.map((row) => row.id));
+    const search = (actor: Actor, q: string) =>
+      listCases(db, actor, { q }, "si").then((r) => r.rows.map((row) => row.id));
 
     expect(await search(dsA, "880401234V")).toEqual([own.id]);
     expect(await search(dsA, "198804001234")).toEqual([own.id]);
@@ -373,7 +377,7 @@ describe("lists (HOME-1 to HOME-3, FND-1)", () => {
     const items = await todoItems(db, dsA);
     expect(items[0]).toMatchObject({ id: sent.id, type: "returned", reason: "ලිපිනය සම්පූර්ණ නැත." });
     expect(items.slice(1).every((item) => item.type === "draft")).toBe(true);
-    expect((await getCase(db, dsA, sent.id))?.returnReason).toBe("ලිපිනය සම්පූර්ණ නැත.");
+    expect((await getCase(db, dsA, sent.id, "si"))?.returnReason).toBe("ලිපිනය සම්පූර්ණ නැත.");
     expect(await todoItems(db, dsB).then((all) => all.some((item) => item.id === sent.id))).toBe(false);
   });
 });

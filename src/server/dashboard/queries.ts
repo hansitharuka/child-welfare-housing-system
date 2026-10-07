@@ -1,6 +1,8 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { Category, Kind } from "@/generated/prisma/enums";
+import type { Locale } from "@/i18n/locales";
 import { daysBetween } from "@/lib/dates";
+import { localName, NAMES } from "@/lib/names";
 import { staleBefore } from "../cases/queries";
 import type { DistrictOptions } from "../lists/queries";
 import { officeFilter, type Viewer } from "../permissions";
@@ -61,6 +63,7 @@ export async function dashboard(
   db: PrismaClient,
   viewer: Viewer,
   filter: DashboardFilter,
+  locale: Locale,
   now = new Date(),
 ): Promise<Dashboard> {
   const scope = officeFilter(viewer);
@@ -97,7 +100,7 @@ export async function dashboard(
         name: true,
         childName: true,
         updatedAt: true,
-        dsOffice: { select: { nameSi: true, district: { select: { nameSi: true } } } },
+        dsOffice: { select: { ...NAMES, district: { select: NAMES } } },
       },
     }),
   ]);
@@ -127,8 +130,8 @@ export async function dashboard(
       total: staleTotal,
       cases: stale.map(({ updatedAt, dsOffice, ...c }) => ({
         ...c,
-        officeName: dsOffice.nameSi,
-        districtName: dsOffice.district.nameSi,
+        officeName: localName(dsOffice, locale),
+        districtName: localName(dsOffice.district, locale),
         days: daysBetween(updatedAt, now),
       })),
     },

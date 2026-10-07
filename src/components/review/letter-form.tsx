@@ -1,7 +1,7 @@
 "use client";
 
 import { FileText } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useActionState, useRef, useState, useTransition } from "react";
 import type { LetterState } from "@/app/ho/check/actions";
 import { FormError } from "@/components/forms/form-field";
@@ -59,6 +59,7 @@ export function LetterForm({
 }) {
   const t = useTranslations("review");
   const tf = useTranslations("cases.form");
+  const locale = useLocale();
   const [state, dispatch, pending] = useActionState(action, { error: null, errors: {} });
   const [, startTransition] = useTransition();
   const [left, setLeft] = useState<ReadonlySet<string>>(new Set());
@@ -77,7 +78,7 @@ export function LetterForm({
 
   const cases = groups.flatMap((group) => group.cases);
   const ticked = cases.filter((c) => !left.has(c.id));
-  const total = formatRupees(ticked.length * RELEASE_AMOUNT);
+  const total = formatRupees(ticked.length * RELEASE_AMOUNT, locale);
   const limits = { earliest: latestDay(ticked.map((c) => c.verifiedOn)), today };
 
   function toggle(id: string, on: boolean) {
@@ -166,7 +167,7 @@ export function LetterForm({
                     <span className="text-sm text-muted-foreground">{c.detail}</span>
                   </span>
                   <span className={`font-semibold ${on ? "" : "text-muted-foreground"}`}>
-                    {on ? formatRupees(RELEASE_AMOUNT) : t("letters.notOnLetter")}
+                    {on ? formatRupees(RELEASE_AMOUNT, locale) : t("letters.notOnLetter")}
                   </span>
                 </label>
               );

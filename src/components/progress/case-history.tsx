@@ -49,7 +49,7 @@ const installmentNumber = (value: unknown): 1 | 2 | 3 | 4 | null =>
   value === 1 || value === 2 || value === 3 || value === 4 ? value : null;
 
 /**
- * HIS-2: the case's history, newest first, as plain Sinhala sentences as in the prototype: the day,
+ * HIS-2: the case's history, newest first, as plain sentences in the screen's language as in the prototype: the day,
  * what happened, and who did it. Reasons, notes and changed fields go on a line under the sentence.
  * A changed detail is named; its old and new values stay in the audit record (CASE-9, HIS-1).
  */

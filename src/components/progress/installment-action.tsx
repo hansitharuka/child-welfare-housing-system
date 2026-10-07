@@ -1,6 +1,6 @@
 "use client";
 
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useActionState, useState, useTransition } from "react";
 import { FormError, FormField, FormTextArea } from "@/components/forms/form-field";
 import { Modal } from "@/components/modal";
@@ -44,6 +44,7 @@ export function InstallmentAction({
   action: ProgressAction;
 }) {
   const t = useTranslations("progress");
+  const locale = useLocale();
   const [state, dispatch, pending] = useActionState(action, { error: null, errors: {} });
   const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
@@ -116,7 +117,7 @@ export function InstallmentAction({
         >
           <div className="flex items-center justify-between gap-4 rounded-lg bg-background px-4.5 py-3">
             <span className="font-semibold">{t("installments.amount")}</span>
-            <span className="text-[22px] font-bold">{formatRupees(INSTALLMENT_AMOUNT)}</span>
+            <span className="text-[22px] font-bold">{formatRupees(INSTALLMENT_AMOUNT, locale)}</span>
           </div>
           <FormField
             id={id(dayField)}

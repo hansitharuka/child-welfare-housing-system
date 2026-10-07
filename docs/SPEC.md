@@ -1,6 +1,6 @@
 # Diviyata Sawiyak — Software Specification
 
-2026-09-28, updated 2026-10-03 · Janindu Pramod
+2026-09-28, updated 2026-10-07 · Janindu Pramod
 
 > **Status:** draft. This SPEC turns the [PRD](PRD.md) into requirements precise enough to build and test against. The [clickable prototype](https://claude.ai/artifact/DQarnsyMfCao1y6SmpMDbT) shows the screens. The PRD's open questions are deferred: [section 13](#13-deferred-questions-and-the-defaults-used) gives the default this SPEC uses for each until the Ministry answers.
 
@@ -26,8 +26,8 @@ It does not cover anything under "Later" or "Out of scope" in the PRD.
 | Database | PostgreSQL, accessed through Prisma; schema changes through Prisma Migrate |
 | Sign-in and sessions | Better Auth: username and password, sessions stored in the database, admin plugin |
 | Forms and validation | React Hook Form in the browser; the same Zod schemas checked again in every Server Action |
-| Screens | Tailwind CSS and shadcn/ui components; Noto Sans Sinhala served from our own server through `next/font/local` |
-| Language | next-intl; one locale, `si`, in version 1; every string in `messages/si.json` |
+| Screens | Tailwind CSS and shadcn/ui components; Noto Sans Sinhala and Noto Sans Tamil served from our own server through `next/font/local` |
+| Language | next-intl; three locales, `si` (the default), `ta` and `en` (UI-9), chosen by a cookie, with no language in the address; every string in `messages/si.json`, `ta.json` and `en.json` |
 | Excel | ExcelJS |
 | Images | sharp |
 | Tests | Vitest for unit and database tests, Playwright for end-to-end tests |
@@ -86,9 +86,9 @@ Amounts are whole rupees stored as integers. Nothing listed here is ever deleted
 
 | Entity | Main fields | Rules |
 | --- | --- | --- |
-| Province | name (Sinhala) | 9 rows, seeded |
-| District | name, province | 25 rows, seeded |
-| DsOffice | name, code, district, active | `code` is 3 capital letters, unique nationally, and used in case numbers. Name is unique within its district |
+| Province | name in Sinhala, Tamil and English | 9 rows, seeded |
+| District | name in Sinhala, Tamil and English, province | 25 rows, seeded |
+| DsOffice | name in Sinhala, Tamil and English, code, district, active | `code` is 3 capital letters, unique nationally, and used in case numbers. The Sinhala name is unique within its district |
 | User | full name, designation, mobile, email, username, role, DS office, active, must change password, last sign-in, failed sign-ins, locked until | DS office is required for DS officers only, and an office has at most one active DS officer (ADM-3). Username is generated (ADM-2) and unique |
 | Case | case number, DS office, category, kind, status, name, child's name, NIC, NIC key, address, GN division, mobile 1, mobile 2, remark, created by, submitted at, verified at, completed at, status before stop, version | See CASE-2 for field rules. `version` goes up by one on every save and every installment, stage or status change (CASE-10). `submitted at` is the latest submit. While the case is stopped, `status before stop` holds the status it goes back to (CLS-3); the stop's day and reason are its Decision |
 | CaseNumberCounter | DS office, year, last number | One row per office and year. Taking the next number locks the row, so two submits at once never share a number (CASE-5) |
@@ -96,7 +96,7 @@ Amounts are whole rupees stored as integers. Nothing listed here is ever deleted
 | ReleaseLetter | district, letter number, letter date, valid until, note, by, at | One allocation letter (ප්‍රතිපාදන ලිපිය) to a District Secretary for several verified cases of that district (REL-2, 6 Oct 2026). Valid until is never before the letter date (a database check). Its scan, if any, is a File |
 | Release | case (one per case), letter, released on, amount, by, at | Amount is always 2,000,000 (a database check). Released on is the letter's date, kept on each release for the installment and stage date rules; correcting the letter's date changes it on every release of the letter (REL-4). Before 6 Oct 2026 each release had its own reference number and note; the migration made each such release a letter of its own |
 | Installment | case, number 1–4, amount, status, purpose, expected on, released on, note | Amount is always 500,000 and the number 1 to 4 (database checks). Case plus number is unique. All four are created when the release is recorded |
-| StageDefinition | kind, order, name, active | New-house stages are seeded (LST-4) |
+| StageDefinition | kind, order, name in Sinhala, Tamil and English, active | New-house stages are seeded (LST-4) |
 | StageUpdate | case, stage (empty means a note-only visit), visited on, note, by, at | A case's current stage is the highest stage it has reached. Each stage is reached once per case; a stage skipped by a later choice gets its own row on the same day (STG-2). A stage that has been used can't be removed (a database rule, LST-4) |
 | File | kind (document, photo or letter scan), case, stage update, letter, stored name, thumbnail name, original name, type, size, SHA-256, uploaded by, removed at | Linked to a case as a document, or also to a stage update as a photo, or to an allocation letter as its scan, never to a case (database checks). Anyone who may see one of a letter's cases may open its scan. A photo has a small copy for thumbnails (STG-6). Until the case form or the stage update is saved with it, only the person who uploaded it can open it, and an upload never saved is removed after a day. A document taken off a case is kept but no longer shown |
 | AuditLog | at, actor, action, entity, entity id, case, before, after | Can only be added to, never changed (HIS-3) |
@@ -165,11 +165,11 @@ Values used across the system:
 
 ### 7.3 Admin: lists (LST)
 
-- **LST-1** The system shall be seeded with the 9 provinces, the 25 districts and every DS office, with Sinhala names and codes.
-- **LST-2** The admin shall be able to add a DS office to a district. The name must be unique within the district, and the code unique nationally.
+- **LST-1** The system shall be seeded with the 9 provinces, the 25 districts and every DS office, with their names in Sinhala, Tamil and English (UI-9) and codes. The Tamil names are to be checked with the Ministry before go-live (task 9.7).
+- **LST-2** The admin shall be able to add a DS office to a district, with its name in all three languages. The Tamil name must be in Tamil letters and the English one in English letters. The Sinhala name must be unique within the district, and the code unique nationally.
 - **LST-3** The admin shall be able to rename a DS office or make it inactive. An inactive office gets no new accounts or cases but keeps its existing ones.
-- **LST-4** For each kind of help, the admin shall be able to add, rename, reorder and deactivate stages:
-  - New-house stages are seeded as අත්තිවාරම් මට්ටම, බිත්ති මට්ටම, වහල මට්ටම, නිමයි.
+- **LST-4** For each kind of help, the admin shall be able to add, rename, reorder and deactivate stages, each named in Sinhala, Tamil and English:
+  - New-house stages are seeded as අත්තිවාරම් මට්ටම, බිත්ති මට්ටම, වහල මට්ටම, නිමයි (in Tamil அத்திவார மட்டம், சுவர் மட்டம், கூரை மட்டம், நிறைவு; in English Foundation level, Wall level, Roof level, Completed).
   - Renovation stages start empty.
   - A stage that has been used can be deactivated but not removed.
 
@@ -298,7 +298,7 @@ Only the DS office starts and pays installments (section 4). Each change is refu
 
   An "update" is any installment change, stage update or case edit. The amount released is the Rs. 2,000,000 releases, stopped cases included; the amount paid out is the installments marked paid. The filters narrow every figure except the waiting counts, which are the whole queues, as the menu shows them. The table lists every district, and a district's active DS offices plus any inactive one that has cases. The stale list shows the 10 cases waiting longest and how many there are in all.
 - **DSH-2** Dashboard figures shall come from the database when the page loads, and never be more than 1 minute old.
-- **EXP-1** Any list shall be exportable to `.xlsx` with Sinhala headers, limited to what the user may see.
+- **EXP-1** Any list shall be exportable to `.xlsx` with headers, statuses and place names in the language of the screen it was downloaded from (UI-9), limited to what the user may see. The file name is in that language too.
   - The lists are Head Office's case list (FND-1), with its filters, and the DS officer's list (HOME-2), with its tab and search. The check and release queues are the case list filtered by status.
   - The file holds every case the list matches, not only the page shown, in the list's order, one row per case: case number, category, kind, status, names, NIC, address, phones, district, DS, the days it was sent, verified, released and completed, the amount released, the amount paid out, the balance left with the DS, the last change and the remark.
   - Days are real Excel dates shown as `YYYY.MM.DD` (UI-3), amounts are numbers, and NICs and phone numbers stay text.
@@ -310,7 +310,7 @@ Only the DS office starts and pays installments (section 4). Each change is refu
 ### 7.13 History and notifications (HIS, NTF)
 
 - **HIS-1** Every create, edit and status change shall write an audit record: who did it, when, the action, and the old and new values of each changed field.
-- **HIS-2** The case page shall show the case history, newest first, as plain Sinhala sentences, as in the prototype: the day, what happened, and who did it with their role (or "the system" for a completion). Reasons and notes appear under the sentence. A changed detail is named there; its old and new values stay in the audit record.
+- **HIS-2** The case page shall show the case history, newest first, as plain sentences in the screen's language (UI-9), as in the prototype: the day, what happened, and who did it with their role (or "the system" for a completion). Reasons and notes appear under the sentence. A changed detail is named there; its old and new values stay in the audit record.
 - **HIS-3** Audit records cannot be edited or deleted. The database shall refuse any update, delete or truncation of the audit table, whichever database account asks.
 - **NTF-1** Notifications appear inside the system:
   - A DS's officers get one when a case is sent back, verified, rejected, released, completed, stopped or reopened.
@@ -325,10 +325,10 @@ Only the DS office starts and pays installments (section 4). Each change is refu
 
 ### 7.15 Screens and language (UI)
 
-- **UI-1** Every label, message, status and date shall be in Sinhala, taken from `messages/si.json`. No screen text is hard-coded.
+- **UI-1** Every label, message, status and date shall be in the screen's language (UI-9), taken from `messages/si.json`, `ta.json` or `en.json`. No screen text is hard-coded. The three files have the same keys and the same placeholders in every message (a unit test checks it).
 - **UI-2** Screens shall be designed for desktop widths of 1,280–1,920 px and stay usable at 1,024 px.
-- **UI-3** Dates shall be shown as `YYYY.MM.DD`, and money as `රු. 2,000,000` (Western digits, comma separators).
-- **UI-4** Text shall use Noto Sans Sinhala at a 16 px base size and a line height of at least 1.5.
+- **UI-3** Dates shall be shown as `YYYY.MM.DD` in every language, and money as `රු. 2,000,000`, `ரூ. 2,000,000` or `Rs. 2,000,000` (Western digits, comma separators).
+- **UI-4** Text shall use Noto Sans Sinhala (Noto Sans Tamil for Tamil) at a 16 px base size and a line height of at least 1.5.
 - **UI-5** Screens shall use the sheet's own terms, such as නිවාසගත, අවදානම් දරුවන් and පළමු වාරිකය. Each screen does one main task.
 - **UI-6** Every form control shall have a visible label, every screen shall work with the keyboard, and text contrast shall meet WCAG 2.1 AA.
 - **UI-7** Screens shall follow the prototype:
@@ -345,7 +345,13 @@ Only the DS office starts and pays installments (section 4). Each change is refu
   | HO officer | Case list, case page, new case | `/ho/cases`, `/ho/cases/[id]`, `/ho/cases/new` | ප්‍රතිලාභියාගේ පිටුව |
   | Admin | Users, lists | `/admin/users`, `/admin/lists` | පරිශීලකයින්, ලැයිස්තු |
 
-- **UI-8** The sign-in and set-a-new-password pages shall show the programme's logo above the card: the mark (a house with a sprout, on a gold base), දිවියට සවියක්, a short gold line and the ministry's name. They have no header bar. The logo keeps its own colours: a maroon house and name, a gold base and a green sprout (`src/components/brand/lockup.tsx`). The sign-in button is a softer maroon (`--sign-in`). Every other page's green header is fixed to the top of the screen (it stays in place when the page scrolls) and shows the mark in its own maroon, gold and green on a small cream tile, beside දිවියට සවියක්. The logo's Latin line "DIVIYATA SAWIYAK" is left out, because the screens have no English (AC-20).
+- **UI-8** The sign-in and set-a-new-password pages shall show the programme's logo above the card: the mark (a house with a sprout, on a gold base), දිවියට සවියක්, a short gold line and the ministry's name. They have no header bar. The logo keeps its own colours: a maroon house and name, a gold base and a green sprout (`src/components/brand/lockup.tsx`). The sign-in button is a softer maroon (`--sign-in`). Every other page's green header is fixed to the top of the screen (it stays in place when the page scrolls) and shows the mark in its own maroon, gold and green on a small cream tile, beside the programme's name. The name is in the screen's language: දිවියට සවියක්, திவியட சவியக் or Diviyata Sawiyak (UI-9). The logo's Latin line "DIVIYATA SAWIYAK" is left out.
+- **UI-9** The screens shall come in Sinhala, Tamil and English (7 Oct 2026; PRD question 8). Sinhala is the default.
+  - Every page shows a language picker: on the sign-in and password pages above the logo, and in the header elsewhere. It names each language in its own script (සිංහල · தமிழ் · English), marked with its own `lang`.
+  - The choice is kept in the browser (a cookie, `lang`, for a year), not in the account or the address, so links and bookmarks work in every language. Choosing shows the same page again in the new language.
+  - Province, district, DS office and stage names are shown in the screen's language (LST-1, LST-4). What officers type (names, addresses, notes, reasons) is shown as typed, in whatever script it was typed.
+  - The case history names districts and stages in the screen's language. Records kept before 7 Oct 2026 hold the Sinhala stage names of the day: the Sinhala screen keeps them, and the others show the stages' current names.
+  - The Tamil and English texts need checking by the Ministry before go-live (task 9.7).
 
 ## 8. Error handling
 
@@ -424,13 +430,14 @@ Version 1 is accepted when every check below passes on staging with made-up data
 | AC-17 | Dashboard totals equal the sums in the database for each filter, tested with seeded data. | DSH-1 |
 | AC-18 | Removed with EXP-2 (2026-10-04). | — |
 | AC-19 | Removed with IMP-1 to IMP-7 (2026-10-06). | — |
-| AC-20 | No screen shows English interface text. A check in CI finds no hard-coded strings in components. | UI-1 |
+| AC-20 | No Sinhala or Tamil screen shows English interface text, and no English screen shows Sinhala or Tamil interface text; only the language picker names all three. A check in CI finds no hard-coded strings in components. | UI-1, UI-9 |
 | AC-21 | With 5,000 seeded cases, the dashboard loads in under 2 seconds. | PRF-3 |
 | AC-22 | Restoring last night's backup on staging brings back the cases and their files. | SEC-10 |
 | AC-23 | The admin can't give a DS office a second active DS officer. Once the old account is disabled, an account for the new officer can be created. | ADM-3 |
 | AC-24 | Removed with IMP-1 to IMP-7 (2026-10-06). | — |
 | AC-25 | On the check screen, choosing a district and then a DS office lists only that office's cases. After a case is verified, the screen stays on that office, and the release tab opens on that district's letter. | CHK-4 |
 | AC-26 | A letter for two cases releases both, with one letter row and each case's own release and installments; one case not `VERIFIED`, or of another district, releases neither. Correcting the letter from one case's page changes it for both. | REL-2–4 |
+| AC-27 | On the sign-in page, choosing தமிழ் or English shows the page in that language and keeps it after a reload. A DS officer working in Tamil sees the menu, their office and district names and the money in Tamil; Head Office working in English downloads an Excel file with English headers and file name. | UI-9, EXP-1 |
 
 ## 13. Deferred questions and the defaults used
 
@@ -444,7 +451,7 @@ On 28 Sep the open questions were set aside for later. Until the Ministry answer
 | 5. How long records are kept | Everything is kept; nothing is deleted automatically. | Section 5 |
 | 6. Money on a stopped case | The balance left with the DS is shown. The system has no refund process. | CLS-2 |
 | 7. Replacing a beneficiary | The new person is a new case. The old case is rejected or stopped with a reason that names the new case number. | CHK-3, CLS-2 |
-| 8. Tamil | Not in version 1. Every string is in a message file, so `ta` can be added later. | UI-1 |
+| 8. Tamil | Answered 7 Oct 2026: the screens come in Sinhala, Tamil and English. | UI-9 |
 | 9. How the Rs. 2M is released | Answered on 6 Oct 2026: by one allocation letter to a District Secretary for several verified cases of the district. No longer a default. | REL-1–4 |
 | 12. First password | The admin sees it once and passes it on in person or by phone. | ADM-2 |
 

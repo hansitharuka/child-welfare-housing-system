@@ -28,6 +28,7 @@ import type { Prisma, PrismaClient } from "../src/generated/prisma/client";
 import type { CaseStatus, Category, DecisionType, Kind, NotificationType } from "../src/generated/prisma/enums";
 import { addDays, colomboDay, colomboStartOf, colomboYear, dayToDate } from "../src/lib/dates";
 import { INSTALLMENT_AMOUNT, INSTALLMENT_COUNT, RELEASE_AMOUNT } from "../src/lib/money";
+import { NAMES, type Names } from "../src/lib/names";
 import { nicKey } from "../src/lib/nic";
 import { placeholderEmail } from "../src/server/auth/accounts";
 import { formatCaseNumber } from "../src/server/cases/numbers";
@@ -145,7 +146,7 @@ export type Context = {
   /** "YYYY-MM-DD" in Colombo */
   today: string;
   /** The active stages of each kind, in order (LST-4), with their Sinhala name and all three (UI-9). */
-  stages: Record<Kind, { id: number; name: string }[]>;
+  stages: Record<Kind, { id: number; name: string; names: Names }[]>;
   cast: Cast;
 };
 
@@ -409,6 +410,7 @@ export function planCase(ctx: Context, office: Office, status: CaseStatus): Plan
               after: {
                 stageIds: stage ? [stage.id] : [],
                 stages: stage ? [stage.name] : [],
+                stageNames: stage ? [stage.names] : [],
                 visitedOn: day,
                 note,
                 photos: [],
@@ -535,10 +537,10 @@ export async function readStages(db: PrismaClient): Promise<Context["stages"]> {
   for (const stage of await db.stageDefinition.findMany({
     where: { active: true },
     orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
-    select: { id: true, nameSi: true, kind: true },
+    select: { id: true, ...NAMES, kind: true },
   })) {
-    const { id, kind, nameSi } = stage;
-    stages[kind].push({ id, name: nameSi });
+    const { id, kind, ...names } = stage;
+    stages[kind].push({ id, name: names.nameSi, names });
   }
   return stages;
 }

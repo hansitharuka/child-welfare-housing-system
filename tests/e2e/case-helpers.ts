@@ -68,7 +68,8 @@ export async function openAs(browser: Browser, username: string): Promise<Page> 
  * district, so every other box is unticked first.
  */
 export async function recordLetterFor(ho: Page, names: string[], letterNumber: string) {
-  const letter = ho.getByRole("region", { name: /ප්‍රතිපාදන ලිපිය$/ });
+  // The letter's section is named after its district; find it by its list of cases.
+  const letter = ho.getByRole("region").filter({ has: ho.getByRole("group", { name: "ලිපියේ ප්‍රතිලාභීන්" }) });
   const boxes = letter.getByRole("checkbox");
   await expect(boxes.first()).toBeVisible();
   for (const box of await boxes.all()) await box.uncheck();

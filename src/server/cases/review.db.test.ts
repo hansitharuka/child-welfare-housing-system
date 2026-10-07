@@ -156,7 +156,7 @@ describe("checking a case (CHK-3)", () => {
     expect((await load(sent.id)).status).toBe("SUBMITTED");
 
     expect(await decide("sendBack", " ලිපිනය සම්පූර්ණ නැත. ")).toEqual({ ok: true, value: "RETURNED" });
-    expect((await getCase(db, dsA, sent.id))?.returnReason).toBe("ලිපිනය සම්පූර්ණ නැත.");
+    expect((await getCase(db, dsA, sent.id, "si"))?.returnReason).toBe("ලිපිනය සම්පූර්ණ නැත.");
     const todo = await todoItems(db, dsA);
     expect(todo.find((item) => item.id === sent.id)).toMatchObject({
       type: "returned",
@@ -184,7 +184,7 @@ describe("checking a case (CHK-3)", () => {
     });
     expect(again).toMatchObject({ ok: true, value: { status: "SUBMITTED", caseNumber: first.caseNumber } });
 
-    const queue = (await listQueue(db, ho, "check", 1)).rows.map((row) => row.id);
+    const queue = (await listQueue(db, ho, "check", 1, "si")).rows.map((row) => row.id);
     expect(queue.indexOf(second.id)).toBeGreaterThanOrEqual(0);
     expect(queue.indexOf(first.id)).toBeGreaterThan(queue.indexOf(second.id));
   });
@@ -200,7 +200,7 @@ describe("checking a case (CHK-3)", () => {
     const rejected = await load(sent.id);
 
     expect(rejected.status).toBe("REJECTED");
-    expect((await getCase(db, dsA, sent.id))?.rejectReason).toBe("වෙනත් ආධාර ලැබී ඇත.");
+    expect((await getCase(db, dsA, sent.id, "si"))?.rejectReason).toBe("වෙනත් ආධාර ලැබී ඇත.");
     expect(await db.notification.count({ where: { caseId: sent.id, userId: dsA.userId, type: "REJECTED" } })).toBe(1);
     expect(
       await decideCase(db, ho, { caseId: sent.id, version: rejected.version, decision: "verify", reason: null }),
@@ -289,7 +289,7 @@ describe("the queues (CHK-1, REL-1)", () => {
     const older = await submitted("200200000020");
     const twin = await submitted("200200000021");
     await saveCase(db, dsB, input("200200000021", { submit: true }));
-    const { rows } = await listQueue(db, ho, "check", 1);
+    const { rows } = await listQueue(db, ho, "check", 1, "si");
 
     const ids = rows.map((row) => row.id);
     expect(ids.indexOf(older.id)).toBeLessThan(ids.indexOf(twin.id));
@@ -302,7 +302,7 @@ describe("the queues (CHK-1, REL-1)", () => {
   it("lists verified cases oldest verification first", async () => {
     const first = await verified("200200000022");
     const second = await verified("200200000023");
-    const ids = (await listQueue(db, ho, "release", 1)).rows.map((row) => row.id);
+    const ids = (await listQueue(db, ho, "release", 1, "si")).rows.map((row) => row.id);
     expect(ids.indexOf(first.id)).toBeLessThan(ids.indexOf(second.id));
   });
 
@@ -315,25 +315,25 @@ describe("the queues (CHK-1, REL-1)", () => {
       select: { districtId: true },
     });
 
-    const office = await listQueue(db, ho, "check", 1, { districtId, dsOfficeId: officeA });
+    const office = await listQueue(db, ho, "check", 1, "si", { districtId, dsOfficeId: officeA });
     expect(office.rows.map((row) => row.id)).toContain(atA.id);
     expect(office.rows.map((row) => row.id)).not.toContain(atB.id);
     expect(office.total).toBe(await db.case.count({ where: { status: "SUBMITTED", dsOfficeId: officeA } }));
 
-    const district = await listQueue(db, ho, "check", 1, { districtId });
+    const district = await listQueue(db, ho, "check", 1, "si", { districtId });
     expect(district.total).toBe(await db.case.count({ where: { status: "SUBMITTED", dsOffice: { districtId } } }));
     expect(district.rows.map((row) => row.id)).toContain(atA.id);
 
     // An office in another district finds nothing there.
     const elsewhere = await db.dsOffice.findFirstOrThrow({ where: { districtId: { not: districtId } } });
-    expect((await listQueue(db, ho, "check", 1, { districtId, dsOfficeId: elsewhere.id })).total).toBe(0);
+    expect((await listQueue(db, ho, "check", 1, "si", { districtId, dsOfficeId: elsewhere.id })).total).toBe(0);
 
     const counts = await queueByOffice(db, ho, "check");
     expect(counts.get(officeA)).toBe(office.total);
     expect([...counts.values()].reduce((sum, n) => sum + n, 0)).toBe((await queueCounts(db, ho)).check);
     for (const actor of [dsA, admin]) {
       expect((await queueByOffice(db, actor, "check")).size).toBe(0);
-      expect((await listQueue(db, actor, "check", 1, { districtId })).total).toBe(0);
+      expect((await listQueue(db, actor, "check", 1, "si", { districtId })).total).toBe(0);
     }
   });
 
@@ -349,7 +349,7 @@ describe("the queues (CHK-1, REL-1)", () => {
     for (const actor of [dsA, admin]) {
       expect(await queueCounts(db, actor)).toEqual({ check: 0, release: 0 });
       expect((await waitingNow(db, actor)).count).toBe(0);
-      expect(await listQueue(db, actor, "check", 1)).toEqual({ rows: [], total: 0 });
+      expect(await listQueue(db, actor, "check", 1, "si")).toEqual({ rows: [], total: 0 });
     }
   });
 });
@@ -397,16 +397,16 @@ describe("releasing by allocation letter (REL-1 to REL-3, AC-10)", () => {
     expect((await load(left.id)).status).toBe("VERIFIED");
     expect(await db.auditLog.count({ where: { entityId: letterId, action: "letter_recorded" } })).toBe(1);
 
-    const details = await getCase(db, dsA, first.id);
+    const details = await getCase(db, dsA, first.id, "si");
     expect(details?.release).toMatchObject({
       releasedOn: today(),
       amount: 2_000_000,
       letter: { id: letterId, letterNumber: "MWCA/3/8/16/02-2026", cases: 2, note: "පළමු ලිපිය", scanId: null },
     });
     expect(details?.installments).toHaveLength(4);
-    expect(await getLetter(db, ho, letterId)).toMatchObject({ count: 2, offices: [details?.officeName] });
-    expect((await recentLetters(db, ho))[0]?.id).toBe(letterId);
-    expect(await getLetter(db, dsA, letterId)).toBeNull();
+    expect(await getLetter(db, ho, letterId, "si")).toMatchObject({ count: 2, offices: [details?.officeName] });
+    expect((await recentLetters(db, ho, "si"))[0]?.id).toBe(letterId);
+    expect(await getLetter(db, dsA, letterId, "si")).toBeNull();
   });
 
   it("lists the districts waiting for a letter and each one's verified cases, for Head Office only", async () => {
@@ -414,19 +414,19 @@ describe("releasing by allocation letter (REL-1 to REL-3, AC-10)", () => {
     const second = await verified("200200000023");
     const districtId = await districtOf(first.dsOfficeId);
 
-    const waiting = await districtsWaiting(db, ho);
+    const waiting = await districtsWaiting(db, ho, "si");
     const here = waiting.find((d) => d.id === districtId);
     expect(here?.count).toBe(await db.case.count({ where: { status: "VERIFIED", dsOffice: { districtId } } }));
     expect(waiting.reduce((sum, d) => sum + d.count, 0)).toBe((await queueCounts(db, ho)).release);
     const counts = waiting.map((d) => d.count);
     expect(counts).toEqual([...counts].sort((a, b) => b - a));
 
-    const ids = (await casesForLetter(db, ho, districtId)).map((c) => c.id);
+    const ids = (await casesForLetter(db, ho, districtId, "si")).map((c) => c.id);
     expect(ids.indexOf(first.id)).toBeLessThan(ids.indexOf(second.id));
     for (const actor of [dsA, admin]) {
-      expect(await districtsWaiting(db, actor)).toEqual([]);
-      expect(await casesForLetter(db, actor, districtId)).toEqual([]);
-      expect(await recentLetters(db, actor)).toEqual([]);
+      expect(await districtsWaiting(db, actor, "si")).toEqual([]);
+      expect(await casesForLetter(db, actor, districtId, "si")).toEqual([]);
+      expect(await recentLetters(db, actor, "si")).toEqual([]);
     }
   });
 
@@ -528,7 +528,7 @@ describe("releasing by allocation letter (REL-1 to REL-3, AC-10)", () => {
       letterId: result.ok ? result.letterId : "",
       caseId: null,
     });
-    expect((await getCase(db, ho, ready.id))?.release?.letter.scanId).toBe(scan.value.id);
+    expect((await getCase(db, ho, ready.id, "si"))?.release?.letter.scanId).toBe(scan.value.id);
     expect(await fileForViewer(db, dsA, scan.value.id)).toMatchObject({ originalName: "ලිපිය.pdf" });
     expect(await fileForViewer(db, other, scan.value.id)).not.toBeNull();
     expect(await fileForViewer(db, dsB, scan.value.id)).toBeNull();

@@ -69,10 +69,12 @@ enum NotificationType {
   REOPENED
 }
 
+/// Places and stages carry a name in each screen language (UI-9).
 model Province {
   id        Int        @id @default(autoincrement())
   nameEn    String     @unique @map("name_en")
   nameSi    String     @unique @map("name_si")
+  nameTa    String     @unique @map("name_ta")
   districts District[]
 
   @@map("province")
@@ -82,6 +84,7 @@ model District {
   id         Int             @id @default(autoincrement())
   nameEn     String          @unique @map("name_en")
   nameSi     String          @unique @map("name_si")
+  nameTa     String          @unique @map("name_ta")
   provinceId Int             @map("province_id")
   province   Province        @relation(fields: [provinceId], references: [id])
   dsOffices  DsOffice[]
@@ -98,6 +101,7 @@ model DsOffice {
   code       String   @unique @db.Char(3)
   nameEn     String   @map("name_en")
   nameSi     String   @map("name_si")
+  nameTa     String   @map("name_ta")
   districtId Int      @map("district_id")
   district   District @relation(fields: [districtId], references: [id])
   active     Boolean  @default(true)
@@ -117,6 +121,8 @@ model StageDefinition {
   kind      Kind
   sortOrder Int           @map("sort_order")
   nameSi    String        @map("name_si")
+  nameTa    String        @map("name_ta")
+  nameEn    String        @map("name_en")
   active    Boolean       @default(true)
   createdAt DateTime      @default(now()) @map("created_at")
   updatedAt DateTime      @updatedAt @map("updated_at")

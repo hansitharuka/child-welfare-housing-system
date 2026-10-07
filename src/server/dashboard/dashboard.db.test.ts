@@ -20,7 +20,7 @@ let districts: DistrictOptions[];
 beforeAll(async () => {
   await seed(db);
   await addLoadData(db, { count: LOAD, seed: 7 });
-  districts = await districtsWithOffices(db);
+  districts = await districtsWithOffices(db, "si");
 }, 300_000);
 
 afterAll(async () => {
@@ -88,7 +88,7 @@ describe("Head Office dashboard (DSH-1)", () => {
         for (const kind of [undefined, ...KINDS]) choices.push({ districtId, category, kind });
 
     for (const filter of choices) {
-      const data = await dashboard(db, ho, filter, now);
+      const data = await dashboard(db, ho, filter, "si", now);
       const where = caseWhere(filter);
       expect(data.totals, JSON.stringify(filter)).toEqual(await direct(where));
       expect(sum([...data.byOffice.values()])).toEqual(data.totals);
@@ -99,21 +99,21 @@ describe("Head Office dashboard (DSH-1)", () => {
     }
 
     // The load-test data reaches every figure, so none of the checks above compared only zeros.
-    const all = await dashboard(db, ho, {}, now);
+    const all = await dashboard(db, ho, {}, "si", now);
     for (const value of Object.values(all.totals)) expect(value).toBeGreaterThan(0);
     expect(all.totals.cases).toBeGreaterThan(LOAD * 0.9);
     // 18 filters, each read twice over 5,000 cases: a check of the sums, not of speed (that is AC-21).
   }, 30_000);
 
   it("shows every district, each equal to its own sums; a district opens into its DS offices", async () => {
-    const all = await dashboard(db, ho, {});
+    const all = await dashboard(db, ho, {}, "si");
     const rows = tableRows(districts, all.byOffice);
     expect(rows.map((r) => r.id)).toEqual(districts.map((d) => d.id));
     expect(sum(rows)).toEqual(all.totals);
     for (const row of rows) expect(figures(row), row.name).toEqual(await direct({ dsOffice: { districtId: row.id } }));
 
     const busiest = rows.toSorted((a, b) => b.cases - a.cases)[0];
-    const inDistrict = await dashboard(db, ho, { districtId: busiest.id });
+    const inDistrict = await dashboard(db, ho, { districtId: busiest.id }, "si");
     expect(inDistrict.totals).toEqual(figures(busiest));
     const offices = tableRows(districts, inDistrict.byOffice, busiest.id);
     expect(offices.length).toBeGreaterThan(1);
@@ -123,7 +123,7 @@ describe("Head Office dashboard (DSH-1)", () => {
 
   it("lists the cases waiting longest for an update first, with their days, office and district", async () => {
     const now = new Date();
-    const data = await dashboard(db, ho, {}, now);
+    const data = await dashboard(db, ho, {}, "si", now);
     const expected = await staleCases({}, now);
     expect(data.stale.total).toBeGreaterThan(STALE_SHOWN);
 
@@ -139,14 +139,14 @@ describe("Head Office dashboard (DSH-1)", () => {
   });
 
   it("keeps to what the viewer may see: a DS officer only their own office, an admin nothing (PRM-1)", async () => {
-    const all = await dashboard(db, ho, {});
+    const all = await dashboard(db, ho, {}, "si");
     const [officeId] = [...all.byOffice.entries()].toSorted(([, a], [, b]) => b.cases - a.cases)[0];
 
-    const own = await dashboard(db, { role: "DS_OFFICER", dsOfficeId: officeId }, {});
+    const own = await dashboard(db, { role: "DS_OFFICER", dsOfficeId: officeId }, {}, "si");
     expect([...own.byOffice.keys()]).toEqual([officeId]);
     expect(own.totals).toEqual(await direct({ dsOfficeId: officeId }));
 
-    const admin = await dashboard(db, { role: "ADMIN", dsOfficeId: null }, {});
+    const admin = await dashboard(db, { role: "ADMIN", dsOfficeId: null }, {}, "si");
     expect(admin).toEqual({ totals: noFigures(), byOffice: new Map(), stale: { total: 0, cases: [] } });
   });
 
@@ -159,8 +159,8 @@ describe("Head Office dashboard (DSH-1)", () => {
     ];
     for (const filter of filters) {
       const started = performance.now();
-      const list = await districtsWithOffices(db);
-      const [data] = await Promise.all([dashboard(db, ho, filter), queueCounts(db, ho)]);
+      const list = await districtsWithOffices(db, "si");
+      const [data] = await Promise.all([dashboard(db, ho, filter, "si"), queueCounts(db, ho)]);
       tableRows(list, data.byOffice, filter.districtId);
       expect(performance.now() - started, JSON.stringify(filter)).toBeLessThan(2_000);
     }

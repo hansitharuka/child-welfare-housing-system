@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { formValues, PageHeader } from "@/components/cases/page-header";
 import { CaseForm } from "@/components/forms/case-form";
 import { requireRole } from "@/server/context";
@@ -10,7 +10,8 @@ import { checkNicAction, removeDocumentAction, saveCaseAction, uploadDocumentAct
 /** Head Office enters a case for any DS office, choosing the district, then the office (CASE-3). */
 export default async function HoNewCasePage() {
   await requireRole("HO_OFFICER");
-  const [t, districts] = await Promise.all([getTranslations("cases"), districtsWithOffices(db)]);
+  const locale = await getLocale();
+  const [t, districts] = await Promise.all([getTranslations("cases"), districtsWithOffices(db, locale)]);
 
   return (
     <div className="flex flex-col gap-5">

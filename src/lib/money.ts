@@ -1,4 +1,7 @@
-const RUPEES = "රු.";
+import type { Locale } from "@/i18n/locales";
+
+/** The rupee's short form in each screen language (UI-3, UI-9). */
+const RUPEES: Record<Locale, string> = { si: "රු.", ta: "ரூ.", en: "Rs." };
 
 const digits = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -8,10 +11,10 @@ export function formatNumber(value: number): string {
   return digits.format(value);
 }
 
-/** Formats whole rupees as "රු. 2,000,000" (UI-3). */
-export function formatRupees(amount: number): string {
+/** Formats whole rupees as "රු. 2,000,000", "ரூ. 2,000,000" or "Rs. 2,000,000" (UI-3). */
+export function formatRupees(amount: number, locale: Locale): string {
   if (!Number.isSafeInteger(amount)) throw new RangeError(`Amounts are whole rupees: ${amount}`);
-  return `${RUPEES} ${formatNumber(amount)}`;
+  return `${RUPEES[locale]} ${formatNumber(amount)}`;
 }
 
 /** Each case gets Rs. 2,000,000 (REL-2), paid to the beneficiary in four installments of Rs. 500,000 (INS-1). */

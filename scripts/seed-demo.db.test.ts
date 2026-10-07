@@ -77,7 +77,7 @@ describe("demo data", { timeout: 120_000 }, () => {
       }
 
       // HIS-2: the history reads as if the case had been entered on the screens.
-      const history = (await caseHistory(db, viewer, c.id))!.toReversed();
+      const history = (await caseHistory(db, viewer, c.id, "si"))!.toReversed();
       expect(history[0]).toMatchObject({ action: "case_created", actor: { role: "DS_OFFICER" } });
       for (const [index, entry] of history.entries()) {
         if (index > 0) expect(entry.at.getTime()).toBeGreaterThanOrEqual(history[index - 1].at.getTime());

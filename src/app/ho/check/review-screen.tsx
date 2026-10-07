@@ -1,6 +1,6 @@
 import { CircleCheck, TriangleAlert } from "lucide-react";
 import Link from "next/link";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { caseFieldRows, DocumentLinks } from "@/components/cases/case-view";
 import { caseName } from "@/components/cases/page-header";
 import { Pager } from "@/components/cases/pager";
@@ -108,26 +108,32 @@ async function CheckTab({ viewer, params }: { viewer: Viewer; params: Params }) 
   const page = Math.max(1, Number(params.page) || 1);
   const asked = readPlace((key) => one(params[key as "districtId" | "dsOfficeId"]) ?? "");
 
+  const locale = await getLocale();
   const [t, tc, counts, districts, waiting, verified] = await Promise.all([
     getTranslations("review"),
     getTranslations("cases"),
     queueCounts(db, viewer),
-    districtsWithOffices(db),
+    districtsWithOffices(db, locale),
     queueByOffice(db, viewer, "check"),
     queueByOffice(db, viewer, "release"),
   ]);
   const places = placeChoices(districts, waiting, asked);
   const { place } = places;
-  const list = await listQueue(db, viewer, "check", page, place);
+  const list = await listQueue(db, viewer, "check", page, locale, place);
   const wanted = one(params.case);
   const selectedId = list.rows.find((row) => row.id === wanted)?.id ?? list.rows[0]?.id ?? null;
   const done = one(params.done);
   const [details, doneDetails] = await Promise.all([
-    selectedId ? getCase(db, viewer, selectedId) : null,
-    done ? getCase(db, viewer, done) : null,
+    selectedId ? getCase(db, viewer, selectedId, locale) : null,
+    done ? getCase(db, viewer, done, locale) : null,
   ]);
   const duplicates = details
-    ? await duplicatesInFull(db, viewer, { caseId: details.id, nic: details.nic, dsOfficeId: details.dsOfficeId })
+    ? await duplicatesInFull(
+        db,
+        viewer,
+        { caseId: details.id, nic: details.nic, dsOfficeId: details.dsOfficeId },
+        locale,
+      )
     : [];
 
   const now = new Date();
@@ -172,7 +178,7 @@ async function CheckTab({ viewer, params }: { viewer: Viewer; params: Params }) 
       text: t("letters.hint", {
         district: hintDistrict.name,
         count: inDistrict(verified),
-        amount: formatRupees(inDistrict(verified) * RELEASE_AMOUNT),
+        amount: formatRupees(inDistrict(verified) * RELEASE_AMOUNT, locale),
       }),
     };
 
@@ -326,16 +332,17 @@ async function LetterTab({ viewer, params }: { viewer: Viewer; params: Params })
   const asked = readPlace((key) => one(params[key as "districtId" | "dsOfficeId"]) ?? "");
   const letterId = params.notice === "letterRecorded" ? one(params.letter) : null;
 
+  const locale = await getLocale();
   const [t, tc, counts, districts, letters, recorded] = await Promise.all([
     getTranslations("review"),
     getTranslations("cases"),
     queueCounts(db, viewer),
-    districtsWaiting(db, viewer),
-    recentLetters(db, viewer),
-    letterId && letterId.length <= 64 ? getLetter(db, viewer, letterId) : null,
+    districtsWaiting(db, viewer, locale),
+    recentLetters(db, viewer, locale),
+    letterId && letterId.length <= 64 ? getLetter(db, viewer, letterId, locale) : null,
   ]);
   const chosen = districts.find((d) => d.id === asked.districtId) ?? districts[0] ?? null;
-  const cases = chosen ? await casesForLetter(db, viewer, chosen.id) : [];
+  const cases = chosen ? await casesForLetter(db, viewer, chosen.id, locale) : [];
 
   const now = new Date();
   const groups: LetterFormGroup[] = [];
@@ -382,7 +389,7 @@ async function LetterTab({ viewer, params }: { viewer: Viewer; params: Params })
                         <span className="text-[15px] font-semibold">
                           {t("letters.districtCount", {
                             count: d.count,
-                            amount: formatRupees(d.count * RELEASE_AMOUNT),
+                            amount: formatRupees(d.count * RELEASE_AMOUNT, locale),
                           })}
                         </span>
                         <span className="text-sm text-muted-foreground">
@@ -421,7 +428,7 @@ async function LetterTab({ viewer, params }: { viewer: Viewer; params: Params })
                       {t("letters.recordedSub", {
                         date: formatDate(letter.letterDate),
                         count: letter.count,
-                        amount: formatRupees(letter.count * RELEASE_AMOUNT),
+                        amount: formatRupees(letter.count * RELEASE_AMOUNT, locale),
                       })}
                     </span>
                     <span className="text-sm text-[#3F4843]">

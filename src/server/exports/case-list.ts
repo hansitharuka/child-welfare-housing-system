@@ -2,7 +2,9 @@ import ExcelJS from "exceljs";
 import type { getTranslations } from "next-intl/server";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { CaseStatus, Category, InstallmentStatus, Kind } from "@/generated/prisma/enums";
+import type { Locale } from "@/i18n/locales";
 import { colomboDay, dateToDay, formatDate } from "@/lib/dates";
+import { localName, NAMES } from "@/lib/names";
 import { KINDS } from "@/lib/validation/case";
 import { writeAudit } from "../audit";
 import { type CaseFilter, caseWhere } from "../cases/queries";
@@ -72,7 +74,12 @@ export function progressStages<T>(stages: T[]): (T | null)[] {
  * Every case on the list the viewer sees, in the screen's order (EXP-1, FND-1, HOME-2), or null
  * when they may see no cases (PRM-2).
  */
-export async function caseListRows(db: PrismaClient, viewer: Viewer, filter: ListFilter): Promise<ExportRow[] | null> {
+export async function caseListRows(
+  db: PrismaClient,
+  viewer: Viewer,
+  filter: ListFilter,
+  locale: Locale,
+): Promise<ExportRow[] | null> {
   const where = caseWhere(viewer, filter);
   if (!where) return null;
 
@@ -97,7 +104,7 @@ export async function caseListRows(db: PrismaClient, viewer: Viewer, filter: Lis
         verifiedAt: true,
         completedAt: true,
         updatedAt: true,
-        dsOffice: { select: { nameSi: true, district: { select: { nameSi: true } } } },
+        dsOffice: { select: { ...NAMES, district: { select: NAMES } } },
         release: { select: { releasedOn: true, amount: true } },
         installments: { select: { number: true, amount: true, status: true, expectedOn: true, releasedOn: true } },
         stageUpdates: { where: { stageId: { not: null } }, select: { stageId: true, visitedOn: true } },
@@ -119,8 +126,8 @@ export async function caseListRows(db: PrismaClient, viewer: Viewer, filter: Lis
     const reached = new Map(stageUpdates.map((update) => [update.stageId, dateToDay(update.visitedOn)]));
     return {
       ...row,
-      officeName: dsOffice.nameSi,
-      districtName: dsOffice.district.nameSi,
+      officeName: localName(dsOffice, locale),
+      districtName: localName(dsOffice.district, locale),
       release: release && {
         releasedOn: dateToDay(release.releasedOn),
         amount: release.amount,
@@ -157,7 +164,7 @@ function installmentNote(t: CasesT, item: ExportInstallment | null): string | nu
 }
 
 /**
- * EXP-1's columns, with Sinhala headers. A case not yet released leaves its money columns empty.
+ * EXP-1's columns, with headers in the language of the screen it was asked from (UI-9). A case not yet released leaves its money columns empty.
  * Head Office's progress report adds two groups, each cell a short dated note: its financial progress,
  * when each installment was paid or is expected, follows the amount released; its physical progress,
  * when each building stage was finished, follows the balance.
@@ -230,6 +237,7 @@ export type ExportedFile = { bytes: Uint8Array<ArrayBuffer>; fileName: string; a
 /**
  * EXP-1 and EXP-3: the list as an `.xlsx` file of every matching case, and an audit record of who
  * made it, with which filters and how many rows. Null when the viewer may see no cases (PRM-2).
+ * `t` and `locale` are the screen's language: headers, statuses and place names come in it (UI-9).
  */
 export async function exportCaseList(
   db: PrismaClient,
@@ -237,9 +245,10 @@ export async function exportCaseList(
   list: ListName,
   filter: ListFilter,
   t: CasesT,
+  locale: Locale,
   now = new Date(),
 ): Promise<ExportedFile | null> {
-  const rows = await caseListRows(db, viewer, filter);
+  const rows = await caseListRows(db, viewer, filter, locale);
   if (!rows) return null;
 
   const workbook = new ExcelJS.Workbook();

@@ -1,5 +1,5 @@
 import { CircleCheck, CircleX } from "lucide-react";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { formatDate } from "@/lib/dates";
 import { balance, formatRupees } from "@/lib/money";
 import type { CaseDetails } from "@/server/cases/queries";
@@ -10,7 +10,7 @@ import type { CaseDetails } from "@/server/cases/queries";
  */
 export async function StoppedBanner({ details, reopen }: { details: CaseDetails; reopen?: React.ReactNode }) {
   if (!details.stop) return null;
-  const t = await getTranslations("progress.stop");
+  const [t, locale] = await Promise.all([getTranslations("progress.stop"), getLocale()]);
   return (
     <section
       aria-labelledby="stopped-title"
@@ -25,7 +25,7 @@ export async function StoppedBanner({ details, reopen }: { details: CaseDetails;
           <p className="whitespace-pre-line">{t("bannerReason", { reason: details.stop.reason })}</p>
         )}
         {details.release && (
-          <p>{t("bannerBalance", { balance: formatRupees(balance(details.release, details.installments)) })}</p>
+          <p>{t("bannerBalance", { balance: formatRupees(balance(details.release, details.installments), locale) })}</p>
         )}
       </div>
       {reopen}

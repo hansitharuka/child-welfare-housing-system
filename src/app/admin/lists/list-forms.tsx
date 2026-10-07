@@ -94,6 +94,7 @@ export function AddOfficeForm({ action }: { action: Action }) {
       submitLabel={t("add")}
       fields={[
         { name: "nameSi", label: t("nameSi") },
+        { name: "nameTa", label: t("nameTa") },
         { name: "nameEn", label: t("nameEn") },
         { name: "code", label: t("code"), help: t("codeHint"), width: "w-72" },
       ]}
@@ -109,7 +110,11 @@ export function AddStageForm({ id, action }: { id: string; action: Action }) {
       action={action}
       clearAfterSave
       submitLabel={t("add")}
-      fields={[{ name: "nameSi", label: t("stageName"), width: "w-full" }]}
+      fields={[
+        { name: "nameSi", label: t("nameSi"), width: "w-full" },
+        { name: "nameTa", label: t("nameTa"), width: "w-full" },
+        { name: "nameEn", label: t("nameEn"), width: "w-full" },
+      ]}
     />
   );
 }

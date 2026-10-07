@@ -18,7 +18,7 @@ export async function seed(prisma: PrismaClient): Promise<void> {
     await prisma.district.upsert({
       where: { nameEn: d.nameEn },
       update: {},
-      create: { nameEn: d.nameEn, nameSi: d.nameSi, provinceId },
+      create: { nameEn: d.nameEn, nameSi: d.nameSi, nameTa: d.nameTa, provinceId },
     });
   }
   const districtIds = new Map((await prisma.district.findMany()).map((d) => [d.nameEn, d.id]));
@@ -29,17 +29,17 @@ export async function seed(prisma: PrismaClient): Promise<void> {
     await prisma.dsOffice.upsert({
       where: { code: o.code },
       update: {},
-      create: { code: o.code, nameEn: o.nameEn, nameSi: o.nameSi, districtId },
+      create: { code: o.code, nameEn: o.nameEn, nameSi: o.nameSi, nameTa: o.nameTa, districtId },
     });
   }
 
-  const stageLists: Record<Kind, string[]> = stages;
+  const stageLists: Record<Kind, { nameSi: string; nameTa: string; nameEn: string }[]> = stages;
   for (const kind of Object.values(Kind)) {
-    for (const [index, nameSi] of stageLists[kind].entries()) {
+    for (const [index, names] of stageLists[kind].entries()) {
       await prisma.stageDefinition.upsert({
-        where: { kind_nameSi: { kind, nameSi } },
+        where: { kind_nameSi: { kind, nameSi: names.nameSi } },
         update: {},
-        create: { kind, nameSi, sortOrder: index + 1 },
+        create: { kind, ...names, sortOrder: index + 1 },
       });
     }
   }

@@ -61,7 +61,8 @@ export async function recordStageUpdate(db: PrismaClient, actor: Actor, input: S
   if (found.status !== "IN_PROGRESS" || !found.release) return refused("caseNotRunning");
 
   const now = new Date();
-  const progress = await getStageProgress(db, found.id, found.kind);
+  // Sinhala names for the audit record, which also keeps all three (UI-9).
+  const progress = await getStageProgress(db, found.id, found.kind, "si");
   const limits = stageLimits(colomboDay(now), dateToDay(found.release.releasedOn), progress.current?.reachedOn ?? null);
   const parsed = parseStageForm((field) => input.form[field], limits);
   if (!parsed.ok) return { ok: false, error: null, errors: parsed.errors };
@@ -107,8 +108,10 @@ export async function recordStageUpdate(db: PrismaClient, actor: Actor, input: S
         before: { stageId: progress.current?.id ?? null },
         after: {
           stageIds: reaching.map((stage) => stage.id),
-          // The names as they were, so the history still reads right after a stage is renamed.
+          // The names as they were, so the history still reads right after a stage is renamed: in
+          // Sinhala as before, and in all three languages since 7 Oct 2026 (UI-9).
           stages: reaching.map((stage) => stage.name),
+          stageNames: reaching.map((stage) => stage.names),
           visitedOn,
           note,
           photos: photoIds,

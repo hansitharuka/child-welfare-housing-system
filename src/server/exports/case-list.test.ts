@@ -1,7 +1,9 @@
 import ExcelJS from "exceljs";
 import { createTranslator } from "next-intl";
 import { describe, expect, it } from "vitest";
+import en from "../../../messages/en.json";
 import messages from "../../../messages/si.json";
+import ta from "../../../messages/ta.json";
 import { caseListColumns, type ExportRow, progressStages } from "./case-list";
 import { addSheet, workbookBytes, XLSX_TYPE, xlsxResponse } from "./workbook";
 
@@ -211,7 +213,25 @@ describe("the case list's Excel file (EXP-1)", () => {
   });
 
   it("names the file without zero-width joiners, which Chrome would save as '_'", () => {
-    expect(t("export.fileName", { date: "2026-10-04" })).not.toMatch(/[‌‍]/);
+    for (const [locale, file] of [
+      ["si", messages],
+      ["ta", ta],
+      ["en", en],
+    ] as const) {
+      const name = createTranslator({ locale, messages: file, namespace: "cases" })("export.fileName", {
+        date: "2026-10-04",
+      });
+      expect(name, locale).not.toMatch(/\p{Cf}/u);
+    }
+  });
+
+  it("writes the headers and statuses in the screen's language (UI-9)", async () => {
+    const tEn = createTranslator({ locale: "en", messages: en, namespace: "cases" });
+    const workbook = new ExcelJS.Workbook();
+    addSheet(workbook, tEn("export.sheet"), caseListColumns(tEn), [released]);
+    const sheet = workbook.getWorksheet("Beneficiaries")!;
+    expect(sheet.getRow(1).getCell(1).value).toBe("Registration number");
+    expect(sheet.getRow(3).getCell(4).value).toBe("Work in progress");
   });
 });
 

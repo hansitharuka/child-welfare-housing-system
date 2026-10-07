@@ -1,3 +1,4 @@
+import { getLocale } from "next-intl/server";
 import type { CaseFormState } from "@/components/forms/case-form";
 import { db } from "../db";
 import { type UploadedFile, type UploadError, uploadDocument } from "../files/uploads";
@@ -45,11 +46,16 @@ export async function nicMatchesFor(
   dsOfficeId: unknown,
 ): Promise<NicMatch[]> {
   if (typeof nic !== "string" || nic.length > 20) return [];
-  return findNicMatches(db, actor, {
-    nic,
-    exceptCaseId: typeof caseId === "string" && caseId.length <= 36 ? caseId : null,
-    dsOfficeId: typeof dsOfficeId === "number" && Number.isInteger(dsOfficeId) ? dsOfficeId : null,
-  });
+  return findNicMatches(
+    db,
+    actor,
+    {
+      nic,
+      exceptCaseId: typeof caseId === "string" && caseId.length <= 36 ? caseId : null,
+      dsOfficeId: typeof dsOfficeId === "number" && Number.isInteger(dsOfficeId) ? dsOfficeId : null,
+    },
+    await getLocale(),
+  );
 }
 
 export async function removeCaseDocument(

@@ -38,19 +38,30 @@ async function giveOwnAddress(page: Page) {
 
 /**
  * The page's visible screen text (UI-1). Table rows hold data, such as names and usernames, which
- * may be in any script, so they are left out.
+ * may be in any script, so they are left out. So is text marked as another language, such as the
+ * language picker's names (UI-9).
  */
 export function screenText(page: Page): Promise<string> {
   return page.evaluate(() => {
+    const own = document.documentElement.lang;
     const parts: string[] = [];
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       const parent = node.parentElement;
       if (!parent || parent.closest("tbody, script, style, template") || !parent.checkVisibility()) continue;
+      if ((parent.closest("[lang]")?.getAttribute("lang") ?? own) !== own) continue;
       parts.push(node.textContent ?? "");
     }
     return parts.join(" ");
   });
+}
+
+/** Chooses a screen language with the picker on the page (UI-9) and waits for the page to show it. */
+export async function chooseLanguage(page: Page, language: "සිංහල" | "தமிழ்" | "English") {
+  const lang = { සිංහල: "si", தமிழ்: "ta", English: "en" }[language];
+  await page.getByRole("button", { name: language, exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", lang);
+  await expect(page.getByRole("button", { name: language, exact: true })).toHaveAttribute("aria-pressed", "true");
 }
 
 /** A form's error box. Next.js has its own hidden role="alert" element, so find ours by id. */

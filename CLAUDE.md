@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Phases 1 (foundation), 2 (sign-in and permissions), 3 (admin: accounts and lists), 4 (cases), 5 (check and release), 6 (installments, progress and closing) and 7 (dashboard, exports and notifications) of `docs/PLAN.md` are built. Phase 8 (the sheet import) was built, then removed (see below). You get:
 
-- a Sinhala Next.js shell for the three roles, and PostgreSQL with the place and stage lists
+- a Next.js shell for the three roles in Sinhala, Tamil and English (7 Oct 2026), and PostgreSQL with the place and stage lists
 - sign-in with lockout and forced password change, a permission layer, an append-only audit log and security headers
 - the admin's users and lists screens
 - case entry with drafts, documents, the duplicate-NIC warning and case numbers
@@ -24,7 +24,7 @@ Phase 7 was built one task at a time: 7.1 (the load-test data script), 7.2 (the 
 
 Phase 8 (the sheet import) was built one task at a time, on the branch `phase-8-import`: 8.1 (the made-up sample sheet), 8.2 (the import script), 8.3 (the import report), 8.4 (the DS office filling in imported cases) and 8.5 (Head Office confirming them). It was removed on 6 Oct 2026, because the sheet is still being updated; see "Sheet import (removed)" below.
 
-The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
+The stack is set in `docs/SPEC.md`: Next.js 16 (App Router, TypeScript), PostgreSQL + Prisma 7, Better Auth, next-intl (Sinhala, Tamil and English), Zod, Tailwind 4 + shadcn/ui (Radix), ExcelJS and sharp. It runs self-hosted with Docker Compose on a server in Sri Lanka. Every permission check lives in the server-side data-access layer (`src/server/`), never in middleware or the UI alone.
 
 ## Commands
 
@@ -50,8 +50,8 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 - **Prisma 7.** The client is generated into `src/generated/prisma/`. That folder is not committed and is regenerated on `npm install`. Import from `@/generated/prisma/client`. The client needs the `PrismaPg` adapter (see `src/server/db.ts`). Settings and the seed command live in `prisma.config.ts`.
 - **The seed only adds missing rows** (`prisma/seed-data.ts`), so running it again never undoes an admin's change.
 - **Never run `prisma migrate reset`.** It wipes a database, and Prisma blocks it when an AI agent runs it. The database tests make a new schema in the test database for each run and drop only that schema (`tests/db/global-setup.ts`).
-- **Screen text lives only in `messages/si.json`.** Message keys are typed (`src/types/next-intl.d.ts`), and `npm run check:strings` fails on text written in components.
-- **The Sinhala font is committed** in `src/app/fonts/`, copied from `@fontsource-variable/noto-sans-sinhala`. Nothing loads from Google at runtime.
+- **Screen text lives only in the message files:** `messages/si.json` (the source; message keys are typed from it in `src/types/next-intl.d.ts`), `ta.json` and `en.json`. `npm run check:strings` fails on text written in components, and `src/i18n/messages.test.ts` fails when the three files' keys or placeholders differ, a message doesn't format, or a file holds another language's letters. A new message goes into all three files.
+- **The fonts are committed** in `src/app/fonts/`, copied from `@fontsource-variable/noto-sans-sinhala` and `noto-sans-tamil`. Nothing loads from Google at runtime.
 - **The `overrides` in `package.json`** force patched `deepmerge-ts` and `mysql2` inside the Prisma CLI, and `uuid` inside ExcelJS. Remove them once Prisma and ExcelJS ship fixed versions.
 - **Pinned versions.** `.npmrc` saves exact versions. Upgrade one dependency at a time, on purpose.
 
@@ -143,7 +143,7 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
 - **Files have a kind**, `DOCUMENT` or `PHOTO`. Every document query (the case's list, the 10-document limit, removing one) filters on `DOCUMENT`, and a photo also carries its `stage_update_id`.
   - `uploadPhoto` (`src/server/files/uploads.ts`) runs `processPhoto` (`src/server/files/images.ts`, sharp) before anything is stored: upright, at most 1,600 px, JPEG 80, no metadata, plus a 320 px thumbnail kept under `thumb_name` and served by `/files/[id]/thumb`.
   - Thumbnails are plain `<img>` tags, because the files are protected and can't go through Next's image optimizer.
-- **The history** (`caseHistory` in `src/server/history/queries.ts`) reads the audit log; `src/components/progress/case-history.tsx` turns each action into a Sinhala sentence. A new audit action needs a sentence there and under `history.actions` in `messages/si.json`, or it shows as "a change was made".
+- **The history** (`caseHistory` in `src/server/history/queries.ts`) reads the audit log; `src/components/progress/case-history.tsx` turns each action into a sentence in the screen's language. A new audit action needs a sentence there and under `history.actions` in all three message files, or it shows as "a change was made".
 - **Case pages** use `CaseColumns` (`src/components/cases/case-view.tsx`): money, decisions and history on the left; stages and details on the right; one column below 1,280 px. The pop-ups for installments, stages, stopping, reopening and undoing are in `src/components/progress/`; `ReasonAction` is the shared "give a reason" pop-up. `Modal` takes a `size` and sets `text-left`, because some pop-ups live in right-aligned table cells.
 - **Test helpers:** `releasedCase` (`tests/e2e/case-helpers.ts`) gives a case released today. E2E tests read the stage names from the form, because the admin may rename or reorder stages. The development database's new-house stages have been reordered by hand. `cleanup.ts` also deletes test cases' stage updates and photo thumbnails.
 
@@ -175,11 +175,28 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
   - ExcelJS is a `serverExternalPackages` entry in `next.config.ts`: Node loads it from `node_modules`. Compiling it in the dev server held up the other pages, and the end-to-end tests timed out.
   - `src/server/exports/workbook.ts` holds the shared parts: `addSheet` (a bold header row that stays in view, filter buttons, days as real dates shown `yyyy.mm.dd`, amounts as `#,##0`, text kept as text) and `xlsxResponse`.
   - **The progress-report columns (6 Oct 2026).** The file has Head Office's monthly progress report's two groups: four installment columns right after "ප්‍රා.ලේ. කාර්යාලයට නිදහස් කළ මුදල" (in place of "ගෙවූ වාරික ගණන", removed at the user's request), and four building columns right after "ප්‍රා.ලේ. කාර්යාලය සතුව ඉතිරි" (in place of "ළඟා වූ මට්ටම", also removed at the user's request; the DS home's own stage name in `src/server/cases/queries.ts` is separate and stays). The other case-list columns keep their order and headers. Each group cell is a short dated note as the old sheet had ("<date> දින ගෙවා ඇත", "<date> දින ගෙවීමට අපේක්ෂිතයි", "<date> දින නිම කර ඇත"; `export.progress` in `si.json`), so they are text, not Excel dates. A column with a `group` makes `addSheet` write two header rows: the group merged across its columns, every other header merged down both rows, and the filter buttons on row 2. So data starts on row 3. `progressStages` picks each building column's stage: the last column is always the kind's last active stage, and the others take its first stages. The headers are the report's own words (`export.progress` in `si.json`), not the stage names, which the admin may change.
-  - Server code gets its labels from `getTranslations("cases")`. Tests make the same translator with `createTranslator({ locale: "si", messages, namespace: "cases" })`.
+  - Server code gets its labels from `getTranslations("cases")` and the language from `getLocale()`. Tests make the same translator with `createTranslator({ locale: "si", messages, namespace: "cases" })`.
   - **File names avoid zero-width joiners.** Chrome saves one in a download's name as `_` (ප්‍ර becomes ප්_ර), so the file is "දිවියට සවියක් ලැයිස්තුව <date>.xlsx". A unit test checks it.
-  - The button says එක්සෙල්, not "Excel", because the smoke test allows no Latin letters on `/ds` and `/ho` (AC-20).
+  - The button says එක්සෙල් (Tamil எக்செல்), not "Excel", because the smoke test allows no Latin letters on the Sinhala and Tamil `/ds` and `/ho` (AC-20).
   - With 5,000 cases the whole export takes about 3 seconds (PRF-4 allows 60). Its database test adds 5,000 load-test cases too.
 - **There is no export in the old sheet's layout.** Task 7.4 built one (EXP-2), and it was removed on 2026-10-04 because the Ministry no longer needs it. Don't add it back unless asked.
+
+### Languages (7 Oct 2026)
+
+- **Three screen languages (UI-9):** Sinhala (the default), Tamil and English, the answer to PRD question 8.
+  - The language is a cookie, `lang` (`src/i18n/locales.ts`), read by `src/i18n/request.ts`. Addresses carry no language. The picker (`src/components/language-picker.tsx`) is in the header and on the sign-in and password pages; it calls `chooseLanguage` (`src/i18n/actions.ts`), which sets the cookie and refreshes the layouts.
+  - Server code gets the language with `getLocale()` from `next-intl/server`, client code with `useLocale()`.
+  - Money: `formatRupees(amount, locale)` writes රු., ரூ. or Rs.
+- **Places and stages have three names:** `name_si`, `name_ta` and `name_en` on province, district, DS office and stage (migration `20261007090000_names_in_three_languages`, which filled the Tamil and English names from `data/places.json` and `data/stages.json`).
+  - Queries that show a name take the `locale` as an argument and pick it with `localName(row, locale)`, selecting all three with `NAMES` (`src/lib/names.ts`). Database tests pass `"si"`.
+  - The admin's lists screen shows the screen's name with the other two below, and its forms ask for all three. The Tamil name must be in Tamil letters (`src/lib/validation/lists.ts`).
+  - The Tamil place names were written for development; task 9.7 checks them with the Ministry.
+- **What officers type stays as typed:** names, addresses, notes and reasons are never translated.
+- **The case history** reads districts from the release's letter, and stage names from `stageNames` (all three names, written since 7 Oct 2026). An older stage record holds only Sinhala names: the Sinhala screen keeps them, the others read the stages' current names (`src/server/history/queries.ts`).
+- **Exports** take the screen's translator and `locale`, so the headers, statuses, place names and file name come in that language.
+- **The root error page** (`global-error.tsx`) shows Sinhala at once and loads the chosen language's messages from the cookie.
+- **End-to-end tests:** `screenText` leaves out text marked with another `lang`, such as the picker's names. `chooseLanguage(page, "தமிழ்")` in `tests/e2e/helpers.ts` switches a page's language; `tests/e2e/languages.spec.ts` covers AC-27.
+- **Lengths:** Tamil labels run longer than Sinhala ones. The header keeps the name, office and buttons on one line and lets the test banner shorten; the dashboard's table scrolls rather than being cut off.
 
 ### Sheet import (removed)
 
@@ -204,7 +221,7 @@ The order is: a clickable prototype is reviewed with the Ministry to settle the 
 These may not be in `docs/PRD.md` yet. Once the PRD is approved, it overrides this list.
 
 - **Platform:** a web app used on office PCs and on phones. Since 28 Sep, screens are designed for desktop first, for DS officers as well as Head Office.
-- **Language and ease of use (28 Sep):** the screens are in Sinhala, because officers are non-technical and all their other systems are in Sinhala. Keep screens simple: one main task per screen, plain words, and the sheet's own terms (for example නිවාසගත, අවදානම් දරුවන්, පළමු වාරිකය).
+- **Language and ease of use (28 Sep, widened 7 Oct):** the screens are in Sinhala, Tamil and English; each officer picks one, and Sinhala is the default. Officers are non-technical, and most of their other systems are in Sinhala. Keep screens simple: one main task per screen, plain words, and the sheet's own terms (for example නිවාසගත, අවදානම් දරුවන්, පළමු වාරිකය).
 - **Roles (v1 only):**
   - AG (Divisional Secretariat) officer: sees their own office only. This is the DS's Child Rights Promotion Officer (ළමා හිමිකම් ප්‍රවර්ධන නිලධාරී). Each DS has one, and they run the system for their DS (29 Sep), so a DS has one active officer account.
   - Head Office officer: sees everything and can add and edit beneficiaries.

@@ -66,14 +66,14 @@ export async function addStageAction(kind: Kind, previous: ListFormState, form: 
   const admin = await requireRole("ADMIN");
   const parsed = parseForm(stageSchema, read(form));
   if (!parsed.ok) return { errors: parsed.errors, error: null, saves: previous.saves };
-  return run(previous, () => addStage(db, admin.userId, kind, parsed.value.nameSi));
+  return run(previous, () => addStage(db, admin.userId, kind, parsed.value));
 }
 
 export async function renameStageAction(id: number, previous: ListFormState, form: FormData): Promise<ListFormState> {
   const admin = await requireRole("ADMIN");
   const parsed = parseForm(stageSchema, read(form));
   if (!parsed.ok) return { errors: parsed.errors, error: null, saves: previous.saves };
-  return run(previous, () => renameStage(db, admin.userId, id, parsed.value.nameSi));
+  return run(previous, () => renameStage(db, admin.userId, id, parsed.value));
 }
 
 export async function moveStageAction(id: number, direction: "up" | "down"): Promise<void> {

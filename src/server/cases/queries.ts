@@ -1,6 +1,8 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { CaseStatus, Category, InstallmentStatus, Kind } from "@/generated/prisma/enums";
+import type { Locale } from "@/i18n/locales";
 import { addDays, colomboDay, colomboStartOf, dateToDay, dayToDate, daysBetween } from "@/lib/dates";
+import { localName, NAMES } from "@/lib/names";
 import { nicKey, normaliseNic } from "@/lib/nic";
 import { latestDay } from "@/lib/validation/release";
 import { canSeeOffice, officeFilter, type Viewer } from "../permissions";
@@ -80,8 +82,16 @@ export type InstallmentDetails = {
   note: string | null;
 };
 
-/** One case, if the viewer may see it (PRM-1); otherwise null, which the page shows as "not found". */
-export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Promise<CaseDetails | null> {
+/**
+ * One case, if the viewer may see it (PRM-1); otherwise null, which the page shows as "not found".
+ * Place names are in the screen's language (UI-9).
+ */
+export async function getCase(
+  db: PrismaClient,
+  viewer: Viewer,
+  id: string,
+  locale: Locale,
+): Promise<CaseDetails | null> {
   const found = await db.case.findUnique({
     where: { id },
     select: {
@@ -105,7 +115,7 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
       completedAt: true,
       statusBeforeStop: true,
       updatedAt: true,
-      dsOffice: { select: { nameSi: true, active: true, district: { select: { id: true, nameSi: true } } } },
+      dsOffice: { select: { ...NAMES, active: true, district: { select: { id: true, ...NAMES } } } },
       files: {
         where: { kind: "DOCUMENT", removedAt: null },
         orderBy: { uploadedAt: "asc" },
@@ -130,7 +140,7 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
               letterDate: true,
               validUntil: true,
               note: true,
-              district: { select: { nameSi: true } },
+              district: { select: NAMES },
               releases: { select: { case: { select: { verifiedAt: true } } } },
               files: { where: { kind: "LETTER", removedAt: null }, take: 1, select: { id: true } },
             },
@@ -157,10 +167,10 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
   const stopped = found.status === "STOPPED" && latest?.type === "STOP";
   return {
     ...fields,
-    officeName: dsOffice.nameSi,
+    officeName: localName(dsOffice, locale),
     officeActive: dsOffice.active,
     districtId: dsOffice.district.id,
-    districtName: dsOffice.district.nameSi,
+    districtName: localName(dsOffice.district, locale),
     returnReason: found.status === "RETURNED" && latest?.type === "SEND_BACK" ? latest.reason : null,
     rejectReason: found.status === "REJECTED" && latest?.type === "REJECT" ? latest.reason : null,
     stop:
@@ -183,7 +193,7 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
         letterDate: dateToDay(release.letter.letterDate),
         validUntil: dateToDay(release.letter.validUntil),
         note: release.letter.note,
-        districtName: release.letter.district.nameSi,
+        districtName: localName(release.letter.district, locale),
         cases: release.letter.releases.length,
         latestVerification: latestDay(
           release.letter.releases.map((r) => r.case.verifiedAt && colomboDay(r.case.verifiedAt)),
@@ -276,6 +286,7 @@ export async function listCases(
   db: PrismaClient,
   viewer: Viewer,
   filter: CaseFilter,
+  locale: Locale,
 ): Promise<{ rows: CaseRow[]; total: number }> {
   const where = caseWhere(viewer, filter);
   if (!where) return { rows: [], total: 0 };
@@ -297,14 +308,14 @@ export async function listCases(
         childName: true,
         submittedAt: true,
         updatedAt: true,
-        dsOffice: { select: { nameSi: true, district: { select: { nameSi: true } } } },
+        dsOffice: { select: { ...NAMES, district: { select: NAMES } } },
         release: { select: { id: true } },
         _count: { select: { installments: { where: { status: "RELEASED" } } } },
         stageUpdates: {
           where: { stageId: { not: null } },
           orderBy: { stage: { sortOrder: "desc" } },
           take: 1,
-          select: { stage: { select: { nameSi: true } } },
+          select: { stage: { select: NAMES } },
         },
       },
     }),
@@ -313,10 +324,10 @@ export async function listCases(
   return {
     rows: found.map(({ dsOffice, release, _count, stageUpdates, ...row }) => ({
       ...row,
-      officeName: dsOffice.nameSi,
-      districtName: dsOffice.district.nameSi,
+      officeName: localName(dsOffice, locale),
+      districtName: localName(dsOffice.district, locale),
       paid: release ? _count.installments : null,
-      stageName: stageUpdates[0]?.stage?.nameSi ?? null,
+      stageName: stageUpdates[0]?.stage ? localName(stageUpdates[0].stage, locale) : null,
     })),
     total,
   };
@@ -423,10 +434,13 @@ export async function officeMoney(db: PrismaClient, viewer: Viewer): Promise<Off
 export async function officeSummary(
   db: PrismaClient,
   dsOfficeId: number,
+  locale: Locale,
 ): Promise<{ name: string; districtName: string; active: boolean } | null> {
   const office = await db.dsOffice.findUnique({
     where: { id: dsOfficeId },
-    select: { nameSi: true, active: true, district: { select: { nameSi: true } } },
+    select: { ...NAMES, active: true, district: { select: NAMES } },
   });
-  return office ? { name: office.nameSi, districtName: office.district.nameSi, active: office.active } : null;
+  return office
+    ? { name: localName(office, locale), districtName: localName(office.district, locale), active: office.active }
+    : null;
 }

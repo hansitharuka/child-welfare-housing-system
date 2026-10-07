@@ -1,11 +1,14 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { Kind } from "@/generated/prisma/enums";
+import type { Locale } from "@/i18n/locales";
 import { dateToDay } from "@/lib/dates";
+import { localName, NAMES, type Names } from "@/lib/names";
 
 export type Photo = { id: string; name: string };
 
 export type StageRow = {
   id: number;
+  /** In the screen's language (UI-9). */
   name: string;
   /** "YYYY-MM-DD", once reached. */
   reachedOn: string | null;
@@ -26,17 +29,21 @@ export type StageProgress = {
   /** The highest stage reached, with its day; null before the first. */
   current: { id: number; reachedOn: string } | null;
   /** What a new update may choose (STG-1): the active stages later than the current one. */
-  choices: { id: number; name: string }[];
+  choices: { id: number; name: string; names: Names }[];
 };
 
-type Definition = { id: number; nameSi: string; sortOrder: number; active: boolean };
+type Definition = Names & { id: number; sortOrder: number; active: boolean };
 type Reached = { id: string; stageId: number | null; visitedOn: string; note: string | null; photos: Photo[] };
 
 /**
  * Pure: the case's stages from its kind's list and its stage updates. A case's current stage is the
  * highest stage it has reached (SPEC section 5); only active stages after it can be chosen next.
  */
-export function stageProgress(definitions: readonly Definition[], updates: readonly Reached[]): StageProgress {
+export function stageProgress(
+  definitions: readonly Definition[],
+  updates: readonly Reached[],
+  locale: Locale,
+): StageProgress {
   const ordered = [...definitions].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
   const byStage = new Map(updates.flatMap((u) => (u.stageId === null ? [] : [[u.stageId, u] as const])));
   const stages = ordered
@@ -45,7 +52,7 @@ export function stageProgress(definitions: readonly Definition[], updates: reado
       const reached = byStage.get(d.id);
       return {
         id: d.id,
-        name: d.nameSi,
+        name: localName(d, locale),
         reachedOn: reached?.visitedOn ?? null,
         note: reached?.note ?? null,
         photos: reached?.photos ?? [],
@@ -62,17 +69,25 @@ export function stageProgress(definitions: readonly Definition[], updates: reado
       .map((u) => ({ id: u.id, visitedOn: u.visitedOn, note: u.note, photos: u.photos }))
       .reverse(),
     current: currentDef && currentUpdate ? { id: currentDef.id, reachedOn: currentUpdate.visitedOn } : null,
-    choices: ordered.slice(currentIndex + 1).flatMap((d) => (d.active ? [{ id: d.id, name: d.nameSi }] : [])),
+    choices: ordered.slice(currentIndex + 1).flatMap(({ id, nameSi, nameTa, nameEn, active }) => {
+      const names = { nameSi, nameTa, nameEn };
+      return active ? [{ id, name: localName(names, locale), names }] : [];
+    }),
   };
 }
 
 /** A case's building progress. The caller has already checked that the viewer may see the case (PRM-1). */
-export async function getStageProgress(db: PrismaClient, caseId: string, kind: Kind | null): Promise<StageProgress> {
+export async function getStageProgress(
+  db: PrismaClient,
+  caseId: string,
+  kind: Kind | null,
+  locale: Locale,
+): Promise<StageProgress> {
   const [definitions, updates] = await Promise.all([
     kind
       ? db.stageDefinition.findMany({
           where: { kind },
-          select: { id: true, nameSi: true, sortOrder: true, active: true },
+          select: { id: true, ...NAMES, sortOrder: true, active: true },
         })
       : Promise.resolve([]),
     db.stageUpdate.findMany({
@@ -98,5 +113,6 @@ export async function getStageProgress(db: PrismaClient, caseId: string, kind: K
       visitedOn: dateToDay(u.visitedOn),
       photos: u.photos.map((p) => ({ id: p.id, name: p.originalName })),
     })),
+    locale,
   );
 }

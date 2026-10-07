@@ -1,4 +1,4 @@
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { requireRole } from "@/server/context";
 import { db } from "@/server/db";
@@ -9,15 +9,16 @@ import { AccountHistory } from "./account-history";
 
 export default async function EditAccountPage({ params }: { params: Promise<{ id: string }> }) {
   await requireRole("ADMIN");
+  const locale = await getLocale();
   const { id } = await params;
   const account = await getAccount(db, id);
   if (!account) notFound();
 
   const [t, districts, history, names] = await Promise.all([
     getTranslations("users.form"),
-    officeChoices(db, account.dsOfficeId),
+    officeChoices(db, locale, account.dsOfficeId),
     accountHistory(db, id),
-    officeNames(db),
+    officeNames(db, locale),
   ]);
 
   return (

@@ -1,5 +1,7 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { CaseStatus } from "@/generated/prisma/enums";
+import type { Locale } from "@/i18n/locales";
+import { localName, NAMES } from "@/lib/names";
 import { nicKey } from "@/lib/nic";
 import { caseScope, type Viewer } from "../permissions";
 
@@ -32,6 +34,7 @@ export async function findNicMatches(
   db: PrismaClient,
   viewer: Viewer,
   input: { nic: string; dsOfficeId: number | null; exceptCaseId: string | null },
+  locale: Locale,
 ): Promise<NicMatch[]> {
   const scope = caseScope(viewer);
   const key = nicKey(input.nic);
@@ -42,14 +45,15 @@ export async function findNicMatches(
     where: matchWhere(key, ownOffice, input.exceptCaseId),
     orderBy: { createdAt: "asc" },
     take: 20,
-    select: { caseNumber: true, name: true, dsOfficeId: true, dsOffice: { select: { nameSi: true } } },
+    select: { caseNumber: true, name: true, dsOfficeId: true, dsOffice: { select: NAMES } },
   });
 
   return rows.map((row) => {
-    if (scope.kind === "all") return { caseNumber: row.caseNumber, name: row.name, officeName: row.dsOffice.nameSi };
+    const officeName = localName(row.dsOffice, locale);
+    if (scope.kind === "all") return { caseNumber: row.caseNumber, name: row.name, officeName };
     return row.dsOfficeId === scope.dsOfficeId
       ? { caseNumber: row.caseNumber, name: row.name, officeName: null }
-      : { caseNumber: row.caseNumber, name: null, officeName: row.dsOffice.nameSi };
+      : { caseNumber: row.caseNumber, name: null, officeName };
   });
 }
 
@@ -68,6 +72,7 @@ export async function duplicatesInFull(
   db: PrismaClient,
   viewer: Viewer,
   input: { caseId: string; nic: string | null; dsOfficeId: number },
+  locale: Locale,
 ): Promise<DuplicateCase[]> {
   const key = input.nic ? nicKey(input.nic) : null;
   if (caseScope(viewer).kind !== "all" || !key) return [];
@@ -81,10 +86,10 @@ export async function duplicatesInFull(
       status: true,
       name: true,
       childName: true,
-      dsOffice: { select: { nameSi: true } },
+      dsOffice: { select: NAMES },
     },
   });
-  return rows.map(({ dsOffice, ...row }) => ({ ...row, officeName: dsOffice.nameSi }));
+  return rows.map(({ dsOffice, ...row }) => ({ ...row, officeName: localName(dsOffice, locale) }));
 }
 
 /**

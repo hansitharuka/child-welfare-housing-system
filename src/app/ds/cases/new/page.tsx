@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { notFound } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { formValues, PageHeader } from "@/components/cases/page-header";
 import { CaseForm } from "@/components/forms/case-form";
 import { officeSummary } from "@/server/cases/queries";
@@ -11,7 +11,8 @@ import { checkNicAction, removeDocumentAction, saveCaseAction, uploadDocumentAct
 /** CASE-1: a new case, in the officer's own office (CASE-3). */
 export default async function NewCasePage() {
   const viewer = await requireRole("DS_OFFICER");
-  const office = viewer.dsOfficeId ? await officeSummary(db, viewer.dsOfficeId) : null;
+  const locale = await getLocale();
+  const office = viewer.dsOfficeId ? await officeSummary(db, viewer.dsOfficeId, locale) : null;
   if (!office) notFound();
   const t = await getTranslations("cases");
 

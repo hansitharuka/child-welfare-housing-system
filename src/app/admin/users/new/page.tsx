@@ -1,4 +1,4 @@
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { requireRole } from "@/server/context";
 import { db } from "@/server/db";
 import { officeChoices } from "@/server/users/queries";
@@ -7,7 +7,8 @@ import { createAccountAction } from "../actions";
 
 export default async function NewAccountPage() {
   await requireRole("ADMIN");
-  const [t, districts] = await Promise.all([getTranslations("users.form"), officeChoices(db)]);
+  const locale = await getLocale();
+  const [t, districts] = await Promise.all([getTranslations("users.form"), officeChoices(db, locale)]);
 
   return (
     <div className="flex flex-col gap-6">

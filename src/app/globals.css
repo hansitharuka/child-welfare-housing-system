@@ -6,7 +6,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sinhala), var(--font-latin), "Nirmala UI", system-ui, sans-serif;
+  --font-sans: var(--font-sinhala), var(--font-tamil), var(--font-latin), "Nirmala UI", system-ui, sans-serif;
   --font-heading: var(--font-sans);
   --color-ring: var(--ring);
   --color-input: var(--input);

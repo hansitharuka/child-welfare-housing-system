@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { CaseColumns, CaseDetailsSection, CaseNotes, caseSubtitle } from "@/components/cases/case-view";
 import { MoneySection } from "@/components/cases/money-section";
 import { caseName, PageHeader } from "@/components/cases/page-header";
@@ -40,15 +40,16 @@ export default async function DsCasePage({
   searchParams: Promise<{ notice?: string | string[] }>;
 }) {
   const viewer = await requireRole("DS_OFFICER");
+  const locale = await getLocale();
   const { id } = await params;
-  const details = await getCase(db, viewer, id);
+  const details = await getCase(db, viewer, id, locale);
   if (!details) notFound();
 
   const [t, tp, history, progress, subtitle] = await Promise.all([
     getTranslations("cases"),
     getTranslations("progress"),
-    caseHistory(db, viewer, details.id),
-    details.release ? getStageProgress(db, details.id, details.kind) : Promise.resolve(null),
+    caseHistory(db, viewer, details.id, locale),
+    details.release ? getStageProgress(db, details.id, details.kind, locale) : Promise.resolve(null),
     caseSubtitle(details, "ds"),
   ]);
   const notice = (await searchParams).notice;

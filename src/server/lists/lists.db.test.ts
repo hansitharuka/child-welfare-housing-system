@@ -20,21 +20,27 @@ const audits = (entityType: string) => db.auditLog.findMany({ where: { entityTyp
 describe("DS offices (LST-2, LST-3)", () => {
   it("adds an office to a district, with an audit record", async () => {
     expect(
-      await addOffice(db, ADMIN, colombo, { nameSi: "පරීක්ෂණ කාර්යාලය", nameEn: "Test Office", code: "KOL" }),
+      await addOffice(db, ADMIN, colombo, {
+        nameSi: "පරීක්ෂණ කාර්යාලය",
+        nameTa: "சோதனை அலுவலகம்",
+        nameEn: "Test Office",
+        code: "KOL",
+      }),
     ).toEqual({
       ok: true,
     });
-    const listed = await officesOfDistrict(db, colombo);
+    const listed = await officesOfDistrict(db, colombo, "si");
     expect(listed?.offices.map((o) => o.code)).toContain("KOL");
     expect((await audits("ds_office")).at(-1)?.action).toBe("office_added");
   });
 
   it("refuses a code used anywhere, or a name used in the same district", async () => {
-    expect(await addOffice(db, ADMIN, colombo, { nameSi: "නව කාර්යාලය", nameEn: "New Office", code: "HMG" })).toEqual({
+    const names = { nameTa: "புதிய அலுவலகம்", nameEn: "New Office" };
+    expect(await addOffice(db, ADMIN, colombo, { nameSi: "නව කාර්යාලය", ...names, code: "HMG" })).toEqual({
       ok: false,
       error: "codeTaken",
     });
-    expect(await addOffice(db, ADMIN, colombo, { nameSi: "හෝමාගම", nameEn: "Homagama Two", code: "HMX" })).toEqual({
+    expect(await addOffice(db, ADMIN, colombo, { nameSi: "හෝමාගම", ...names, code: "HMX" })).toEqual({
       ok: false,
       error: "nameTaken",
     });
@@ -42,20 +48,20 @@ describe("DS offices (LST-2, LST-3)", () => {
 
   it("renames and deactivates an office without deleting it", async () => {
     const kol = await db.dsOffice.findUniqueOrThrow({ where: { code: "KOL" } });
-    expect(await renameOffice(db, ADMIN, kol.id, { nameSi: "පරීක්ෂණ කාර්යාලය නව", nameEn: "Test Office New" })).toEqual(
-      {
-        ok: true,
-      },
-    );
+    const renamed = { nameSi: "පරීක්ෂණ කාර්යාලය නව", nameTa: "புதிய சோதனை அலுவலகம்", nameEn: "Test Office New" };
+    expect(await renameOffice(db, ADMIN, kol.id, renamed)).toEqual({ ok: true });
     expect(await setOfficeActive(db, ADMIN, kol.id, false)).toEqual({ ok: true });
 
     const after = await db.dsOffice.findUniqueOrThrow({ where: { code: "KOL" } });
-    expect(after).toMatchObject({ nameSi: "පරීක්ෂණ කාර්යාලය නව", code: "KOL", active: false });
+    expect(after).toMatchObject({ ...renamed, code: "KOL", active: false });
+    const audit = (await audits("ds_office")).find((a) => a.action === "office_renamed");
+    expect(audit?.before).toEqual({ nameSi: "පරීක්ෂණ කාර්යාලය", nameTa: "சோதனை அலுவலகம்", nameEn: "Test Office" });
+    expect(audit?.after).toEqual(renamed);
   });
 
   it("names each office's Child Rights Promotion Officer (ADM-3)", async () => {
     const office = await db.dsOffice.findUniqueOrThrow({ where: { id: await freeOfficeId(db) } });
-    const before = await officesOfDistrict(db, office.districtId);
+    const before = await officesOfDistrict(db, office.districtId, "si");
     expect(before?.offices.find((o) => o.id === office.id)?.officer).toBeNull();
 
     await db.user.create({
@@ -68,16 +74,41 @@ describe("DS offices (LST-2, LST-3)", () => {
         dsOfficeId: office.id,
       },
     });
-    const after = await officesOfDistrict(db, office.districtId);
+    const after = await officesOfDistrict(db, office.districtId, "si");
     expect(after?.offices.find((o) => o.id === office.id)?.officer).toBe("කේ. නිලධාරී");
+  });
+
+  it("names districts and provinces in the screen's language (UI-9)", async () => {
+    const [si, ta, en] = await Promise.all([
+      officesOfDistrict(db, colombo, "si"),
+      officesOfDistrict(db, colombo, "ta"),
+      officesOfDistrict(db, colombo, "en"),
+    ]);
+    expect([si?.district.name, ta?.district.name, en?.district.name]).toEqual(["කොළඹ", "கொழும்பு", "Colombo"]);
+    expect([si?.district.province, ta?.district.province, en?.district.province]).toEqual([
+      "බස්නාහිර",
+      "மேல்",
+      "Western",
+    ]);
+    // The admin edits all three names of an office, whatever the screen's language.
+    expect(ta?.offices.find((o) => o.code === "HMG")).toMatchObject({
+      nameSi: "හෝමාගම",
+      nameTa: "ஹோமாகம",
+      nameEn: "Homagama",
+    });
   });
 });
 
 describe("building stages (LST-4)", () => {
   it("adds renovation stages in order and moves one up", async () => {
-    expect(await addStage(db, ADMIN, "RENOVATION", "වහලය අලුත්වැඩියාව")).toEqual({ ok: true });
-    expect(await addStage(db, ADMIN, "RENOVATION", "බිත්ති අලුත්වැඩියාව")).toEqual({ ok: true });
-    expect(await addStage(db, ADMIN, "RENOVATION", "වහලය අලුත්වැඩියාව")).toEqual({ ok: false, error: "nameTaken" });
+    const roof = { nameSi: "වහලය අලුත්වැඩියාව", nameTa: "கூரை திருத்தம்", nameEn: "Roof repair" };
+    const walls = { nameSi: "බිත්ති අලුත්වැඩියාව", nameTa: "சுவர் திருத்தம்", nameEn: "Wall repair" };
+    expect(await addStage(db, ADMIN, "RENOVATION", roof)).toEqual({ ok: true });
+    expect(await addStage(db, ADMIN, "RENOVATION", walls)).toEqual({ ok: true });
+    expect(await addStage(db, ADMIN, "RENOVATION", { ...roof, nameEn: "Another" })).toEqual({
+      ok: false,
+      error: "nameTaken",
+    });
 
     const second = (await stagesByKind(db)).RENOVATION[1];
     expect(await moveStage(db, ADMIN, second.id, "up")).toEqual({ ok: true });
@@ -95,11 +126,16 @@ describe("building stages (LST-4)", () => {
 
   it("renames and deactivates a stage, keeping the new-house list intact", async () => {
     const [renovation] = (await stagesByKind(db)).RENOVATION;
-    expect(await renameStage(db, ADMIN, renovation.id, "බිත්ති සහ ජනේල")).toEqual({ ok: true });
+    const renamed = { nameSi: "බිත්ති සහ ජනේල", nameTa: "சுவர்கள் மற்றும் ஜன்னல்கள்", nameEn: "Walls and windows" };
+    expect(await renameStage(db, ADMIN, renovation.id, renamed)).toEqual({ ok: true });
+    // Only the Tamil name changes: still a rename.
+    expect(await renameStage(db, ADMIN, renovation.id, { ...renamed, nameTa: "சுவர்களும் ஜன்னல்களும்" })).toEqual({
+      ok: true,
+    });
     expect(await setStageActive(db, ADMIN, renovation.id, false)).toEqual({ ok: true });
 
     const stages = await stagesByKind(db);
-    expect(stages.RENOVATION[0]).toMatchObject({ nameSi: "බිත්ති සහ ජනේල", active: false });
+    expect(stages.RENOVATION[0]).toMatchObject({ ...renamed, nameTa: "சுவர்களும் ஜன்னல்களும்", active: false });
     expect(stages.NEW_HOUSE).toHaveLength(4);
     expect((await audits("stage_definition")).map((a) => a.action)).toEqual(
       expect.arrayContaining(["stage_added", "stage_moved", "stage_renamed", "stage_deactivated"]),

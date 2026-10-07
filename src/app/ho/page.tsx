@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { caseName } from "@/components/cases/page-header";
 import { formatDate } from "@/lib/dates";
 import { formatNumber } from "@/lib/money";
@@ -28,10 +28,11 @@ export default async function HoDashboardPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const viewer = await requireRole("HO_OFFICER");
+  const locale = await getLocale();
   const params = await searchParams;
   const read = (key: string) => (typeof params[key] === "string" ? params[key] : "");
 
-  const districts = await districtsWithOffices(db);
+  const districts = await districtsWithOffices(db, locale);
   const district = districts.find((d) => String(d.id) === read("districtId"));
   const category = oneOf(CATEGORIES, read("category"));
   const kind = oneOf(KINDS, read("kind"));
@@ -39,7 +40,7 @@ export default async function HoDashboardPage({
   const [t, tc, data, waiting] = await Promise.all([
     getTranslations("dashboard"),
     getTranslations("cases"),
-    dashboard(db, viewer, { districtId: district?.id, category, kind }),
+    dashboard(db, viewer, { districtId: district?.id, category, kind }, locale),
     queueCounts(db, viewer),
   ]);
   const rows = tableRows(districts, data.byOffice, district?.id);
@@ -156,66 +157,69 @@ export default async function HoDashboardPage({
                 </Link>
               )}
             </div>
-            <table aria-labelledby="table-title" className="w-full border-collapse text-left">
-              <thead className="bg-muted/60 text-[15px] text-muted-foreground">
-                <tr>
-                  <th scope="col" className="px-5 py-2.5 font-semibold">
-                    {district ? t("table.office") : t("table.district")}
-                  </th>
-                  {COLUMNS.map((column) => (
-                    <th key={column} scope="col" className="px-3 py-2.5 text-right font-semibold last:pr-5">
-                      {t(`table.${column}`)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 && (
-                  <tr className="border-t">
-                    <td colSpan={COLUMNS.length + 1} className="px-5 py-6 text-center text-muted-foreground">
-                      {t("table.noOffices")}
-                    </td>
-                  </tr>
-                )}
-                {rows.map((row) => (
-                  <tr key={row.id} className="border-t hover:bg-accent/60">
-                    <th scope="row" className="px-5 py-2.5 font-semibold">
-                      {district ? (
-                        row.active ? (
-                          row.name
-                        ) : (
-                          tc("list.inactive", { office: row.name })
-                        )
-                      ) : (
-                        <Link href={href(row.id)} className="text-primary underline underline-offset-3">
-                          {row.name}
-                        </Link>
-                      )}
+            {/* Tamil and English headers are longer than Sinhala ones: the table scrolls rather than being cut off (UI-9). */}
+            <div className="overflow-x-auto">
+              <table aria-labelledby="table-title" className="w-full border-collapse text-left">
+                <thead className="bg-muted/60 text-[15px] text-muted-foreground">
+                  <tr>
+                    <th scope="col" className="px-5 py-2.5 font-semibold">
+                      {district ? t("table.office") : t("table.district")}
                     </th>
                     {COLUMNS.map((column) => (
-                      <td
-                        key={column}
-                        className={`px-3 py-2.5 text-right tabular-nums last:pr-5 ${row[column] === 0 ? "text-muted-foreground" : ""}`}
-                      >
-                        {formatNumber(row[column])}
+                      <th key={column} scope="col" className="px-3 py-2.5 text-right font-semibold last:pr-5">
+                        {t(`table.${column}`)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length === 0 && (
+                    <tr className="border-t">
+                      <td colSpan={COLUMNS.length + 1} className="px-5 py-6 text-center text-muted-foreground">
+                        {t("table.noOffices")}
+                      </td>
+                    </tr>
+                  )}
+                  {rows.map((row) => (
+                    <tr key={row.id} className="border-t hover:bg-accent/60">
+                      <th scope="row" className="px-5 py-2.5 font-semibold">
+                        {district ? (
+                          row.active ? (
+                            row.name
+                          ) : (
+                            tc("list.inactive", { office: row.name })
+                          )
+                        ) : (
+                          <Link href={href(row.id)} className="text-primary underline underline-offset-3">
+                            {row.name}
+                          </Link>
+                        )}
+                      </th>
+                      {COLUMNS.map((column) => (
+                        <td
+                          key={column}
+                          className={`px-3 py-2.5 text-right tabular-nums last:pr-5 ${row[column] === 0 ? "text-muted-foreground" : ""}`}
+                        >
+                          {formatNumber(row[column])}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="border-t bg-muted/60 font-bold">
+                  <tr>
+                    <th scope="row" className="px-5 py-3">
+                      {t("table.total")}
+                    </th>
+                    {COLUMNS.map((column) => (
+                      <td key={column} className="px-3 py-3 text-right tabular-nums last:pr-5">
+                        {formatNumber(data.totals[column])}
                       </td>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-              <tfoot className="border-t bg-muted/60 font-bold">
-                <tr>
-                  <th scope="row" className="px-5 py-3">
-                    {t("table.total")}
-                  </th>
-                  {COLUMNS.map((column) => (
-                    <td key={column} className="px-3 py-3 text-right tabular-nums last:pr-5">
-                      {formatNumber(data.totals[column])}
-                    </td>
-                  ))}
-                </tr>
-              </tfoot>
-            </table>
+                </tfoot>
+              </table>
+            </div>
           </section>
         </div>
 

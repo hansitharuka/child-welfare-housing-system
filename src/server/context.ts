@@ -1,8 +1,10 @@
 import "server-only";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import { getLocale } from "next-intl/server";
 import { cache } from "react";
 import { auth } from "@/lib/auth";
+import { localName, NAMES } from "@/lib/names";
 import { isRole, type Role } from "./auth/roles";
 import { sessionVerdict, shouldRecordActivity } from "./auth/session-rules";
 import { db } from "./db";
@@ -15,6 +17,7 @@ export type Context = {
   name: string;
   role: Role;
   dsOfficeId: number | null;
+  /** In the screen's language (UI-9). */
   dsOfficeName: string | null;
   mustChangePassword: boolean;
 };
@@ -42,7 +45,7 @@ export const getContext = cache(async (): Promise<Context | null> => {
           banned: true,
           dsOfficeId: true,
           mustChangePassword: true,
-          dsOffice: { select: { nameSi: true } },
+          dsOffice: { select: NAMES },
         },
       },
     },
@@ -70,7 +73,7 @@ export const getContext = cache(async (): Promise<Context | null> => {
     name: row.user.name,
     role: row.user.role,
     dsOfficeId: row.user.dsOfficeId,
-    dsOfficeName: row.user.dsOffice?.nameSi ?? null,
+    dsOfficeName: row.user.dsOffice ? localName(row.user.dsOffice, await getLocale()) : null,
     mustChangePassword: row.user.mustChangePassword,
   };
 });

@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { DeleteDraft } from "@/components/cases/delete-draft";
 import { formValues, PageHeader } from "@/components/cases/page-header";
 import { StatusChip } from "@/components/cases/status-chip";
@@ -30,8 +30,9 @@ export default async function HoEditCasePage({
   searchParams: Promise<{ notice?: string | string[] }>;
 }) {
   const viewer = await requireRole("HO_OFFICER");
+  const locale = await getLocale();
   const { id } = await params;
-  const details = await getCase(db, viewer, id);
+  const details = await getCase(db, viewer, id, locale);
   if (!details) notFound();
   if (!canEditDetails(viewer.role, details.status)) redirect(`/ho/cases/${id}`);
 
@@ -41,7 +42,7 @@ export default async function HoEditCasePage({
   const office: OfficeSetting = canChangeOffice(viewer.role, details.status)
     ? {
         kind: "choose",
-        districts: await districtsWithOffices(db),
+        districts: await districtsWithOffices(db, locale),
         districtId: details.districtId,
         dsOfficeId: details.dsOfficeId,
       }

@@ -1,4 +1,6 @@
 import type { PrismaClient } from "@/generated/prisma/client";
+import type { Locale } from "@/i18n/locales";
+import { localName, NAMES } from "@/lib/names";
 import { officeFilter, type Viewer } from "../permissions";
 import { duplicateFlags } from "./duplicates";
 import { PAGE_SIZE } from "./queries";
@@ -33,6 +35,7 @@ export async function listQueue(
   viewer: Viewer,
   queue: Queue,
   page: number,
+  locale: Locale,
   place: QueuePlace = {},
 ): Promise<{ rows: QueueRow[]; total: number }> {
   const scope = officeFilter(viewer);
@@ -62,7 +65,7 @@ export async function listQueue(
         dsOfficeId: true,
         submittedAt: true,
         verifiedAt: true,
-        dsOffice: { select: { nameSi: true } },
+        dsOffice: { select: NAMES },
       },
     }),
     db.case.count({ where }),
@@ -75,7 +78,7 @@ export async function listQueue(
       caseNumber: row.caseNumber,
       name: row.name,
       childName: row.childName,
-      officeName: row.dsOffice.nameSi,
+      officeName: localName(row.dsOffice, locale),
       waitingSince: row[since],
       duplicate: flagged.has(row.id),
     })),

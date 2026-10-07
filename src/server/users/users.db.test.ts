@@ -198,9 +198,9 @@ describe("the account list (ADM-1)", () => {
     const { user, dsOfficeId } = await newOfficer();
     const office = await db.dsOffice.findUniqueOrThrow({ where: { id: dsOfficeId } });
 
-    const found = await listAccounts(db, { q: office.nameSi, role: "DS_OFFICER" });
+    const found = await listAccounts(db, { q: office.nameSi, role: "DS_OFFICER" }, "si");
     expect(found.map((row) => row.id)).toContain(user.id);
     expect(found.every((row) => row.role === "DS_OFFICER")).toBe(true);
-    expect(await listAccounts(db, { role: "HO_OFFICER", q: office.nameSi })).toEqual([]);
+    expect(await listAccounts(db, { role: "HO_OFFICER", q: office.nameSi }, "si")).toEqual([]);
   });
 });

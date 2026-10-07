@@ -1,5 +1,6 @@
 import { getTranslations } from "next-intl/server";
 import { Mark } from "@/components/brand/lockup";
+import { LanguagePicker } from "@/components/language-picker";
 import { Bell } from "./bell";
 import { NavLinks } from "./nav-links";
 import { SignOutButton } from "./sign-out-button";
@@ -30,21 +31,26 @@ export async function AppShell({
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-5 bg-header px-8 text-header-foreground">
-        <span className="flex items-center gap-3">
+        <span className="flex shrink-0 items-center gap-3">
           <span className="flex h-11 w-12 shrink-0 items-center justify-center rounded-lg bg-[#fbf5ea]">
             <Mark className="h-8 w-[35px]" />
           </span>
-          <span className="text-[22px] font-bold">{t("app.name")}</span>
+          <span className="text-[22px] font-bold whitespace-nowrap">{t("app.name")}</span>
         </span>
-        <span className="text-base text-header-muted">{areaLabel}</span>
-        <div className="ms-auto flex items-center gap-4">
+        <span className="shrink-0 text-base whitespace-nowrap text-header-muted">{areaLabel}</span>
+        <div className="ms-auto flex min-w-0 items-center gap-4">
+          {/* In a long language the test banner gives way first; production has none. */}
           {showTestBanner && (
-            <span className="rounded-full bg-notice px-3 py-1 text-sm font-semibold text-notice-foreground">
+            <span
+              title={t("app.testBanner")}
+              className="min-w-0 truncate rounded-full bg-notice px-3 py-1 text-sm font-semibold text-notice-foreground"
+            >
               {t("app.testBanner")}
             </span>
           )}
+          <LanguagePicker tone="header" />
           {bell && <Bell href={bell.href} unread={bell.unread} />}
-          <span className="text-base" aria-label={`${t("shell.signedInAs")} ${userName}`}>
+          <span className="shrink-0 text-base whitespace-nowrap" aria-label={`${t("shell.signedInAs")} ${userName}`}>
             {userName}
           </span>
           <SignOutButton />

@@ -188,8 +188,9 @@ docker-compose.yml, docker-compose.dev.yml
 | 7.3 | Excel export of any list, limited to what the user may see, and logged | EXP-1, EXP-3 | `src/server/exports/*`, `src/app/ho/cases/export/route.ts`, `src/app/ds/export/route.ts` |
 | 7.4 | Sheet-layout export (two tabs, original columns). Built, then removed on 2026-10-04: the Ministry no longer needs the old layout | EXP-2 | — |
 | 7.5 | Notifications: the bell, the menu's queue counts and every notice, completed, stopped and reopened included, were built in Phases 5 and 6; check they stay right beside the dashboard. The menu's count and the bell are read again after every move, because a layout isn't rendered again on a client-side move | NTF-1 | `src/components/shell/*`, `src/app/ho/waiting/route.ts`, `src/app/ds/notifications/unread/route.ts` |
+| 7.6 | Screens in Sinhala, Tamil and English (added 2026-10-07, PRD question 8): the language picker and its cookie, `messages/ta.json` and `en.json`, Noto Sans Tamil, money in each language; Tamil names for provinces, districts and DS offices and Tamil and English names for stages (migration `names_in_three_languages`, the admin's lists screen); queries, exports and the case history in the screen's language | UI-1, UI-3, UI-4, UI-9, LST-1, LST-2, LST-4, EXP-1, HIS-2, AC-27 | `src/i18n/*`, `messages/*.json`, `src/components/language-picker.tsx`, `src/lib/names.ts`, `prisma/schema.prisma`, `data/places.json`, `data/stages.json`, `src/server/**/queries.ts`, `src/app/admin/lists/*` |
 
-**Tests:** dashboard totals against direct database sums (AC-17); the exported list reopened with ExcelJS and checked (EXP-1); dashboard time with 5,000 cases (AC-21); full export under 60 seconds (PRF-4); the menu's count matching the dashboard, and the bell, after moves by the menu alone (NTF-1).
+**Tests:** dashboard totals against direct database sums (AC-17); the exported list reopened with ExcelJS and checked (EXP-1); dashboard time with 5,000 cases (AC-21); full export under 60 seconds (PRF-4); the menu's count matching the dashboard, and the bell, after moves by the menu alone (NTF-1); the three message files having the same keys and placeholders, place names in each language, the history's names in Tamil and English, and the sign-in page, a DS officer in Tamil and Head Office's export in English in the browser (UI-9, AC-27).
 
 **Done when:** AC-17 and AC-21 pass.
 
@@ -209,7 +210,7 @@ docker-compose.yml, docker-compose.dev.yml
 | 9.4 | Uptime, disk and backup alerts | OPS-4 | server configuration |
 | 9.5 | Security pass: a test calling every action with every role, headers, CSP, `npm audit`, secrets only in the environment | SEC-2–9 | `tests/security/*` |
 | 9.6 | Performance and accessibility pass on staging | PRF-2–4, UI-6 | — |
-| 9.7 | Full list of DS offices with codes loaded; admin creates the first accounts | LST-1 | `data/places.json` |
+| 9.7 | Full list of DS offices with codes loaded, and their Tamil names checked with the Ministry; the Tamil and English screen text checked by Tamil- and English-speaking officers; admin creates the first accounts | LST-1, UI-9 | `data/places.json`, `messages/ta.json`, `messages/en.json` |
 | 9.8 | Short Sinhala guides for DS officers and Head Office, plus a user test with a few officers | — | `docs/guides/*` |
 | 9.9 | Production launch | — | — |
 

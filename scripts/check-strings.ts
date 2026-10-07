@@ -1,6 +1,7 @@
 /**
- * UI-1: every screen string comes from messages/si.json. This check fails when a component
- * contains visible text or a text attribute written directly in the code.
+ * UI-1: every screen string comes from the message files (messages/si.json, ta.json and en.json, UI-9).
+ * This check fails when a component contains visible text or a text attribute written directly in the code.
+ * That the three files match is checked by src/i18n/messages.test.ts.
  *
  * Usage: npm run check:strings
  */
@@ -12,7 +13,8 @@ const ROOTS = ["src/app", "src/components"];
 // shadcn/ui primitives are third-party code; our own components must not pass text to them either.
 const SKIP_DIRS = new Set(["src/components/ui"]);
 const TEXT_ATTRIBUTES = new Set(["placeholder", "title", "alt", "aria-label", "aria-description", "label"]);
-const HAS_LETTERS = /[A-Za-z඀-෿]/;
+// Letters of any script: Latin, Sinhala or Tamil.
+const HAS_LETTERS = /\p{L}/u;
 
 function listTsx(dir: string): string[] {
   if (SKIP_DIRS.has(dir.replaceAll("\\", "/"))) return [];
@@ -49,7 +51,7 @@ function check(file: string): Problem[] {
 const problems = ROOTS.flatMap(listTsx).flatMap(check);
 
 if (problems.length > 0) {
-  console.error("Screen text must come from messages/si.json (UI-1). Found text written in the code:");
+  console.error("Screen text must come from the message files in messages/ (UI-1). Found text written in the code:");
   for (const p of problems) console.error(`  ${p.file}:${p.line}  ${p.text}`);
   process.exit(1);
 }

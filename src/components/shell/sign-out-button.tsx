@@ -22,7 +22,7 @@ function Submit() {
       type="submit"
       disabled={pending}
       aria-busy={pending}
-      className="flex h-10 items-center gap-2 rounded-lg border border-header-muted/60 px-4 text-[15px] font-semibold hover:bg-white/10 disabled:opacity-70"
+      className="flex h-10 shrink-0 items-center gap-2 rounded-lg border border-header-muted/60 px-4 text-[15px] font-semibold whitespace-nowrap hover:bg-white/10 disabled:opacity-70"
     >
       {pending && <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />}
       {pending ? t("signingOut") : t("signOut")}

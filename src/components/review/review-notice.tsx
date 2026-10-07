@@ -1,4 +1,4 @@
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { caseName } from "@/components/cases/page-header";
 import { FormNotice } from "@/components/forms/form-field";
 import { formatRupees, RELEASE_AMOUNT } from "@/lib/money";
@@ -31,14 +31,14 @@ export async function ReviewNotice({ notice, details }: { notice: unknown; detai
 /** Says which letter was just recorded, for how many cases and which DS offices (REL-3). The URL holds its id. */
 export async function LetterNotice({ letter }: { letter: LetterSummary | null }) {
   if (!letter) return null;
-  const t = await getTranslations("review");
+  const [t, locale] = await Promise.all([getTranslations("review"), getLocale()]);
   return (
     <FormNotice
       message={t("notices.letterRecorded", {
         district: letter.districtName,
         number: letter.letterNumber,
         count: letter.count,
-        amount: formatRupees(letter.count * RELEASE_AMOUNT),
+        amount: formatRupees(letter.count * RELEASE_AMOUNT, locale),
         offices: letter.offices.join(", "),
       })}
     />

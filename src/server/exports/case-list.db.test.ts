@@ -56,15 +56,15 @@ describe("Excel export of a case list (EXP-1, EXP-3)", () => {
       { q: "HMG" },
     ];
     for (const filter of filters) {
-      const rows = await caseListRows(db, ho, filter);
+      const rows = await caseListRows(db, ho, filter, "si");
       expect(rows?.length, JSON.stringify(filter)).toBe(await countCases(db, ho, filter));
-      const first = await listCases(db, ho, { ...filter, page: 1 });
+      const first = await listCases(db, ho, { ...filter, page: 1 }, "si");
       expect(rows!.slice(0, PAGE_SIZE).map((r) => r.caseNumber)).toEqual(first.rows.map((r) => r.caseNumber));
     }
   });
 
   it("gives each released case its money from the database", async () => {
-    const rows = (await caseListRows(db, ho, { dsOfficeId: busiestOffice }))!;
+    const rows = (await caseListRows(db, ho, { dsOfficeId: busiestOffice }, "si"))!;
     const cases = await db.case.findMany({
       where: { dsOfficeId: busiestOffice },
       select: {
@@ -87,7 +87,7 @@ describe("Excel export of a case list (EXP-1, EXP-3)", () => {
   });
 
   it("gives each case its installments and the days its new-house stages were reached", async () => {
-    const rows = (await caseListRows(db, ho, { dsOfficeId: busiestOffice, kind: "NEW_HOUSE" }))!;
+    const rows = (await caseListRows(db, ho, { dsOfficeId: busiestOffice, kind: "NEW_HOUSE" }, "si"))!;
     const stages = await db.stageDefinition.findMany({
       where: { kind: "NEW_HOUSE", active: true },
       orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
@@ -129,7 +129,7 @@ describe("Excel export of a case list (EXP-1, EXP-3)", () => {
 
   it("keeps a DS officer to their own office, and gives an admin nothing (PRM-1, PRM-2)", async () => {
     const ds = { role: "DS_OFFICER", dsOfficeId: busiestOffice, userId: "export-test-ds" } as const;
-    const rows = (await caseListRows(db, ds, {}))!;
+    const rows = (await caseListRows(db, ds, {}, "si"))!;
     const own = await db.dsOffice.findUniqueOrThrow({ where: { id: busiestOffice }, select: { nameSi: true } });
     expect(rows.length).toBe(await db.case.count({ where: { dsOfficeId: busiestOffice } }));
     expect(new Set(rows.map((r) => r.officeName))).toEqual(new Set([own.nameSi]));
@@ -139,16 +139,16 @@ describe("Excel export of a case list (EXP-1, EXP-3)", () => {
       where: { dsOfficeId: { not: busiestOffice }, caseNumber: { not: null } },
       select: { caseNumber: true },
     });
-    expect(await caseListRows(db, ds, { q: other.caseNumber! })).toEqual([]);
+    expect(await caseListRows(db, ds, { q: other.caseNumber! }, "si")).toEqual([]);
 
     const admin = { role: "ADMIN", dsOfficeId: null, userId: "export-test-admin" } as const;
-    expect(await exportCaseList(db, admin, "ho_cases", {}, t)).toBeNull();
+    expect(await exportCaseList(db, admin, "ho_cases", {}, t, "si")).toBeNull();
     expect(await lastExportAudit(admin.userId)).toBeNull();
   });
 
   it("EXP-3: logs who exported which list, with the filters used and the number of rows", async () => {
     const filter: ListFilter = { q: " HMG ", statuses: ["IN_PROGRESS"], districtId: district };
-    const file = (await exportCaseList(db, ho, "ho_cases", filter, t))!;
+    const file = (await exportCaseList(db, ho, "ho_cases", filter, t, "si"))!;
     const audit = await lastExportAudit(ho.userId);
     expect(audit).toMatchObject({ entityType: "case_list", entityId: "ho_cases", caseId: null });
     expect(audit?.after).toEqual({
@@ -157,7 +157,7 @@ describe("Excel export of a case list (EXP-1, EXP-3)", () => {
     });
 
     const ds = { role: "DS_OFFICER", dsOfficeId: busiestOffice, userId: "export-test-ds" } as const;
-    const own = (await exportCaseList(db, ds, "ds_cases", { statuses: ["COMPLETED"] }, t))!;
+    const own = (await exportCaseList(db, ds, "ds_cases", { statuses: ["COMPLETED"] }, t, "si"))!;
     expect((await lastExportAudit(ds.userId))?.after).toEqual({
       filters: { statuses: ["COMPLETED"], officeScope: busiestOffice },
       rows: own.rows,
@@ -169,7 +169,7 @@ describe("Excel export of a case list (EXP-1, EXP-3)", () => {
     expect(total).toBeGreaterThanOrEqual(LOAD);
 
     const started = performance.now();
-    const file = (await exportCaseList(db, ho, "ho_cases", {}, t))!;
+    const file = (await exportCaseList(db, ho, "ho_cases", {}, t, "si"))!;
     const seconds = (performance.now() - started) / 1000;
     expect(seconds).toBeLessThan(60);
     expect(file.rows).toBe(total);

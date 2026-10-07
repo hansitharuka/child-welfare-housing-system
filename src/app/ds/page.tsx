@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { ExportLink } from "@/components/cases/export-link";
 import { caseName } from "@/components/cases/page-header";
 import { Pager } from "@/components/cases/pager";
@@ -44,7 +44,8 @@ export default async function DsHomePage({
   }>;
 }) {
   const viewer = await requireRole("DS_OFFICER");
-  const office = viewer.dsOfficeId ? await officeSummary(db, viewer.dsOfficeId) : null;
+  const locale = await getLocale();
+  const office = viewer.dsOfficeId ? await officeSummary(db, viewer.dsOfficeId, locale) : null;
   if (!office) notFound();
 
   const params = await searchParams;
@@ -53,7 +54,7 @@ export default async function DsHomePage({
 
   const [t, list, counts, todo, money] = await Promise.all([
     getTranslations("cases"),
-    listCases(db, viewer, { ...filter, page }),
+    listCases(db, viewer, { ...filter, page }, locale),
     Promise.all(TABS.map((key) => countCases(db, viewer, tabFilter(key)))),
     todoItems(db, viewer),
     officeMoney(db, viewer),
@@ -257,7 +258,7 @@ export default async function DsHomePage({
                 ).map(([key, amount]) => (
                   <div key={key} className="flex justify-between gap-3 border-b py-2 last:border-b-0">
                     <dt className="text-[15px] text-[#3F4843]">{t(`home.money.${key}`)}</dt>
-                    <dd className="font-bold whitespace-nowrap">{formatRupees(amount)}</dd>
+                    <dd className="font-bold whitespace-nowrap">{formatRupees(amount, locale)}</dd>
                   </div>
                 ))}
               </dl>
