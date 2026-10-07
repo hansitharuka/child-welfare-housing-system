@@ -4,10 +4,12 @@ import { seed } from "../../../prisma/seed-data";
 import { createTestClient, freeOfficeId } from "../../../tests/db/client";
 import { colomboDay, dayToDate } from "@/lib/dates";
 import type { CaseValues } from "@/lib/validation/case";
-import type { ReleaseField } from "@/lib/validation/release";
+import { defaultValidUntil, type ReleaseField } from "@/lib/validation/release";
+import { fileForViewer, uploadLetterScan } from "../files/uploads";
 import { listNotifications, unreadCount, unreadNow } from "../notifications/queries";
 import { openNotification } from "../notifications/commands";
-import { correctRelease, recordRelease } from "../releases/commands";
+import { correctRelease, type LetterInput, recordLetter } from "../releases/commands";
+import { casesForLetter, districtsWaiting, getLetter, recentLetters } from "../releases/queries";
 import { type Actor, saveCase, type SaveCaseInput } from "./commands";
 import { decideCase } from "./decide";
 import { getCase, todoItems } from "./queries";
@@ -62,18 +64,38 @@ async function verified(nic: string) {
 }
 
 const today = () => colomboDay(new Date());
-const releaseForm = (overrides: Partial<Record<ReleaseField, string>> = {}): Record<ReleaseField, string> => ({
-  releasedOn: today(),
-  referenceNumber: "HO/2026/0141",
+const DAY = 24 * 60 * 60 * 1000;
+const daysAgo = (n: number) => colomboDay(new Date(Date.now() - n * DAY));
+const letterForm = (overrides: Partial<Record<ReleaseField, string>> = {}): Record<ReleaseField, string> => ({
+  letterNumber: "MWCA/3/8/16/01-2026",
+  letterDate: today(),
+  validUntil: defaultValidUntil(today()),
   note: "",
   ...overrides,
 });
 
-async function released(nic: string) {
-  const ready = await verified(nic);
-  const result = await recordRelease(db, ho, { caseId: ready.id, version: ready.version, form: releaseForm() });
+const districtOf = async (dsOfficeId: number) =>
+  (await db.dsOffice.findUniqueOrThrow({ where: { id: dsOfficeId }, select: { districtId: true } })).districtId;
+
+type Ticked = { id: string; version: number; dsOfficeId: number };
+
+/** A letter for these cases of one district, as the form sends it. */
+async function letter(cases: Ticked[], overrides: Partial<Record<ReleaseField, string>> = {}): Promise<LetterInput> {
+  return {
+    districtId: await districtOf(cases[0].dsOfficeId),
+    cases: cases.map((c) => ({ id: c.id, version: c.version })),
+    form: letterForm(overrides),
+    scanId: null,
+  };
+}
+
+/** Verified, then released together on one letter. */
+async function released(...nics: string[]) {
+  const ready = [];
+  for (const nic of nics) ready.push(await verified(nic));
+  const result = await recordLetter(db, ho, await letter(ready));
   if (!result.ok) throw new Error(String(result.error ?? JSON.stringify(result.errors)));
-  return load(ready.id);
+  return Promise.all(ready.map((c) => load(c.id)));
 }
 
 async function officer(id: string): Promise<Actor> {
@@ -332,80 +354,199 @@ describe("the queues (CHK-1, REL-1)", () => {
   });
 });
 
-describe("the Rs. 2,000,000 release (REL-2, REL-3, AC-10)", () => {
-  it("moves the case on, makes four NOT_STARTED installments of Rs. 500,000 and tells the office", async () => {
-    const ready = await verified("200200000030");
-    const result = await recordRelease(db, ho, {
-      caseId: ready.id,
-      version: ready.version,
-      form: releaseForm({ referenceNumber: " HO/2026/0142 ", note: "පළමු කොටස" }),
+describe("releasing by allocation letter (REL-1 to REL-3, AC-10)", () => {
+  it("releases every case ticked on the district's letter: four installments each, and each office told", async () => {
+    const first = await verified("200200000030");
+    const second = await verified("200200000035");
+    const left = await verified("200200000036");
+    const input = await letter([first, second], { letterNumber: " MWCA/3/8/16/02-2026 ", note: "පළමු ලිපිය" });
+    const result = await recordLetter(db, ho, input);
+
+    expect(result).toMatchObject({ ok: true });
+    const letterId = result.ok ? result.letterId : "";
+    expect(await db.releaseLetter.findUniqueOrThrow({ where: { id: letterId } })).toMatchObject({
+      districtId: input.districtId,
+      letterNumber: "MWCA/3/8/16/02-2026",
+      letterDate: dayToDate(today()),
+      validUntil: dayToDate(defaultValidUntil(today())),
+      note: "පළමු ලිපිය",
+      byId: ho.userId,
     });
+    for (const c of [first, second]) {
+      expect((await load(c.id)).status).toBe("IN_PROGRESS");
+      const release = await db.release.findUniqueOrThrow({ where: { caseId: c.id } });
+      expect(release).toMatchObject({ letterId, amount: 2_000_000, releasedOn: dayToDate(today()) });
+      const installments = await db.installment.findMany({ where: { caseId: c.id }, orderBy: { number: "asc" } });
+      expect(installments.map((i) => [i.number, i.amount, i.status])).toEqual([
+        [1, 500_000, "NOT_STARTED"],
+        [2, 500_000, "NOT_STARTED"],
+        [3, 500_000, "NOT_STARTED"],
+        [4, 500_000, "NOT_STARTED"],
+      ]);
+      expect(await db.notification.count({ where: { caseId: c.id, userId: dsA.userId, type: "RELEASED" } })).toBe(1);
+      const audit = await db.auditLog.findFirstOrThrow({ where: { caseId: c.id, action: "case_released" } });
+      expect(audit.after).toMatchObject({
+        status: "IN_PROGRESS",
+        amount: 2_000_000,
+        letterId,
+        letterNumber: "MWCA/3/8/16/02-2026",
+        cases: 2,
+      });
+    }
+    // The case left off the letter still waits for one.
+    expect((await load(left.id)).status).toBe("VERIFIED");
+    expect(await db.auditLog.count({ where: { entityId: letterId, action: "letter_recorded" } })).toBe(1);
 
-    expect(result).toEqual({ ok: true });
-    expect((await load(ready.id)).status).toBe("IN_PROGRESS");
-    const release = await db.release.findUniqueOrThrow({ where: { caseId: ready.id } });
-    expect(release).toMatchObject({ amount: 2_000_000, referenceNumber: "HO/2026/0142", note: "පළමු කොටස" });
-    expect(release.releasedOn).toEqual(dayToDate(today()));
-    const installments = await db.installment.findMany({ where: { caseId: ready.id }, orderBy: { number: "asc" } });
-    expect(installments.map((i) => [i.number, i.amount, i.status])).toEqual([
-      [1, 500_000, "NOT_STARTED"],
-      [2, 500_000, "NOT_STARTED"],
-      [3, 500_000, "NOT_STARTED"],
-      [4, 500_000, "NOT_STARTED"],
-    ]);
-    expect(await db.notification.count({ where: { caseId: ready.id, userId: dsA.userId, type: "RELEASED" } })).toBe(1);
-    const audit = await db.auditLog.findFirstOrThrow({ where: { caseId: ready.id, action: "case_released" } });
-    expect(audit.after).toMatchObject({ status: "IN_PROGRESS", amount: 2_000_000, referenceNumber: "HO/2026/0142" });
-
-    const details = await getCase(db, dsA, ready.id);
-    expect(details?.release).toMatchObject({ releasedOn: today(), amount: 2_000_000 });
+    const details = await getCase(db, dsA, first.id);
+    expect(details?.release).toMatchObject({
+      releasedOn: today(),
+      amount: 2_000_000,
+      letter: { id: letterId, letterNumber: "MWCA/3/8/16/02-2026", cases: 2, note: "පළමු ලිපිය", scanId: null },
+    });
     expect(details?.installments).toHaveLength(4);
+    expect(await getLetter(db, ho, letterId)).toMatchObject({ count: 2, offices: [details?.officeName] });
+    expect((await recentLetters(db, ho))[0]?.id).toBe(letterId);
+    expect(await getLetter(db, dsA, letterId)).toBeNull();
   });
 
-  it("refuses a missing reference number, a future date and a date before the verification", async () => {
-    const ready = await verified("200200000031");
-    const refused = async (form: Record<ReleaseField, string>) => {
-      const result = await recordRelease(db, ho, { caseId: ready.id, version: ready.version, form });
+  it("lists the districts waiting for a letter and each one's verified cases, for Head Office only", async () => {
+    const first = await verified("200200000022");
+    const second = await verified("200200000023");
+    const districtId = await districtOf(first.dsOfficeId);
+
+    const waiting = await districtsWaiting(db, ho);
+    const here = waiting.find((d) => d.id === districtId);
+    expect(here?.count).toBe(await db.case.count({ where: { status: "VERIFIED", dsOffice: { districtId } } }));
+    expect(waiting.reduce((sum, d) => sum + d.count, 0)).toBe((await queueCounts(db, ho)).release);
+    const counts = waiting.map((d) => d.count);
+    expect(counts).toEqual([...counts].sort((a, b) => b - a));
+
+    const ids = (await casesForLetter(db, ho, districtId)).map((c) => c.id);
+    expect(ids.indexOf(first.id)).toBeLessThan(ids.indexOf(second.id));
+    for (const actor of [dsA, admin]) {
+      expect(await districtsWaiting(db, actor)).toEqual([]);
+      expect(await casesForLetter(db, actor, districtId)).toEqual([]);
+      expect(await recentLetters(db, actor)).toEqual([]);
+    }
+  });
+
+  it("refuses a missing number, a future date, a date before a verification and an end before the date", async () => {
+    const early = await verified("200200000031");
+    const late = await verified("200200000037");
+    await db.case.update({ where: { id: early.id }, data: { verifiedAt: new Date(Date.now() - 10 * DAY) } });
+    await db.case.update({ where: { id: late.id }, data: { verifiedAt: new Date(Date.now() - 3 * DAY) } });
+    const refused = async (overrides: Partial<Record<ReleaseField, string>>) => {
+      const result = await recordLetter(db, ho, await letter([early, late], overrides));
       return result.ok ? null : result.errors;
     };
-    const tomorrow = colomboDay(new Date(Date.now() + 24 * 60 * 60 * 1000));
-    const dayBefore = colomboDay(new Date((ready.verifiedAt as Date).getTime() - 24 * 60 * 60 * 1000));
 
-    expect(await refused(releaseForm({ referenceNumber: "" }))).toEqual({ referenceNumber: "referenceRequired" });
-    expect(await refused(releaseForm({ releasedOn: tomorrow }))).toEqual({ releasedOn: "dateInFuture" });
-    expect(await refused(releaseForm({ releasedOn: dayBefore }))).toEqual({ releasedOn: "dateBeforeVerified" });
-    expect(await refused(releaseForm({ releasedOn: "2026-02-30" }))).toEqual({ releasedOn: "dateInvalid" });
-    expect((await load(ready.id)).status).toBe("VERIFIED");
-    expect(await db.installment.count({ where: { caseId: ready.id } })).toBe(0);
+    expect(await refused({ letterNumber: "" })).toEqual({ letterNumber: "numberRequired" });
+    expect(await refused({ letterDate: colomboDay(new Date(Date.now() + DAY)) })).toEqual({
+      letterDate: "dateInFuture",
+    });
+    // The later of the two verifications is the earliest the letter can be dated.
+    expect(await refused({ letterDate: daysAgo(5) })).toEqual({ letterDate: "dateBeforeVerified" });
+    expect(await refused({ letterDate: daysAgo(3), validUntil: daysAgo(4) })).toEqual({
+      validUntil: "untilBeforeDate",
+    });
+    expect(await refused({ letterDate: "2026-02-30" })).toEqual({ letterDate: "dateInvalid" });
+    for (const c of [early, late]) {
+      expect((await load(c.id)).status).toBe("VERIFIED");
+      expect(await db.installment.count({ where: { caseId: c.id } })).toBe(0);
+    }
+    expect(await recordLetter(db, ho, await letter([early, late], { letterDate: daysAgo(3) }))).toMatchObject({
+      ok: true,
+    });
   });
 
-  it("refuses a case that isn't verified, a second release, a DS officer and an old form", async () => {
+  it("releases all or nothing, and refuses no case, another district, a DS officer, an admin and an old form", async () => {
     const sent = await submitted("200200000032");
-    const release = (actor: Actor, caseId: string, version: number) =>
-      recordRelease(db, actor, { caseId, version, form: releaseForm() });
-
-    expect(await release(ho, sent.id, sent.version)).toEqual({ ok: false, error: "notAllowedNow", errors: {} });
     const ready = await verified("200200000033");
-    expect(await release(dsA, ready.id, ready.version)).toEqual({ ok: false, error: "roleNotAllowed", errors: {} });
-    expect(await release(admin, ready.id, ready.version)).toEqual({ ok: false, error: "notFound", errors: {} });
-    expect(await release(ho, ready.id, ready.version - 1)).toEqual({ ok: false, error: "conflict", errors: {} });
+    const record = async (actor: Actor, cases: Ticked[]) => recordLetter(db, actor, await letter(cases));
 
-    expect(await release(ho, ready.id, ready.version)).toEqual({ ok: true });
-    expect(await release(ho, ready.id, ready.version)).toEqual({ ok: false, error: "notAllowedNow", errors: {} });
+    expect(await record(ho, [ready, sent])).toEqual({ ok: false, error: "notAllowedNow", errors: {} });
+    expect((await load(ready.id)).status).toBe("VERIFIED");
+    expect(await recordLetter(db, ho, { ...(await letter([ready])), cases: [] })).toEqual({
+      ok: false,
+      error: "noCases",
+      errors: {},
+    });
+    // A case of another district can't go on this district's letter.
+    const elsewhere = await db.dsOffice.findFirstOrThrow({
+      where: { active: true, districtId: { not: await districtOf(ready.dsOfficeId) } },
+      select: { id: true },
+    });
+    const saved = await saveCase(db, ho, input("200200000038", { dsOfficeId: elsewhere.id, submit: true }));
+    if (!saved.ok) throw new Error(saved.error);
+    const sentThere = await load(saved.value.id);
+    await decideCase(db, ho, { caseId: sentThere.id, version: sentThere.version, decision: "verify", reason: null });
+    const there = await load(sentThere.id);
+    const both = [ready, there].map(({ id, version }) => ({ id, version }));
+    expect(await recordLetter(db, ho, { ...(await letter([ready])), cases: both })).toEqual({
+      ok: false,
+      error: "notFound",
+      errors: {},
+    });
+
+    expect(await record(dsA, [ready])).toEqual({ ok: false, error: "roleNotAllowed", errors: {} });
+    expect(await record(admin, [ready])).toEqual({ ok: false, error: "notFound", errors: {} });
+    expect(await record(ho, [{ ...ready, version: ready.version - 1 }])).toEqual({
+      ok: false,
+      error: "conflict",
+      errors: {},
+    });
+    expect(await db.release.count({ where: { caseId: { in: [ready.id, there.id] } } })).toBe(0);
+
+    expect(await record(ho, [ready])).toMatchObject({ ok: true });
+    expect(await record(ho, [ready])).toEqual({ ok: false, error: "notAllowedNow", errors: {} });
     expect(await db.release.count({ where: { caseId: ready.id } })).toBe(1);
     expect(await db.installment.count({ where: { caseId: ready.id } })).toBe(4);
   });
 
-  it("can't hold any other amount, even when written directly to the database", async () => {
-    const ready = await verified("200200000034");
+  it("keeps the officer's own scan with the letter, which only the letter's offices may open", async () => {
+    const ready = await verified("200200000039");
+    const pdf = { name: "ලිපිය.pdf", bytes: new TextEncoder().encode("%PDF-1.4\n% test letter\n") };
+    expect(await uploadLetterScan(db, dsA, pdf)).toEqual({ ok: false, error: "notAllowed" });
+    const scan = await uploadLetterScan(db, ho, pdf);
+    if (!scan.ok) throw new Error(scan.error);
+    // Someone else's upload can't be attached.
+    const other: Actor = { userId: "review-test-ho-2", role: "HO_OFFICER", dsOfficeId: null };
+    await db.user.create({
+      data: { id: other.userId, name: "ප්‍ර. දෙවන", email: "review-test-ho-2@no-email.invalid", role: "HO_OFFICER" },
+    });
+    expect(await recordLetter(db, other, { ...(await letter([ready])), scanId: scan.value.id })).toEqual({
+      ok: false,
+      error: "scanUnavailable",
+      errors: {},
+    });
+    expect((await load(ready.id)).status).toBe("VERIFIED");
+
+    const result = await recordLetter(db, ho, { ...(await letter([ready])), scanId: scan.value.id });
+    expect(result).toMatchObject({ ok: true });
+    expect(await db.storedFile.findUniqueOrThrow({ where: { id: scan.value.id } })).toMatchObject({
+      kind: "LETTER",
+      letterId: result.ok ? result.letterId : "",
+      caseId: null,
+    });
+    expect((await getCase(db, ho, ready.id))?.release?.letter.scanId).toBe(scan.value.id);
+    expect(await fileForViewer(db, dsA, scan.value.id)).toMatchObject({ originalName: "ලිපිය.pdf" });
+    expect(await fileForViewer(db, other, scan.value.id)).not.toBeNull();
+    expect(await fileForViewer(db, dsB, scan.value.id)).toBeNull();
+    expect(await fileForViewer(db, admin, scan.value.id)).toBeNull();
+  });
+
+  it("can't hold any other amount, or a letter valid before its date, even when written directly to the database", async () => {
+    const [running] = await released("200200000034");
+    const { letterId } = await db.release.findUniqueOrThrow({ where: { caseId: running.id } });
+    const ready = await verified("200200000043");
     await expect(
       db.release.create({
         data: {
           id: randomUUID(),
           caseId: ready.id,
+          letterId,
           releasedOn: dayToDate(today()),
           amount: 1_500_000,
-          referenceNumber: "X",
           byId: ho.userId,
         },
       }),
@@ -413,63 +554,89 @@ describe("the Rs. 2,000,000 release (REL-2, REL-3, AC-10)", () => {
     await expect(
       db.installment.create({ data: { id: randomUUID(), caseId: ready.id, number: 5, amount: 500_000 } }),
     ).rejects.toThrow();
+    await expect(
+      db.releaseLetter.create({
+        data: {
+          id: randomUUID(),
+          districtId: await districtOf(ready.dsOfficeId),
+          letterNumber: "X",
+          letterDate: dayToDate(today()),
+          validUntil: dayToDate(daysAgo(1)),
+          byId: ho.userId,
+        },
+      }),
+    ).rejects.toThrow();
   });
 });
 
-describe("correcting a release (REL-4)", () => {
-  it("changes the date, reference and note, and logs the old and new value of each", async () => {
-    const running = await released("200200000040");
+describe("correcting a release's letter (REL-4)", () => {
+  it("changes the letter for every case on it, logging the old and new value of each field on each", async () => {
+    const [running, other] = await released("200200000040", "200200000044");
     const result = await correctRelease(db, ho, {
       caseId: running.id,
       version: running.version,
-      form: releaseForm({ referenceNumber: "HO/2026/0200", note: "නිවැරදි කළා" }),
+      form: letterForm({ letterNumber: "MWCA/3/8/16/09-2026", validUntil: "2027-03-31", note: "නිවැරදි කළා" }),
     });
 
     expect(result).toEqual({ ok: true });
-    expect(await db.release.findUniqueOrThrow({ where: { caseId: running.id } })).toMatchObject({
-      referenceNumber: "HO/2026/0200",
+    const { letterId } = await db.release.findUniqueOrThrow({ where: { caseId: running.id } });
+    expect(await db.releaseLetter.findUniqueOrThrow({ where: { id: letterId } })).toMatchObject({
+      letterNumber: "MWCA/3/8/16/09-2026",
+      validUntil: dayToDate("2027-03-31"),
       note: "නිවැරදි කළා",
     });
-    const audit = await db.auditLog.findFirstOrThrow({ where: { caseId: running.id, action: "release_corrected" } });
-    expect(audit).toMatchObject({
-      actorId: ho.userId,
-      before: { referenceNumber: "HO/2026/0141", note: null },
-      after: { referenceNumber: "HO/2026/0200", note: "නිවැරදි කළා" },
+    for (const c of [running, other]) {
+      const audit = await db.auditLog.findFirstOrThrow({ where: { caseId: c.id, action: "release_corrected" } });
+      expect(audit).toMatchObject({
+        actorId: ho.userId,
+        entityId: letterId,
+        before: { letterNumber: "MWCA/3/8/16/01-2026", validUntil: defaultValidUntil(today()), note: null },
+        after: { letterNumber: "MWCA/3/8/16/09-2026", validUntil: "2027-03-31", note: "නිවැරදි කළා" },
+      });
+      expect((await load(c.id)).version).toBe(c.version + 1);
+    }
+    // The other case's page, opened before the correction, can't overwrite it.
+    expect(await correctRelease(db, ho, { caseId: other.id, version: other.version, form: letterForm() })).toEqual({
+      ok: false,
+      error: "conflict",
+      errors: {},
     });
-    expect((await load(running.id)).version).toBe(running.version + 1);
   });
 
-  it("can't move the date past an installment already recorded, and only Head Office corrects", async () => {
-    const running = await released("200200000041");
-    const DAY = 24 * 60 * 60 * 1000;
-    const daysAgo = (n: number) => colomboDay(new Date(Date.now() - n * DAY));
-    // Verified 10 days ago, with the first installment expected 5 days ago (Phase 6 records those).
-    await db.case.update({ where: { id: running.id }, data: { verifiedAt: new Date(Date.now() - 10 * DAY) } });
+  it("can't move the date past an installment of any case on it, or before a verification; only Head Office corrects", async () => {
+    const [running, other] = await released("200200000041", "200200000045");
+    // Both verified 10 days ago; the other case's first installment expected 5 days ago (Phase 6 records those).
+    await db.case.updateMany({
+      where: { id: { in: [running.id, other.id] } },
+      data: { verifiedAt: new Date(Date.now() - 10 * DAY) },
+    });
     await db.installment.updateMany({
-      where: { caseId: running.id, number: 1 },
+      where: { caseId: other.id, number: 1 },
       data: { status: "PROCESSING", expectedOn: dayToDate(daysAgo(5)) },
     });
-    const correct = (actor: Actor, releasedOn: string) =>
-      correctRelease(db, actor, { caseId: running.id, version: running.version, form: releaseForm({ releasedOn }) });
+    const correct = (actor: Actor, letterDate: string) =>
+      correctRelease(db, actor, { caseId: running.id, version: running.version, form: letterForm({ letterDate }) });
 
     expect(await correct(dsA, daysAgo(6))).toEqual({ ok: false, error: "roleNotAllowed", errors: {} });
     expect(await correct(ho, daysAgo(3))).toEqual({
       ok: false,
       error: null,
-      errors: { releasedOn: "dateAfterInstallment" },
+      errors: { letterDate: "dateAfterInstallment" },
     });
     expect(await correct(ho, daysAgo(11))).toEqual({
       ok: false,
       error: null,
-      errors: { releasedOn: "dateBeforeVerified" },
+      errors: { letterDate: "dateBeforeVerified" },
     });
     expect(await correct(ho, daysAgo(6))).toEqual({ ok: true });
-    expect((await db.release.findUniqueOrThrow({ where: { caseId: running.id } })).releasedOn).toEqual(
-      dayToDate(daysAgo(6)),
-    );
+    for (const c of [running, other]) {
+      expect((await db.release.findUniqueOrThrow({ where: { caseId: c.id } })).releasedOn).toEqual(
+        dayToDate(daysAgo(6)),
+      );
+    }
 
     const notYet = await verified("200200000042");
-    expect(await correctRelease(db, ho, { caseId: notYet.id, version: notYet.version, form: releaseForm() })).toEqual({
+    expect(await correctRelease(db, ho, { caseId: notYet.id, version: notYet.version, form: letterForm() })).toEqual({
       ok: false,
       error: "noRelease",
       errors: {},
@@ -501,7 +668,7 @@ describe("changing a verified case (CASE-9)", () => {
   });
 
   it("refuses the DS office, an empty required field and a submit", async () => {
-    const running = await released("200200000051");
+    const [running] = await released("200200000051");
     const change = (actor: Actor, overrides: Partial<SaveCaseInput>) =>
       saveCase(db, actor, { ...input("200200000051"), id: running.id, version: running.version, ...overrides });
 
@@ -518,7 +685,7 @@ describe("changing a verified case (CASE-9)", () => {
 describe("notifications (NTF-1)", () => {
   it("shows the office's officer their notices, newest first, and opening one marks it read", async () => {
     const ready = await verified("200200000060");
-    await recordRelease(db, ho, { caseId: ready.id, version: ready.version, form: releaseForm() });
+    await recordLetter(db, ho, await letter([ready]));
 
     const mine = (await listNotifications(db, dsA)).filter((n) => n.caseId === ready.id);
     expect(mine.map((n) => [n.type, n.read])).toEqual([

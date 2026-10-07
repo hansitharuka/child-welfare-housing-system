@@ -16,7 +16,7 @@ import { reopenCase, stopCase } from "../cases/stop";
 import { readStoredFile } from "../files/storage";
 import { fileForViewer, uploadPhoto } from "../files/uploads";
 import { caseHistory } from "../history/queries";
-import { recordRelease } from "../releases/commands";
+import { recordLetter } from "../releases/commands";
 import { recordStageUpdate } from "../stages/commands";
 import { getStageProgress } from "../stages/queries";
 import { markInstallmentPaid, startInstallment, undoInstallmentPayment } from "./commands";
@@ -81,10 +81,12 @@ async function running(overrides: Partial<CaseValues> = {}) {
   if (!verified.ok) throw new Error(verified.error);
   await db.case.update({ where: { id: sent.id }, data: { verifiedAt: colomboStartOf(daysAgo(60)) } });
   const ready = await load(sent.id);
-  const release = await recordRelease(db, ho, {
-    caseId: ready.id,
-    version: ready.version,
-    form: { releasedOn: daysAgo(RELEASED_DAYS_AGO), referenceNumber: "HO/2026/P6", note: "" },
+  const { districtId } = await db.dsOffice.findUniqueOrThrow({ where: { id: ready.dsOfficeId } });
+  const release = await recordLetter(db, ho, {
+    districtId,
+    cases: [{ id: ready.id, version: ready.version }],
+    form: { letterNumber: "MWCA/2026/P6", letterDate: daysAgo(RELEASED_DAYS_AGO), validUntil: "2099-12-31", note: "" },
+    scanId: null,
   });
   if (!release.ok) throw new Error(String(release.error ?? JSON.stringify(release.errors)));
   return load(ready.id);

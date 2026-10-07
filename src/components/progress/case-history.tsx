@@ -36,6 +36,9 @@ const FIELDS = [
   "remark",
   "releasedOn",
   "referenceNumber",
+  "letterNumber",
+  "letterDate",
+  "validUntil",
   "note",
 ] as const;
 type Field = (typeof FIELDS)[number];
@@ -86,21 +89,29 @@ export async function CaseHistory({ entries }: { entries: HistoryEntry[] }) {
           lines,
         };
       }
-      case "case_released":
+      case "case_released": {
+        // Since 6 Oct 2026 a release comes with its district's allocation letter (REL-2); older
+        // records name only the release's reference number.
+        const letter = text(after.letterNumber);
         return {
-          sentence: t("actions.case_released", { reference: text(after.referenceNumber) ?? tc("none") }),
+          sentence: letter
+            ? t("actions.case_releasedLetter", { district: text(after.district) ?? tc("none"), number: letter })
+            : t("actions.case_released", { reference: text(after.referenceNumber) ?? tc("none") }),
           lines,
         };
+      }
       case "release_corrected": {
-        if ("releasedOn" in after) {
-          lines.push(
-            t("change", { field: t("fields.releasedOn"), from: day(before.releasedOn), to: day(after.releasedOn) }),
-          );
+        for (const field of ["releasedOn", "letterDate", "validUntil"] as const) {
+          if (field in after) {
+            lines.push(t("change", { field: t(`fields.${field}`), from: day(before[field]), to: day(after[field]) }));
+          }
         }
-        if ("referenceNumber" in after) {
-          const from = text(before.referenceNumber) ?? tc("none");
-          const to = text(after.referenceNumber) ?? tc("none");
-          lines.push(t("change", { field: t("fields.referenceNumber"), from, to }));
+        for (const field of ["referenceNumber", "letterNumber"] as const) {
+          if (field in after) {
+            const from = text(before[field]) ?? tc("none");
+            const to = text(after[field]) ?? tc("none");
+            lines.push(t("change", { field: t(`fields.${field}`), from, to }));
+          }
         }
         if ("note" in after) lines.push(t("changedFields", { fields: t("fields.note") }));
         return { sentence: t("actions.release_corrected"), lines };

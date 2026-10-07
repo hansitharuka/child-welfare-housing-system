@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { CaseStatus, Category, InstallmentStatus, Kind } from "@/generated/prisma/enums";
 import { addDays, colomboDay, colomboStartOf, dateToDay, dayToDate, daysBetween } from "@/lib/dates";
 import { nicKey, normaliseNic } from "@/lib/nic";
+import { latestDay } from "@/lib/validation/release";
 import { canSeeOffice, officeFilter, type Viewer } from "../permissions";
 
 export type CaseDetails = {
@@ -43,13 +44,28 @@ export type CaseDetails = {
 };
 
 export type ReleaseDetails = {
-  /** "YYYY-MM-DD" */
+  /** "YYYY-MM-DD": the letter's date. */
   releasedOn: string;
   amount: number;
-  referenceNumber: string;
-  note: string | null;
   byName: string;
   at: Date;
+  /** The allocation letter to the District Secretary that released it (REL-2). */
+  letter: {
+    id: string;
+    letterNumber: string;
+    /** "YYYY-MM-DD" */
+    letterDate: string;
+    /** "YYYY-MM-DD" */
+    validUntil: string;
+    note: string | null;
+    districtName: string;
+    /** How many cases the letter released. */
+    cases: number;
+    /** "YYYY-MM-DD": the latest verification of its cases, the earliest the letter can be dated (REL-4). */
+    latestVerification: string | null;
+    /** The scanned letter, if one was added. */
+    scanId: string | null;
+  };
 };
 
 export type InstallmentDetails = {
@@ -105,10 +121,20 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
         select: {
           releasedOn: true,
           amount: true,
-          referenceNumber: true,
-          note: true,
           at: true,
           by: { select: { name: true } },
+          letter: {
+            select: {
+              id: true,
+              letterNumber: true,
+              letterDate: true,
+              validUntil: true,
+              note: true,
+              district: { select: { nameSi: true } },
+              releases: { select: { case: { select: { verifiedAt: true } } } },
+              files: { where: { kind: "LETTER", removedAt: null }, take: 1, select: { id: true } },
+            },
+          },
         },
       },
       installments: {
@@ -149,10 +175,21 @@ export async function getCase(db: PrismaClient, viewer: Viewer, id: string): Pro
     release: release && {
       releasedOn: dateToDay(release.releasedOn),
       amount: release.amount,
-      referenceNumber: release.referenceNumber,
-      note: release.note,
       byName: release.by.name,
       at: release.at,
+      letter: {
+        id: release.letter.id,
+        letterNumber: release.letter.letterNumber,
+        letterDate: dateToDay(release.letter.letterDate),
+        validUntil: dateToDay(release.letter.validUntil),
+        note: release.letter.note,
+        districtName: release.letter.district.nameSi,
+        cases: release.letter.releases.length,
+        latestVerification: latestDay(
+          release.letter.releases.map((r) => r.case.verifiedAt && colomboDay(r.case.verifiedAt)),
+        ),
+        scanId: release.letter.files[0]?.id ?? null,
+      },
     },
     installments: installments.map((i) => ({
       ...i,

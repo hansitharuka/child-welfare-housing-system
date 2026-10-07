@@ -19,7 +19,9 @@ const audits = (entityType: string) => db.auditLog.findMany({ where: { entityTyp
 
 describe("DS offices (LST-2, LST-3)", () => {
   it("adds an office to a district, with an audit record", async () => {
-    expect(await addOffice(db, ADMIN, colombo, { nameSi: "කොලොන්නාව", nameEn: "Kolonnawa", code: "KOL" })).toEqual({
+    expect(
+      await addOffice(db, ADMIN, colombo, { nameSi: "පරීක්ෂණ කාර්යාලය", nameEn: "Test Office", code: "KOL" }),
+    ).toEqual({
       ok: true,
     });
     const listed = await officesOfDistrict(db, colombo);
@@ -40,13 +42,15 @@ describe("DS offices (LST-2, LST-3)", () => {
 
   it("renames and deactivates an office without deleting it", async () => {
     const kol = await db.dsOffice.findUniqueOrThrow({ where: { code: "KOL" } });
-    expect(await renameOffice(db, ADMIN, kol.id, { nameSi: "කොලොන්නාව නව", nameEn: "Kolonnawa New" })).toEqual({
-      ok: true,
-    });
+    expect(await renameOffice(db, ADMIN, kol.id, { nameSi: "පරීක්ෂණ කාර්යාලය නව", nameEn: "Test Office New" })).toEqual(
+      {
+        ok: true,
+      },
+    );
     expect(await setOfficeActive(db, ADMIN, kol.id, false)).toEqual({ ok: true });
 
     const after = await db.dsOffice.findUniqueOrThrow({ where: { code: "KOL" } });
-    expect(after).toMatchObject({ nameSi: "කොලොන්නාව නව", code: "KOL", active: false });
+    expect(after).toMatchObject({ nameSi: "පරීක්ෂණ කාර්යාලය නව", code: "KOL", active: false });
   });
 
   it("names each office's Child Rights Promotion Officer (ADM-3)", async () => {

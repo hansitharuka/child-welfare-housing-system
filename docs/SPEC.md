@@ -93,11 +93,12 @@ Amounts are whole rupees stored as integers. Nothing listed here is ever deleted
 | Case | case number, DS office, category, kind, status, name, child's name, NIC, NIC key, address, GN division, mobile 1, mobile 2, remark, created by, submitted at, verified at, completed at, status before stop, version | See CASE-2 for field rules. `version` goes up by one on every save and every installment, stage or status change (CASE-10). `submitted at` is the latest submit. While the case is stopped, `status before stop` holds the status it goes back to (CLS-3); the stop's day and reason are its Decision |
 | CaseNumberCounter | DS office, year, last number | One row per office and year. Taking the next number locks the row, so two submits at once never share a number (CASE-5) |
 | Decision | case, type, reason, by, at | Types: submit, verify, send back, reject, stop, reopen |
-| Release | case (one per case), released on, amount, reference number, note, by, at | Amount is always 2,000,000 (a database check) |
+| ReleaseLetter | district, letter number, letter date, valid until, note, by, at | One allocation letter (ප්‍රතිපාදන ලිපිය) to a District Secretary for several verified cases of that district (REL-2, 6 Oct 2026). Valid until is never before the letter date (a database check). Its scan, if any, is a File |
+| Release | case (one per case), letter, released on, amount, by, at | Amount is always 2,000,000 (a database check). Released on is the letter's date, kept on each release for the installment and stage date rules; correcting the letter's date changes it on every release of the letter (REL-4). Before 6 Oct 2026 each release had its own reference number and note; the migration made each such release a letter of its own |
 | Installment | case, number 1–4, amount, status, purpose, expected on, released on, note | Amount is always 500,000 and the number 1 to 4 (database checks). Case plus number is unique. All four are created when the release is recorded |
 | StageDefinition | kind, order, name, active | New-house stages are seeded (LST-4) |
 | StageUpdate | case, stage (empty means a note-only visit), visited on, note, by, at | A case's current stage is the highest stage it has reached. Each stage is reached once per case; a stage skipped by a later choice gets its own row on the same day (STG-2). A stage that has been used can't be removed (a database rule, LST-4) |
-| File | kind (document or photo), case, stage update, stored name, thumbnail name, original name, type, size, SHA-256, uploaded by, removed at | Linked to a case as a document, or also to a stage update as a photo (a database check). A photo has a small copy for thumbnails (STG-6). Until the case form or the stage update is saved with it, only the person who uploaded it can open it, and an upload never saved is removed after a day. A document taken off a case is kept but no longer shown |
+| File | kind (document, photo or letter scan), case, stage update, letter, stored name, thumbnail name, original name, type, size, SHA-256, uploaded by, removed at | Linked to a case as a document, or also to a stage update as a photo, or to an allocation letter as its scan, never to a case (database checks). Anyone who may see one of a letter's cases may open its scan. A photo has a small copy for thumbnails (STG-6). Until the case form or the stage update is saved with it, only the person who uploaded it can open it, and an upload never saved is removed after a day. A document taken off a case is kept but no longer shown |
 | AuditLog | at, actor, action, entity, entity id, case, before, after | Can only be added to, never changed (HIS-3) |
 | Notification | user, case, type, created at, read at | See NTF-1 |
 
@@ -127,7 +128,7 @@ Values used across the system:
 | `SUBMITTED` | `VERIFIED` | HO officer | — | DS notified |
 | `SUBMITTED` | `RETURNED` | HO officer | Reason | DS notified |
 | `SUBMITTED` | `REJECTED` | HO officer | Reason | DS notified |
-| `VERIFIED` | `IN_PROGRESS` | HO officer | Release details (REL-2) | Four installments created; DS notified |
+| `VERIFIED` | `IN_PROGRESS` | HO officer | Its district's allocation letter (REL-2) | Four installments created; DS notified |
 | `IN_PROGRESS` | `COMPLETED` | The system | CLS-1 is met | DS notified |
 | `VERIFIED`, `IN_PROGRESS` | `STOPPED` | HO officer | Reason | DS notified |
 | `STOPPED` | The status it had before | HO officer | Reason | DS notified |
@@ -242,19 +243,24 @@ Values used across the system:
   - **Reject:** a reason is required (5–1,000 characters).
 
   Verifying asks once to confirm. Each writes a Decision and notifies every active officer of the case's DS. A decision is refused if the case changed after the check view showed it (CASE-10), for example when it was sent back and submitted again in the meantime.
-- **CHK-4** (added 2026-10-06) Head Office shall be able to narrow both queues (CHK-1, REL-1) to a district, then to one DS office in it. Each choice shows how many cases wait there. Only places with cases waiting are offered, plus the chosen one even once none are left. The place stays in the address (`districtId`, `dsOfficeId`) through paging, both tabs and every decision, so after a decision the next case shown is the next one waiting in the same place. The tab counts and the menu's count stay for the whole country. Cases are still checked and released one at a time (§13, question 9).
+- **CHK-4** (added 2026-10-06) Head Office shall be able to narrow both queues (CHK-1, REL-1) to a district, then to one DS office in it. Each choice shows how many cases wait there. Only places with cases waiting are offered, plus the chosen one even once none are left. The place stays in the address (`districtId`, `dsOfficeId`) through paging, both tabs and every decision, so after a decision the next case shown is the next one waiting in the same place. The tab counts and the menu's count stay for the whole country. Cases are still checked one at a time. The release tab doesn't use the two selects: it lists the districts waiting for a letter instead (REL-1), and it opens on the district in the address. Once the chosen district, or the district of the case just verified, has nothing left to check but has verified cases waiting, a banner above the check queue says so and leads to that district's letter (as in the prototype).
 
 ### 7.8 The Rs. 2,000,000 release (REL)
 
-- **REL-1** The "මුදල් නිදහස් කිරීමට" (to release) queue shall list `VERIFIED` cases, oldest verification first.
-- **REL-2** Recording a release shall take:
-  - released on: required; not in the future and not before the verification date
-  - reference number: required, 1–50 characters
+Changed on 6 Oct 2026 (§13, question 9): Head Office no longer releases money case by case. It sends one allocation letter (ප්‍රතිපාදන ලිපිය) to a District Secretary, with one total for several verified cases of that district, and the District gives the money out through each case's DS office. The screens follow the prototype's option A (two tabs).
+
+- **REL-1** The "ප්‍රතිපාදන මුදා හැරීමට" (to release) tab shall list the districts whose `VERIFIED` cases wait for a letter, the most cases first, then the longest waiting. Each shows how many cases wait and their total (Rs. 2,000,000 each), their DS offices, and how long the oldest verification has waited. Below them are the 10 letters recorded last (district, number, date, cases, total, valid until). The tab's count, and the menu's, is the number of `VERIFIED` cases.
+- **REL-2** Recording a district's letter shall take:
+  - the cases on the letter: the district's `VERIFIED` cases, grouped by DS office, all ticked to start with; at least one. The officer unticks any case the letter doesn't name, and it keeps waiting
+  - letter number: required, 1–50 characters
+  - letter date: required; not in the future and not before the verification of any ticked case
+  - valid until: required; not before the letter date; the end of the year to start with
+  - the scanned letter: optional; one PDF, JPEG or PNG of up to 10 MB, uploaded as soon as it is chosen (as CASE-2's documents)
   - note: optional, up to 500 characters
 
-  The amount is fixed at Rs. 2,000,000 and cannot be edited.
-- **REL-3** Saving the release shall set the case to `IN_PROGRESS`, create four `NOT_STARTED` installments and notify the DS.
-- **REL-4** Head Office shall be able to correct a release's date, reference number and note. Every correction is logged with the old and new values. The REL-2 date rules apply, and the date can't move past an installment date already recorded (INS-3, INS-4).
+  The amount is Rs. 2,000,000 for each ticked case and can't be edited; the form shows the total. A case of another district, or one that is no longer `VERIFIED` or changed after the form was shown (CASE-10), refuses the whole letter, and nothing is released.
+- **REL-3** Saving the letter shall, in one transaction, save the letter and its scan and, for each ticked case, record its Rs. 2,000,000 release on the letter's date, set it to `IN_PROGRESS`, create its four `NOT_STARTED` installments and notify its DS. The Head Office case page of a `VERIFIED` case leads to its district's letter; the case pages show the letter (number, date, district, valid until; for Head Office also how many cases it released and its total) and a link to its scan.
+- **REL-4** Head Office shall be able to correct a release's letter from the case page: its number, date, valid until and note. The change is for every case on the letter, and the pop-up says how many that is. The REL-2 date rules apply to all of them, and the date can't move past an installment date already recorded on any of them (INS-3, INS-4); a new date moves each of their releases too. Every correction is logged on each of the letter's cases with the old and new value. A case on the letter changed after the page was shown refuses the correction (CASE-10).
 
 ### 7.9 Installments (INS)
 
@@ -335,7 +341,7 @@ Only the DS office starts and pays installments (section 4). Each change is refu
   | DS officer | Case page | `/ds/cases/[id]` | ප්‍රතිලාභියාගේ පිටුව |
   | HO officer | Dashboard | `/ho` | සාරාංශය |
   | DS officer | Notifications | `/ds/notifications` | — |
-  | HO officer | Check and release | `/ho/check`, `/ho/release` | පරීක්ෂාව සහ මුදල් නිදහස් කිරීම |
+  | HO officer | Check and release | `/ho/check`, `/ho/release` | පරීක්ෂාව සහ ප්‍රතිපාදන මුදා හැරීම |
   | HO officer | Case list, case page, new case | `/ho/cases`, `/ho/cases/[id]`, `/ho/cases/new` | ප්‍රතිලාභියාගේ පිටුව |
   | Admin | Users, lists | `/admin/users`, `/admin/lists` | පරිශීලකයින්, ලැයිස්තු |
 
@@ -408,7 +414,7 @@ Version 1 is accepted when every check below passes on staging with made-up data
 | AC-7 | A duplicate NIC in the same DS shows the case number and name. One in another DS shows only the case number and DS. Submitting is still possible. | CASE-6 |
 | AC-8 | Submitting gives a number like `HMG-2026-001`, and the case appears in the check queue, oldest first. | CASE-5, CHK-1 |
 | AC-9 | "Send back" without a reason is refused. With a reason, the DS sees the case and the reason in its to-do panel. Submitting again returns it to the queue. | CHK-3, CASE-7, HOME-3 |
-| AC-10 | After verifying, the case is in the release queue. A release without a reference number is refused. After a valid release, the case has four `NOT_STARTED` installments and the DS is notified. | REL-1–3 |
+| AC-10 | After verifying, the case waits under its district on the release tab. A letter with no case ticked, or without a number, is refused. After a valid letter, each ticked case has four `NOT_STARTED` installments, its DS is notified, and the case page shows the letter. | REL-1–3 |
 | AC-11 | Installment 3 cannot change while installment 2 is not `RELEASED`, including through a direct request to the server. | INS-2, ERR-7 |
 | AC-12 | A stage update that skips ahead marks the skipped stages with the same date. An installment can be released at any stage. | STG-2, INS-5 |
 | AC-13 | Releasing installment 4 after the last stage is reached sets the case to `COMPLETED`. | CLS-1 |
@@ -423,7 +429,8 @@ Version 1 is accepted when every check below passes on staging with made-up data
 | AC-22 | Restoring last night's backup on staging brings back the cases and their files. | SEC-10 |
 | AC-23 | The admin can't give a DS office a second active DS officer. Once the old account is disabled, an account for the new officer can be created. | ADM-3 |
 | AC-24 | Removed with IMP-1 to IMP-7 (2026-10-06). | — |
-| AC-25 | On the check screen, choosing a district and then a DS office lists only that office's cases. After a case is verified, the screen stays on that office, and the release tab and the release keep it too. | CHK-4 |
+| AC-25 | On the check screen, choosing a district and then a DS office lists only that office's cases. After a case is verified, the screen stays on that office, and the release tab opens on that district's letter. | CHK-4 |
+| AC-26 | A letter for two cases releases both, with one letter row and each case's own release and installments; one case not `VERIFIED`, or of another district, releases neither. Correcting the letter from one case's page changes it for both. | REL-2–4 |
 
 ## 13. Deferred questions and the defaults used
 
@@ -438,7 +445,7 @@ On 28 Sep the open questions were set aside for later. Until the Ministry answer
 | 6. Money on a stopped case | The balance left with the DS is shown. The system has no refund process. | CLS-2 |
 | 7. Replacing a beneficiary | The new person is a new case. The old case is rejected or stopped with a reason that names the new case number. | CHK-3, CLS-2 |
 | 8. Tamil | Not in version 1. Every string is in a message file, so `ta` can be added later. | UI-1 |
-| 9. How the Rs. 2M is released | Case by case. | REL-2 |
+| 9. How the Rs. 2M is released | Answered on 6 Oct 2026: by one allocation letter to a District Secretary for several verified cases of the district. No longer a default. | REL-1–4 |
 | 12. First password | The admin sees it once and passes it on in person or by phone. | ADM-2 |
 
 The six rules marked Proposed in the PRD are built as written there: send back (CHK-3), Head Office-only edits after verification (CASE-9), nothing deleted (ADM-7, LST-3), the completion rule (CLS-1), one account per person (ADM-2), and the duplicate NIC in another DS (CASE-6).

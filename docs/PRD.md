@@ -124,6 +124,7 @@ Version 1 covers a case from first entry to completion, with dashboards, history
 
 - A queue of submitted cases, oldest first.
 - Narrow the queue to a district or a DS division, showing how many cases wait in each.
+- Release money by district (6 Oct 2026): one allocation letter to a District Secretary for several verified cases of the district, with its number, date, last valid day, an optional scan and the total of Rs. 2,000,000 per case. This answers open question 9.
 - Verify a case, send it back with comments, or reject it with a reason.
 - Keep every decision and comment in the case's history.
 

@@ -4,7 +4,8 @@
  *   developer's lists don't fill up with test entries. An office with cases, or a stage a case has
  *   reached, stays: load-test cases (scripts/seed-load.ts) may use them, and they go once those are removed;
  * - deletes the cases they created (named with TEST_CASE_NAME), with their files and photos, decisions,
- *   release, installments, stage updates and notifications;
+ *   release, installments, stage updates and notifications, and the allocation letters left with no case,
+ *   with their scans;
  * - deletes the DS officer accounts they created (named TEST_OFFICER_NAME), which frees those offices for
  *   the next run, since an office has only one active officer (ADM-3). Their audit records stay, with an
  *   actor id that no longer exists. An account that still holds case records is disabled instead.
@@ -39,6 +40,12 @@ async function main() {
     await prisma.notification.deleteMany({ where: { caseId: { in: caseIds } } });
     await prisma.installment.deleteMany({ where: { caseId: { in: caseIds } } });
     await prisma.release.deleteMany({ where: { caseId: { in: caseIds } } });
+    const emptyLetter = { letter: { releases: { none: {} } } };
+    files.push(
+      ...(await prisma.storedFile.findMany({ where: emptyLetter, select: { storedName: true, thumbName: true } })),
+    );
+    await prisma.storedFile.deleteMany({ where: emptyLetter });
+    await prisma.releaseLetter.deleteMany({ where: { releases: { none: {} } } });
     await prisma.stageUpdate.deleteMany({ where: { caseId: { in: caseIds } } });
     await prisma.decision.deleteMany({ where: { caseId: { in: caseIds } } });
     await prisma.case.deleteMany({ where: { id: { in: caseIds } } });

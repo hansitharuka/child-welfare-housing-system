@@ -121,7 +121,12 @@ export default async function DsCasePage({
         main={
           <>
             {details.release && (
-              <MoneySection release={details.release} installments={details.installments} actions={installmentStep} />
+              <MoneySection
+                audience="ds"
+                release={details.release}
+                installments={details.installments}
+                actions={installmentStep}
+              />
             )}
             <CaseHistory entries={history ?? []} />
           </>

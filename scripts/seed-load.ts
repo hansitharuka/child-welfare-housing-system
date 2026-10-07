@@ -99,7 +99,7 @@ const NOTE_SHARES: Share<number> = [
 
 // --- Planning the cases -------------------------------------------------------------------------
 
-type Office = { id: number; code: string; nameSi: string };
+type Office = { id: number; code: string; nameSi: string; districtId: number };
 
 type Context = {
   r: Random;
@@ -110,10 +110,13 @@ type Context = {
   stages: Record<Kind, number[]>;
 };
 
+/** A release before its allocation letter is known: the cases released on the same day in a district share one. */
+type PlannedRelease = Omit<Prisma.ReleaseCreateManyInput, "letterId"> & { districtId: number; day: string };
+
 type Planned = {
   case: Prisma.CaseCreateManyInput;
   decisions: Prisma.DecisionCreateManyInput[];
-  release: Prisma.ReleaseCreateManyInput | null;
+  release: PlannedRelease | null;
   installments: Prisma.InstallmentCreateManyInput[];
   stageUpdates: Prisma.StageUpdateCreateManyInput[];
 };
@@ -174,7 +177,7 @@ function planCase(ctx: Context, office: Office, status: CaseStatus): Planned {
   let submittedAt: Date | null = null;
   let verifiedAt: Date | null = null;
   let completedAt: Date | null = null;
-  let release: Prisma.ReleaseCreateManyInput | null = null;
+  let release: PlannedRelease | null = null;
   const installments: Prisma.InstallmentCreateManyInput[] = [];
   const stageUpdates: Prisma.StageUpdateCreateManyInput[] = [];
   let steps = 0;
@@ -206,9 +209,10 @@ function planCase(ctx: Context, office: Office, status: CaseStatus): Planned {
           caseId: id,
           releasedOn: dayToDate(releasedDay),
           amount: RELEASE_AMOUNT,
-          referenceNumber: `LT/${releasedDay.slice(0, 4)}/${r.int(10_000, 99_999)}`,
           byId: LOAD_USER_ID,
           at: releaseAt,
+          districtId: office.districtId,
+          day: releasedDay,
         };
 
         const stages = ctx.stages[kind];
@@ -369,7 +373,7 @@ export async function addLoadData(db: PrismaClient, options: LoadOptions = {}): 
   const offices: Office[] = await db.dsOffice.findMany({
     where: { active: true },
     orderBy: { id: "asc" },
-    select: { id: true, code: true, nameSi: true },
+    select: { id: true, code: true, nameSi: true, districtId: true },
   });
   if (offices.length === 0) throw new Error("There are no active DS offices: run the seed first.");
   const stages: Record<Kind, number[]> = { NEW_HOUSE: [], RENOVATION: [] };
@@ -387,6 +391,29 @@ export async function addLoadData(db: PrismaClient, options: LoadOptions = {}): 
   const planned = Array.from({ length: count }, (_, index) =>
     planCase(ctx, index < offices.length ? offices[index] : r.weighted(officeShares), r.weighted(STATUS_SHARES)),
   );
+
+  // REL-2: one allocation letter for the cases of a district released on the same day.
+  const letters = new Map<string, Prisma.ReleaseLetterCreateManyInput>();
+  const releases: Prisma.ReleaseCreateManyInput[] = [];
+  for (const { release } of planned) {
+    if (!release) continue;
+    const { districtId, day, ...row } = release;
+    const key = `${districtId}:${day}`;
+    let letter = letters.get(key);
+    if (!letter) {
+      letter = {
+        id: `${LOAD_ID_PREFIX}${randomUUID()}`,
+        districtId,
+        letterNumber: `LT/${day.slice(0, 4)}/${r.int(10_000, 99_999)}`,
+        letterDate: dayToDate(day),
+        validUntil: dayToDate(`${day.slice(0, 4)}-12-31`),
+        byId: LOAD_USER_ID,
+        at: row.at,
+      };
+      letters.set(key, letter);
+    }
+    releases.push({ ...row, letterId: letter.id });
+  }
 
   // CASE-5: numbers in the order of submitting, within each office and year.
   const groups = new Map<string, { office: Office; year: number; cases: Prisma.CaseCreateManyInput[] }>();
@@ -428,8 +455,8 @@ export async function addLoadData(db: PrismaClient, options: LoadOptions = {}): 
       }
       for (const rows of chunks(planned.map((p) => p.case))) await tx.case.createMany({ data: rows });
       for (const rows of chunks(planned.flatMap((p) => p.decisions))) await tx.decision.createMany({ data: rows });
-      for (const rows of chunks(planned.flatMap((p) => (p.release ? [p.release] : []))))
-        await tx.release.createMany({ data: rows });
+      for (const rows of chunks([...letters.values()])) await tx.releaseLetter.createMany({ data: rows });
+      for (const rows of chunks(releases)) await tx.release.createMany({ data: rows });
       for (const rows of chunks(planned.flatMap((p) => p.installments)))
         await tx.installment.createMany({ data: rows });
       for (const rows of chunks(planned.flatMap((p) => p.stageUpdates)))
@@ -454,6 +481,7 @@ export async function removeLoadData(db: PrismaClient): Promise<number> {
   if (!loadDataAllowed()) throw new Error(`Load-test data is not allowed when APP_ENV is "${process.env.APP_ENV}".`);
   const loadCase = { caseId: { startsWith: LOAD_ID_PREFIX } };
   const files = await db.storedFile.findMany({ where: loadCase, select: { storedName: true, thumbName: true } });
+  const letterScans: { storedName: string; thumbName: string | null }[] = [];
 
   const removed = await db.$transaction(
     async (tx) => {
@@ -475,6 +503,13 @@ export async function removeLoadData(db: PrismaClient): Promise<number> {
       await tx.notification.deleteMany({ where: loadCase });
       await tx.installment.deleteMany({ where: loadCase });
       await tx.release.deleteMany({ where: loadCase });
+      // The load-test letters, and any letter someone recorded only for load-test cases, with its scan.
+      const emptyLetter = { letter: { releases: { none: {} } } };
+      letterScans.push(
+        ...(await tx.storedFile.findMany({ where: emptyLetter, select: { storedName: true, thumbName: true } })),
+      );
+      await tx.storedFile.deleteMany({ where: emptyLetter });
+      await tx.releaseLetter.deleteMany({ where: { releases: { none: {} } } });
       await tx.stageUpdate.deleteMany({ where: loadCase });
       await tx.decision.deleteMany({ where: loadCase });
       const cases = await tx.case.deleteMany({ where: { id: { startsWith: LOAD_ID_PREFIX } } });
@@ -496,7 +531,8 @@ export async function removeLoadData(db: PrismaClient): Promise<number> {
     { maxWait: 10_000, timeout: 10 * 60_000 },
   );
 
-  for (const name of files.flatMap((f) => [f.storedName, f.thumbName])) if (name) await deleteStoredFile(name);
+  for (const name of [...files, ...letterScans].flatMap((f) => [f.storedName, f.thumbName]))
+    if (name) await deleteStoredFile(name);
   return removed;
 }
 

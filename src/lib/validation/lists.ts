@@ -19,7 +19,8 @@ export const officeSchema = z.object({
     .min(1, { error: "required" })
     .min(2, { error: "tooShort" })
     .max(60, { error: "tooLong" })
-    .regex(/^[A-Za-z][A-Za-z .'-]*$/, { error: "englishName" }),
+    // "/" and "&" for offices with two names, such as "Valikamam East / Kopay" and "Manmunai South & Eruvil Pattu".
+    .regex(/^[A-Za-z][A-Za-z .'/&-]*$/, { error: "englishName" }),
   code: z
     .string()
     .trim()

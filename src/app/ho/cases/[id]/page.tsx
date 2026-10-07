@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { CaseColumns, CaseDetailsSection, CaseNotes, caseSubtitle } from "@/components/cases/case-view";
@@ -12,7 +13,6 @@ import { StageSection } from "@/components/progress/stage-section";
 import { CorrectRelease } from "@/components/review/correct-release";
 import { DecisionPanel } from "@/components/review/decision-panel";
 import { DuplicateCases } from "@/components/review/duplicate-cases";
-import { ReleaseForm } from "@/components/review/release-form";
 import { ReviewNotice } from "@/components/review/review-notice";
 import { colomboDay } from "@/lib/dates";
 import { balance, formatRupees } from "@/lib/money";
@@ -25,7 +25,7 @@ import { db } from "@/server/db";
 import { caseHistory } from "@/server/history/queries";
 import { lastPaid } from "@/server/installments/rules";
 import { getStageProgress } from "@/server/stages/queries";
-import { correctReleaseAction, decideAction, releaseAction } from "../../check/actions";
+import { correctReleaseAction, decideAction } from "../../check/actions";
 import { reopenAction, stopAction, undoInstallmentAction } from "./actions";
 
 /** What a stop, reopen or undo leaves on the page, by its key under "progress.notices". */
@@ -35,7 +35,8 @@ const isNotice = (value: unknown): value is (typeof NOTICES)[number] =>
 
 /**
  * Head Office's case page (UI-7). A submitted case can be decided here as in the check view (CHK-2,
- * CHK-3), a verified one released (REL-2), and a recorded release corrected (REL-4). A running case
+ * CHK-3); a verified one leads to its district's allocation letter (REL-2), and the letter of a
+ * recorded release can be corrected (REL-4). A running case
  * shows its installments, stages with photos (STG-6) and history (HIS-2); Head Office can stop and
  * reopen it (CLS-2, CLS-3) and undo the last payment (INS-6).
  */
@@ -64,7 +65,6 @@ export default async function HoCasePage({
   const name = caseName(t, details.name, details.childName);
   const number = details.caseNumber ?? t("noNumber");
   const now = new Date();
-  const limits = { earliest: details.verifiedAt && colomboDay(details.verifiedAt), today: colomboDay(now) };
   const duplicates =
     details.status === "SUBMITTED"
       ? await duplicatesInFull(db, viewer, { caseId: details.id, nic: details.nic, dsOfficeId: details.dsOfficeId })
@@ -200,22 +200,20 @@ export default async function HoCasePage({
                 className="flex flex-col gap-3 rounded-xl border bg-card px-6 py-5"
               >
                 <h2 id="release-title" className="text-xl font-bold">
-                  {tr("release.title")}
+                  {tr("letters.caseTitle")}
                 </h2>
-                <ReleaseForm
-                  key={details.version}
-                  caseId={details.id}
-                  version={details.version}
-                  from="case"
-                  limits={limits}
-                  initial={{ releasedOn: limits.today, referenceNumber: "", note: "" }}
-                  mode="record"
-                  action={releaseAction}
-                />
+                <p>{tr("letters.caseText", { district: details.districtName })}</p>
+                <Link
+                  href={`/ho/release?districtId=${details.districtId}`}
+                  className="flex h-12 items-center self-start rounded-lg bg-primary px-5.5 text-[17px] font-bold text-primary-foreground"
+                >
+                  {tr("letters.caseGo")}
+                </Link>
               </section>
             )}
             {details.release && (
               <MoneySection
+                audience="ho"
                 release={details.release}
                 installments={details.installments}
                 actions={undoTarget ? undo : undefined}
@@ -224,12 +222,14 @@ export default async function HoCasePage({
                     key={details.version}
                     caseId={details.id}
                     version={details.version}
-                    limits={limits}
+                    limits={{ earliest: details.release.letter.latestVerification, today: colomboDay(now) }}
                     current={{
-                      releasedOn: details.release.releasedOn,
-                      referenceNumber: details.release.referenceNumber,
-                      note: details.release.note ?? "",
+                      letterNumber: details.release.letter.letterNumber,
+                      letterDate: details.release.letter.letterDate,
+                      validUntil: details.release.letter.validUntil,
+                      note: details.release.letter.note ?? "",
                     }}
+                    cases={details.release.letter.cases}
                     action={correctReleaseAction}
                   />
                 }
