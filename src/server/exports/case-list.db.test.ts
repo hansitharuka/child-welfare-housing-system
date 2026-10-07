@@ -46,7 +46,10 @@ async function lastExportAudit(actorId: string) {
   return db.auditLog.findFirst({ where: { actorId, action: "cases_exported" }, orderBy: { id: "desc" } });
 }
 
-describe("Excel export of a case list (EXP-1, EXP-3)", () => {
+// Each test reads lists of up to 5,000 cases: a check of the rows, not of speed (that is PRF-4). On a CI
+// runner that takes longer than vitest's default 5 seconds, and a test that times out keeps running
+// underneath the next one, which then fails too.
+describe("Excel export of a case list (EXP-1, EXP-3)", { timeout: 30_000 }, () => {
   it("holds every case of the list, every page, in the screen's order, for each filter", async () => {
     const filters: ListFilter[] = [
       {},
