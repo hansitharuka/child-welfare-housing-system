@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
 import { Kind } from "@/generated/prisma/enums";
-import { LOCALES, type Locale } from "@/i18n/locales";
 import { localName, type Names } from "@/lib/names";
 import { requireRole } from "@/server/context";
 import { db } from "@/server/db";
@@ -19,31 +18,8 @@ import { AddOfficeForm, AddStageForm, RenameInPlace } from "./list-forms";
 
 const smallButton = "h-10 rounded-lg border px-3 text-[15px] font-semibold";
 
-/** An office's or stage's name in the screen's language, with its other two names below (UI-9). */
-function AllNames({ names, locale, strike }: { names: Names; locale: Locale; strike?: boolean }) {
-  return (
-    <span className={`flex flex-col ${strike ? "text-muted-foreground line-through" : ""}`}>
-      <span lang={locale} className="font-semibold">
-        {localName(names, locale)}
-      </span>
-      {LOCALES.filter((other) => other !== locale).map((other) => (
-        <span key={other} lang={other} className="text-sm text-muted-foreground">
-          {localName(names, other)}
-        </span>
-      ))}
-    </span>
-  );
-}
-
-/** The rename form's three name fields, filled with the current names. */
-function nameFields(t: (key: "nameSi" | "nameTa" | "nameEn") => string, names: Names, width?: string) {
-  return (["nameSi", "nameTa", "nameEn"] as const).map((name) => ({
-    name,
-    label: t(name),
-    initial: names[name],
-    width,
-  }));
-}
+/** The three names of an office or stage row, for its rename form. */
+const namesOf = ({ nameSi, nameTa, nameEn }: Names): Names => ({ nameSi, nameTa, nameEn });
 
 export default async function AdminListsPage({
   searchParams,
@@ -165,9 +141,7 @@ async function Places({ districtParam }: { districtParam?: string | string[] }) 
             <tbody>
               {selected.offices.map((o) => (
                 <tr key={o.id} className="border-t align-top">
-                  <td className="px-4 py-2.5">
-                    <AllNames names={o} locale={locale} />
-                  </td>
+                  <td className="px-4 py-2.5 font-semibold">{localName(o, locale)}</td>
                   <td className="px-3 py-2.5 font-mono">{o.code}</td>
                   <td
                     className={`px-3 py-2.5 text-[15px] ${o.officer === null && o.active ? "font-semibold text-notice-foreground" : ""}`}
@@ -187,7 +161,7 @@ async function Places({ districtParam }: { districtParam?: string | string[] }) 
                         id={`rename-office-${o.id}`}
                         label={t("renameLabel", { name: localName(o, locale) })}
                         action={renameOfficeAction.bind(null, o.id)}
-                        fields={nameFields(t, o)}
+                        names={namesOf(o)}
                       />
                       <form action={setOfficeActiveAction.bind(null, o.id, !o.active)}>
                         <button
@@ -253,8 +227,8 @@ async function Stages() {
                   >
                     {index + 1}
                   </span>
-                  <span className="flex-1">
-                    <AllNames names={stage} locale={locale} strike={!stage.active} />
+                  <span className={`flex-1 font-semibold ${stage.active ? "" : "text-muted-foreground line-through"}`}>
+                    {localName(stage, locale)}
                   </span>
                   {!stage.active && <span className="text-sm text-muted-foreground">{t("inactive")}</span>}
                   <form action={moveStageAction.bind(null, stage.id, "up")}>
@@ -281,7 +255,8 @@ async function Stages() {
                     id={`rename-stage-${stage.id}`}
                     label={t("renameLabel", { name: localName(stage, locale) })}
                     action={renameStageAction.bind(null, stage.id)}
-                    fields={nameFields(t, stage, "w-72")}
+                    names={namesOf(stage)}
+                    width="w-72"
                   />
                   <form action={setStageActiveAction.bind(null, stage.id, !stage.active)}>
                     <button

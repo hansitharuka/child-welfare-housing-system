@@ -1,5 +1,15 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
-import { randomLetters, signIn, signInAs, signInError, TEST_MARKER, TEST_OFFICER_NAME, TEXT } from "./helpers";
+import { transliterate } from "../../src/lib/transliterate";
+import {
+  chooseLanguage,
+  randomLetters,
+  signIn,
+  signInAs,
+  signInError,
+  TEST_MARKER,
+  TEST_OFFICER_NAME,
+  TEXT,
+} from "./helpers";
 
 const CRPO = /ළමා හිමිකම් ප්‍රවර්ධන නිලධාරී/;
 
@@ -158,31 +168,44 @@ test("the admin can't disable their own account", async ({ page }) => {
   await expect(page.getByRole("button", { name: /^අක්‍රිය කරන්න/ })).toHaveCount(0);
 });
 
-test("the admin adds a DS office to a district (LST-2)", async ({ page }) => {
+test("the admin adds a DS office to a district, typing its name once (LST-2, UI-9)", async ({ page }) => {
   // No seeded office code starts with Q.
   const code = `Q${randomLetters(2)}`;
   const nameSi = `පරීක්ෂණ කාර්යාලය ${code}`;
+  const nameEn = `${TEST_MARKER} Office ${code}`;
 
   await signInAs(page, "ad0001", /\/admin\/users$/);
   await page.goto("/admin/lists");
   await page.getByRole("link", { name: /^කෑගල්ල/ }).click();
   await expect(page.getByRole("heading", { name: "කෑගල්ල දිස්ත්‍රික්කය" })).toBeVisible();
 
-  // A wrong code is explained, and what was typed stays.
-  await page.getByLabel("නම (සිංහලෙන්) *").fill(nameSi);
-  await page.getByLabel("නම (දෙමළෙන්) *").fill("சோதனை அலுவலகம்");
-  await page.getByLabel("නම (ඉංග්‍රීසියෙන්) *").fill(`${TEST_MARKER} Office ${code}`);
+  // A wrong code is explained, and what was typed stays. The English name is typed; the Tamil one is not.
+  await page.getByLabel("නම *", { exact: true }).fill(nameSi);
+  await page.getByText("අනෙක් භාෂාවලින් නම", { exact: true }).click();
+  await page.getByLabel("නම (ඉංග්‍රීසියෙන්)").fill(nameEn);
   await page.getByLabel("කේතය *").fill("Q1");
   await page.getByRole("button", { name: "එක් කරන්න" }).click();
   await expect(page.getByText("ඉංග්‍රීසි කැපිටල් අකුරු 3ක කේතයක් ඇතුළත් කරන්න.")).toBeVisible();
-  await expect(page.getByLabel("නම (සිංහලෙන්) *")).toHaveValue(nameSi);
+  await expect(page.getByLabel("නම *", { exact: true })).toHaveValue(nameSi);
 
   await page.getByLabel("කේතය *").fill(code.toLowerCase());
   await page.getByRole("button", { name: "එක් කරන්න" }).click();
-  await expect(page.getByRole("status")).toHaveText("එක් කළා.");
+  await expect(page.getByRole("status")).toHaveText(
+    "එක් කළා. අනෙක් භාෂාවලින් නම පද්ධතිය ලිව්වා; වැරදි නම් “නම වෙනස් කරන්න” මඟින් නිවැරදි කරන්න.",
+  );
+  // The list shows the name in the screen's language only.
   const row = page.getByRole("row").filter({ hasText: nameSi });
   await expect(row).toContainText(code);
   await expect(row).toContainText("ගිණුමක් නැත");
+  await expect(row).not.toContainText(nameEn);
+
+  // Each language shows its own name: the one typed in English, and the one the system wrote in Tamil.
+  await chooseLanguage(page, "English");
+  await expect(page.getByRole("row").filter({ hasText: code })).toContainText(nameEn);
+  await expect(page.getByRole("row").filter({ hasText: code })).not.toContainText(nameSi);
+  await chooseLanguage(page, "தமிழ்");
+  await expect(page.getByRole("row").filter({ hasText: code })).toContainText(transliterate(nameSi, "ta"));
+  await chooseLanguage(page, "සිංහල");
 });
 
 test("the admin adds and reorders renovation stages (LST-4)", async ({ page }) => {
@@ -194,13 +217,12 @@ test("the admin adds and reorders renovation stages (LST-4)", async ({ page }) =
 
   const renovation = page.getByRole("region", { name: "නිවස අලුත්වැඩියා කිරීම" });
   const stages = renovation.getByRole("listitem");
+  // One name is enough; the system writes the Tamil and English ones.
   for (const name of [first, second]) {
-    await renovation.getByLabel("නම (සිංහලෙන්) *").fill(name);
-    await renovation.getByLabel("නම (දෙමළෙන්) *").fill("சோதனைக் கட்டம்");
-    await renovation.getByLabel("නම (ඉංග්‍රීසියෙන්) *").fill(`Test stage ${suffix}`);
+    await renovation.getByLabel("නම *", { exact: true }).fill(name);
     await renovation.getByRole("button", { name: "එක් කරන්න" }).click();
     await expect(stages.filter({ hasText: name })).toBeVisible();
-    await expect(renovation.getByLabel("නම (සිංහලෙන්) *")).toHaveValue("");
+    await expect(renovation.getByLabel("නම *", { exact: true })).toHaveValue("");
   }
 
   const order = async () => {

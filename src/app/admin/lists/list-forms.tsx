@@ -1,23 +1,29 @@
 "use client";
 
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useActionState, useState } from "react";
 import { FormError, FormField, FormNotice } from "@/components/forms/form-field";
+import { LOCALES } from "@/i18n/locales";
+import { type Names, nameField } from "@/lib/names";
 import type { ListFormState } from "./actions";
 
 type Action = (state: ListFormState, form: FormData) => Promise<ListFormState>;
-type Field = { name: string; label: string; help?: string; initial?: string; width?: string };
+type Field = { name: string; label: string; help?: string; width?: string };
 
-const START: ListFormState = { errors: {}, error: null, saves: 0 };
+const START: ListFormState = { errors: {}, error: null, saves: 0, written: false };
 
 /**
- * A small form for adding or renaming a list entry (LST-2, LST-4). Fields are controlled, so a refused
- * save keeps what was typed; after a save, an "add" form clears itself.
+ * A small form for adding or renaming a list entry (LST-2, LST-4). The admin types the name in the screen's
+ * language; the other two languages are optional, under "the name in the other languages", and the system
+ * writes any left blank (UI-9). Fields are controlled, so a refused save keeps what was typed; after a save,
+ * an "add" form clears itself.
  */
 function ListForm({
   id,
   action,
-  fields,
+  names,
+  width,
+  extra = [],
   submitLabel,
   clearAfterSave,
   onSaved,
@@ -25,43 +31,73 @@ function ListForm({
 }: {
   id: string;
   action: Action;
-  fields: Field[];
+  /** The current names, when renaming. */
+  names?: Names;
+  width?: string;
+  /** Fields after the name, such as an office's code. */
+  extra?: Field[];
   submitLabel: string;
   clearAfterSave: boolean;
   onSaved?: () => void;
   onCancel?: () => void;
 }) {
   const t = useTranslations("lists");
-  const initial = () => Object.fromEntries(fields.map((f) => [f.name, f.initial ?? ""]));
+  const locale = useLocale();
+  const main: Field = { name: nameField(locale), label: t("name"), width };
+  const others: Field[] = LOCALES.filter((other) => other !== locale).map((other) => {
+    const name = nameField(other);
+    return { name, label: t(name), width };
+  });
+  const initial = () => ({
+    nameSi: "",
+    nameTa: "",
+    nameEn: "",
+    ...names,
+    ...Object.fromEntries(extra.map((f) => [f.name, ""])),
+  });
   const [values, setValues] = useState<Record<string, string>>(initial);
+  const [othersOpen, setOthersOpen] = useState(false);
   const [state, formAction, pending] = useActionState(async (previous: ListFormState, form: FormData) => {
     const next = await action(previous, form);
     if (next.saves > previous.saves) {
-      if (clearAfterSave) setValues(initial());
+      if (clearAfterSave) {
+        setValues(initial());
+        setOthersOpen(false);
+      }
       onSaved?.();
-    }
+    } else if (others.some((field) => next.errors[field.name])) setOthersOpen(true);
     return next;
   }, START);
 
+  const input = (field: Field) => (
+    <div key={field.name} className={field.width ?? "w-64"}>
+      <FormField
+        id={`${id}-${field.name}`}
+        name={field.name}
+        label={field.label}
+        help={field.help}
+        value={values[field.name]}
+        onChange={(event) => setValues((v) => ({ ...v, [field.name]: event.target.value }))}
+        error={state.errors[field.name] ? t(`errors.${state.errors[field.name]}`) : undefined}
+      />
+    </div>
+  );
+
   return (
     <form action={formAction} className="flex flex-col gap-3" noValidate>
-      <div className="flex flex-wrap items-start gap-3">
-        {fields.map((field) => (
-          <div key={field.name} className={field.width ?? "w-64"}>
-            <FormField
-              id={`${id}-${field.name}`}
-              name={field.name}
-              label={field.label}
-              help={field.help}
-              value={values[field.name]}
-              onChange={(event) => setValues((v) => ({ ...v, [field.name]: event.target.value }))}
-              error={state.errors[field.name] ? t(`errors.${state.errors[field.name]}`) : undefined}
-            />
-          </div>
-        ))}
-      </div>
+      <input type="hidden" name="from" value={locale} />
+      <div className="flex flex-wrap items-start gap-3">{[main, ...extra].map(input)}</div>
+      <details open={othersOpen} onToggle={(event) => setOthersOpen(event.currentTarget.open)}>
+        <summary className="w-fit cursor-pointer text-[15px] font-semibold text-primary">{t("otherNames")}</summary>
+        <div className="mt-2 flex flex-col gap-3">
+          <p className="text-sm text-muted-foreground">{t("otherNamesHint")}</p>
+          <div className="flex flex-wrap items-start gap-3">{others.map(input)}</div>
+        </div>
+      </details>
       {state.error && <FormError id={`${id}-error`} message={t(`errors.${state.error}`)} />}
-      {clearAfterSave && state.saves > 0 && !state.error && <FormNotice message={t("added")} />}
+      {clearAfterSave && state.saves > 0 && !state.error && (
+        <FormNotice message={t(state.written ? "addedWritten" : "added")} />
+      )}
       <div className="flex gap-3">
         <button
           type="submit"
@@ -92,31 +128,14 @@ export function AddOfficeForm({ action }: { action: Action }) {
       action={action}
       clearAfterSave
       submitLabel={t("add")}
-      fields={[
-        { name: "nameSi", label: t("nameSi") },
-        { name: "nameTa", label: t("nameTa") },
-        { name: "nameEn", label: t("nameEn") },
-        { name: "code", label: t("code"), help: t("codeHint"), width: "w-72" },
-      ]}
+      extra={[{ name: "code", label: t("code"), help: t("codeHint"), width: "w-72" }]}
     />
   );
 }
 
 export function AddStageForm({ id, action }: { id: string; action: Action }) {
   const t = useTranslations("lists");
-  return (
-    <ListForm
-      id={id}
-      action={action}
-      clearAfterSave
-      submitLabel={t("add")}
-      fields={[
-        { name: "nameSi", label: t("nameSi"), width: "w-full" },
-        { name: "nameTa", label: t("nameTa"), width: "w-full" },
-        { name: "nameEn", label: t("nameEn"), width: "w-full" },
-      ]}
-    />
-  );
+  return <ListForm id={id} action={action} width="w-full" clearAfterSave submitLabel={t("add")} />;
 }
 
 /** A "rename" button that opens the rename form in place. */
@@ -124,12 +143,14 @@ export function RenameInPlace({
   id,
   label,
   action,
-  fields,
+  names,
+  width,
 }: {
   id: string;
   label: string;
   action: Action;
-  fields: Field[];
+  names: Names;
+  width?: string;
 }) {
   const t = useTranslations("lists");
   const [editing, setEditing] = useState(false);
@@ -150,7 +171,8 @@ export function RenameInPlace({
       <ListForm
         id={id}
         action={action}
-        fields={fields}
+        names={names}
+        width={width}
         submitLabel={t("save")}
         clearAfterSave={false}
         onSaved={() => setEditing(false)}

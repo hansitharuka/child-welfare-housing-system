@@ -166,9 +166,9 @@ Values used across the system:
 ### 7.3 Admin: lists (LST)
 
 - **LST-1** The system shall be seeded with the 9 provinces, the 25 districts and every DS office, with their names in Sinhala, Tamil and English (UI-9) and codes. The Tamil names are to be checked with the Ministry before go-live (task 9.7).
-- **LST-2** The admin shall be able to add a DS office to a district, with its name in all three languages. The Tamil name must be in Tamil letters and the English one in English letters. The Sinhala name must be unique within the district, and the code unique nationally.
-- **LST-3** The admin shall be able to rename a DS office or make it inactive. An inactive office gets no new accounts or cases but keeps its existing ones.
-- **LST-4** For each kind of help, the admin shall be able to add, rename, reorder and deactivate stages, each named in Sinhala, Tamil and English:
+- **LST-2** The admin shall be able to add a DS office to a district. The admin types its name once, in the screen's language; the names in the other two languages are optional, folded away under "අනෙක් භාෂාවලින් නම", and the system writes any left blank from the typed one, by sound, in that language's letters (UI-9, 8 Oct 2026). The Tamil name must be in Tamil letters and the English one in English letters; a name the system can't write within those rules (one with digits, say) is left for the admin to type. The Sinhala name must be unique within the district, and the code unique nationally.
+- **LST-3** The admin shall be able to rename a DS office or make it inactive. Renaming works as adding does (LST-2): the name in the screen's language, with the other two under "අනෙක් භාෂාවලින් නම". An inactive office gets no new accounts or cases but keeps its existing ones.
+- **LST-4** For each kind of help, the admin shall be able to add, rename, reorder and deactivate stages, each named in Sinhala, Tamil and English and typed once, as in LST-2:
   - New-house stages are seeded as අත්තිවාරම් මට්ටම, බිත්ති මට්ටම, වහල මට්ටම, නිමයි (in Tamil அத்திவார மட்டம், சுவர் மட்டம், கூரை மட்டம், நிறைவு; in English Foundation level, Wall level, Roof level, Completed).
   - Renovation stages start empty.
   - A stage that has been used can be deactivated but not removed.
@@ -350,6 +350,7 @@ Only the DS office starts and pays installments (section 4). Each change is refu
   - Every page shows a language picker: on the sign-in and password pages above the logo, and in the header elsewhere. It names each language in its own script (සිංහල · தமிழ் · English), marked with its own `lang`.
   - The choice is kept in the browser (a cookie, `lang`, for a year), not in the account or the address, so links and bookmarks work in every language. Choosing shows the same page again in the new language.
   - Province, district, DS office and stage names are shown in the screen's language (LST-1, LST-4). What officers type (names, addresses, notes, reasons) is shown as typed, in whatever script it was typed.
+  - A screen shows a name once, in its own language, never in all three side by side (8 Oct 2026). Data is entered once: officers type each detail in one language, and the admin types a list name in one language and the system writes the others (LST-2). Writing by sound is not translating: කොළඹ becomes Kolamba, not Colombo, and a stage typed in English comes out as its sound in Sinhala and Tamil letters, so the admin checks what was written.
   - The case history names districts and stages in the screen's language. Records kept before 7 Oct 2026 hold the Sinhala stage names of the day: the Sinhala screen keeps them, and the others show the stages' current names.
   - The Tamil and English texts need checking by the Ministry before go-live (task 9.7).
 
@@ -438,6 +439,7 @@ Version 1 is accepted when every check below passes on staging with made-up data
 | AC-25 | On the check screen, choosing a district and then a DS office lists only that office's cases. After a case is verified, the screen stays on that office, and the release tab opens on that district's letter. | CHK-4 |
 | AC-26 | A letter for two cases releases both, with one letter row and each case's own release and installments; one case not `VERIFIED`, or of another district, releases neither. Correcting the letter from one case's page changes it for both. | REL-2–4 |
 | AC-27 | On the sign-in page, choosing தமிழ் or English shows the page in that language and keeps it after a reload. A DS officer working in Tamil sees the menu, their office and district names and the money in Tamil; Head Office working in English downloads an Excel file with English headers and file name. | UI-9, EXP-1 |
+| AC-28 | The admin, working in Sinhala, adds a DS office with its Sinhala and English names and its code, leaving the Tamil name blank. The lists screen shows only the Sinhala name; in English it shows the typed English name, and in Tamil the name the system wrote in Tamil letters. A stage needs only its Sinhala name. | UI-9, LST-2, LST-4 |
 
 ## 13. Deferred questions and the defaults used
 
