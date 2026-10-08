@@ -1,8 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { getLocale } from "next-intl/server";
 import type { Kind } from "@/generated/prisma/enums";
-import { type ListErrorKey, officeNamesSchema, officeSchema, parseForm, stageSchema } from "@/lib/validation/lists";
+import { isLocale } from "@/i18n/locales";
+import { type ListErrorKey, officeCodeSchema, parseForm, readNames } from "@/lib/validation/lists";
 import { requireRole } from "@/server/context";
 import { db } from "@/server/db";
 import {
@@ -21,6 +23,8 @@ export type ListFormState = {
   error: ListCommandError | null;
   /** Goes up by one after each save, so the form can clear itself and say it was saved. */
   saves: number;
+  /** The last save had names the system wrote from the typed one (UI-9). */
+  written: boolean;
 };
 
 const read = (form: FormData) => (field: string) => {
@@ -28,14 +32,28 @@ const read = (form: FormData) => (field: string) => {
   return typeof value === "string" ? value : "";
 };
 
+/** The names from a form, typed in the language the form was shown in (UI-9). */
+async function names(form: FormData) {
+  const from = form.get("from");
+  return readNames(read(form), isLocale(from) ? from : await getLocale());
+}
+
+const refused = (previous: ListFormState, errors: Record<string, ListErrorKey>): ListFormState => ({
+  errors,
+  error: null,
+  saves: previous.saves,
+  written: false,
+});
+
 async function run(
   previous: ListFormState,
+  written: boolean,
   command: () => Promise<{ ok: true } | { ok: false; error: ListCommandError }>,
 ): Promise<ListFormState> {
   const result = await command();
-  if (!result.ok) return { errors: {}, error: result.error, saves: previous.saves };
+  if (!result.ok) return { errors: {}, error: result.error, saves: previous.saves, written: false };
   revalidatePath("/admin/lists");
-  return { errors: {}, error: null, saves: previous.saves + 1 };
+  return { errors: {}, error: null, saves: previous.saves + 1, written };
 }
 
 export async function addOfficeAction(
@@ -44,16 +62,21 @@ export async function addOfficeAction(
   form: FormData,
 ): Promise<ListFormState> {
   const admin = await requireRole("ADMIN");
-  const parsed = parseForm(officeSchema, read(form));
-  if (!parsed.ok) return { errors: parsed.errors, error: null, saves: previous.saves };
-  return run(previous, () => addOffice(db, admin.userId, districtId, parsed.value));
+  const parsed = await names(form);
+  const code = parseForm(officeCodeSchema, read(form));
+  if (!parsed.ok || !code.ok) {
+    return refused(previous, { ...(parsed.ok ? {} : parsed.errors), ...(code.ok ? {} : code.errors) });
+  }
+  return run(previous, parsed.written, () =>
+    addOffice(db, admin.userId, districtId, { ...parsed.value, ...code.value }),
+  );
 }
 
 export async function renameOfficeAction(id: number, previous: ListFormState, form: FormData): Promise<ListFormState> {
   const admin = await requireRole("ADMIN");
-  const parsed = parseForm(officeNamesSchema, read(form));
-  if (!parsed.ok) return { errors: parsed.errors, error: null, saves: previous.saves };
-  return run(previous, () => renameOffice(db, admin.userId, id, parsed.value));
+  const parsed = await names(form);
+  if (!parsed.ok) return refused(previous, parsed.errors);
+  return run(previous, parsed.written, () => renameOffice(db, admin.userId, id, parsed.value));
 }
 
 export async function setOfficeActiveAction(id: number, active: boolean): Promise<void> {
@@ -64,16 +87,16 @@ export async function setOfficeActiveAction(id: number, active: boolean): Promis
 
 export async function addStageAction(kind: Kind, previous: ListFormState, form: FormData): Promise<ListFormState> {
   const admin = await requireRole("ADMIN");
-  const parsed = parseForm(stageSchema, read(form));
-  if (!parsed.ok) return { errors: parsed.errors, error: null, saves: previous.saves };
-  return run(previous, () => addStage(db, admin.userId, kind, parsed.value));
+  const parsed = await names(form);
+  if (!parsed.ok) return refused(previous, parsed.errors);
+  return run(previous, parsed.written, () => addStage(db, admin.userId, kind, parsed.value));
 }
 
 export async function renameStageAction(id: number, previous: ListFormState, form: FormData): Promise<ListFormState> {
   const admin = await requireRole("ADMIN");
-  const parsed = parseForm(stageSchema, read(form));
-  if (!parsed.ok) return { errors: parsed.errors, error: null, saves: previous.saves };
-  return run(previous, () => renameStage(db, admin.userId, id, parsed.value));
+  const parsed = await names(form);
+  if (!parsed.ok) return refused(previous, parsed.errors);
+  return run(previous, parsed.written, () => renameStage(db, admin.userId, id, parsed.value));
 }
 
 export async function moveStageAction(id: number, direction: "up" | "down"): Promise<void> {

@@ -18,15 +18,8 @@ import { AddOfficeForm, AddStageForm, RenameInPlace } from "./list-forms";
 
 const smallButton = "h-10 rounded-lg border px-3 text-[15px] font-semibold";
 
-/** The rename form's three name fields, filled with the current names. */
-function nameFields(t: (key: "nameSi" | "nameTa" | "nameEn") => string, names: Names, width?: string) {
-  return (["nameSi", "nameTa", "nameEn"] as const).map((name) => ({
-    name,
-    label: t(name),
-    initial: names[name],
-    width,
-  }));
-}
+/** The three names of an office or stage row, for its rename form. */
+const namesOf = ({ nameSi, nameTa, nameEn }: Names): Names => ({ nameSi, nameTa, nameEn });
 
 export default async function AdminListsPage({
   searchParams,
@@ -168,7 +161,7 @@ async function Places({ districtParam }: { districtParam?: string | string[] }) 
                         id={`rename-office-${o.id}`}
                         label={t("renameLabel", { name: localName(o, locale) })}
                         action={renameOfficeAction.bind(null, o.id)}
-                        fields={nameFields(t, o)}
+                        names={namesOf(o)}
                       />
                       <form action={setOfficeActiveAction.bind(null, o.id, !o.active)}>
                         <button
@@ -262,7 +255,8 @@ async function Stages() {
                     id={`rename-stage-${stage.id}`}
                     label={t("renameLabel", { name: localName(stage, locale) })}
                     action={renameStageAction.bind(null, stage.id)}
-                    fields={nameFields(t, stage, "w-72")}
+                    names={namesOf(stage)}
+                    width="w-72"
                   />
                   <form action={setStageActiveAction.bind(null, stage.id, !stage.active)}>
                     <button
