@@ -18,7 +18,7 @@ export async function listDistricts(db: PrismaClient, locale: Locale): Promise<D
   }));
 }
 
-/** The admin sees and edits an office's name in all three languages (LST-2, UI-9). */
+/** The admin sees an office's name in the screen's language and can change all three (LST-2, UI-9). */
 export type OfficeRow = Names & {
   id: number;
   code: string;

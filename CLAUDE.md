@@ -189,7 +189,8 @@ First run: `cp .env.example .env`, `npm install`, `npm run db:up` (needs Docker 
   - Money: `formatRupees(amount, locale)` writes රු., ரூ. or Rs.
 - **Places and stages have three names:** `name_si`, `name_ta` and `name_en` on province, district, DS office and stage (migration `20261007090000_names_in_three_languages`, which filled the Tamil and English names from `data/places.json` and `data/stages.json`).
   - Queries that show a name take the `locale` as an argument and pick it with `localName(row, locale)`, selecting all three with `NAMES` (`src/lib/names.ts`). Database tests pass `"si"`.
-  - The admin's lists screen shows the screen's name with the other two below, and its forms ask for all three. The Tamil name must be in Tamil letters (`src/lib/validation/lists.ts`).
+  - **A screen shows a name once, in its own language (8 Oct 2026).** Don't list the three names side by side; only the language picker names all three languages.
+  - The admin's lists screen's add and rename forms ask for all three names. The Tamil name must be in Tamil letters (`src/lib/validation/lists.ts`).
   - The Tamil place names were written for development; task 9.7 checks them with the Ministry.
 - **What officers type stays as typed:** names, addresses, notes and reasons are never translated.
 - **The case history** reads districts from the release's letter, and stage names from `stageNames` (all three names, written since 7 Oct 2026). An older stage record holds only Sinhala names: the Sinhala screen keeps them, the others read the stages' current names (`src/server/history/queries.ts`).

@@ -350,6 +350,7 @@ Only the DS office starts and pays installments (section 4). Each change is refu
   - Every page shows a language picker: on the sign-in and password pages above the logo, and in the header elsewhere. It names each language in its own script (සිංහල · தமிழ் · English), marked with its own `lang`.
   - The choice is kept in the browser (a cookie, `lang`, for a year), not in the account or the address, so links and bookmarks work in every language. Choosing shows the same page again in the new language.
   - Province, district, DS office and stage names are shown in the screen's language (LST-1, LST-4). What officers type (names, addresses, notes, reasons) is shown as typed, in whatever script it was typed.
+  - A screen shows a name once, in its own language, never in all three side by side (8 Oct 2026).
   - The case history names districts and stages in the screen's language. Records kept before 7 Oct 2026 hold the Sinhala stage names of the day: the Sinhala screen keeps them, and the others show the stages' current names.
   - The Tamil and English texts need checking by the Ministry before go-live (task 9.7).
 

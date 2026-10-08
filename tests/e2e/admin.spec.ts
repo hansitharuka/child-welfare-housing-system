@@ -1,5 +1,14 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
-import { randomLetters, signIn, signInAs, signInError, TEST_MARKER, TEST_OFFICER_NAME, TEXT } from "./helpers";
+import {
+  chooseLanguage,
+  randomLetters,
+  signIn,
+  signInAs,
+  signInError,
+  TEST_MARKER,
+  TEST_OFFICER_NAME,
+  TEXT,
+} from "./helpers";
 
 const CRPO = /ළමා හිමිකම් ප්‍රවර්ධන නිලධාරී/;
 
@@ -158,10 +167,12 @@ test("the admin can't disable their own account", async ({ page }) => {
   await expect(page.getByRole("button", { name: /^අක්‍රිය කරන්න/ })).toHaveCount(0);
 });
 
-test("the admin adds a DS office to a district (LST-2)", async ({ page }) => {
+test("the admin adds a DS office to a district, shown with one name per screen (LST-2, UI-9)", async ({ page }) => {
   // No seeded office code starts with Q.
   const code = `Q${randomLetters(2)}`;
   const nameSi = `පරීක්ෂණ කාර්යාලය ${code}`;
+  const nameTa = "சோதனை அலுவலகம்";
+  const nameEn = `${TEST_MARKER} Office ${code}`;
 
   await signInAs(page, "ad0001", /\/admin\/users$/);
   await page.goto("/admin/lists");
@@ -170,8 +181,8 @@ test("the admin adds a DS office to a district (LST-2)", async ({ page }) => {
 
   // A wrong code is explained, and what was typed stays.
   await page.getByLabel("නම (සිංහලෙන්) *").fill(nameSi);
-  await page.getByLabel("නම (දෙමළෙන්) *").fill("சோதனை அலுவலகம்");
-  await page.getByLabel("නම (ඉංග්‍රීසියෙන්) *").fill(`${TEST_MARKER} Office ${code}`);
+  await page.getByLabel("නම (දෙමළෙන්) *").fill(nameTa);
+  await page.getByLabel("නම (ඉංග්‍රීසියෙන්) *").fill(nameEn);
   await page.getByLabel("කේතය *").fill("Q1");
   await page.getByRole("button", { name: "එක් කරන්න" }).click();
   await expect(page.getByText("ඉංග්‍රීසි කැපිටල් අකුරු 3ක කේතයක් ඇතුළත් කරන්න.")).toBeVisible();
@@ -180,9 +191,20 @@ test("the admin adds a DS office to a district (LST-2)", async ({ page }) => {
   await page.getByLabel("කේතය *").fill(code.toLowerCase());
   await page.getByRole("button", { name: "එක් කරන්න" }).click();
   await expect(page.getByRole("status")).toHaveText("එක් කළා.");
+  // The list shows the name in the screen's language only.
   const row = page.getByRole("row").filter({ hasText: nameSi });
   await expect(row).toContainText(code);
   await expect(row).toContainText("ගිණුමක් නැත");
+  await expect(row).not.toContainText(nameTa);
+  await expect(row).not.toContainText(nameEn);
+
+  // Each language shows its own name.
+  await chooseLanguage(page, "English");
+  await expect(page.getByRole("row").filter({ hasText: code })).toContainText(nameEn);
+  await expect(page.getByRole("row").filter({ hasText: code })).not.toContainText(nameSi);
+  await chooseLanguage(page, "தமிழ்");
+  await expect(page.getByRole("row").filter({ hasText: code })).toContainText(nameTa);
+  await chooseLanguage(page, "සිංහල");
 });
 
 test("the admin adds and reorders renovation stages (LST-4)", async ({ page }) => {
