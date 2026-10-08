@@ -70,7 +70,8 @@ describe("demo data", { timeout: 120_000 }, () => {
     expect(headOffice).toContain(HEAD_OFFICE);
     for (const c of cases) {
       expect(c.createdById).toBe(OFFICER);
-      expect(c.address).toMatch(/^අංක \d+, /);
+      // A draft may still have an empty address (CASE-4); see `maybe` in seed-load.ts.
+      if (c.status !== "DRAFT" || c.address !== null) expect(c.address).toMatch(/^අංක \d+, /);
       for (const d of c.decisions) {
         if (d.type === "SUBMIT") expect(d.byId).toBe(OFFICER);
         else expect(headOffice).toContain(d.byId);
